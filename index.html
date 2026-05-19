@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#007aff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Lift" />
+
+  <title>Lift</title>
+
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/icon.svg" />
+
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header id="nav-bar" class="nav-bar">
+      <button id="nav-back" class="nav-back" hidden aria-label="Back">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+      <h1 id="nav-title" class="nav-title">Workout</h1>
+      <button id="nav-action" class="nav-action" hidden></button>
+    </header>
+
+    <main id="view-content" class="view-content"></main>
+
+    <nav id="tab-bar" class="tab-bar" role="tablist">
+      <button class="tab" data-tab="workout" role="tab" aria-selected="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M20.57 14.86l-2.43 2.43-3.43-3.43L19 9.57l1.57 1.57L19 12.71l2.43 2.15zM3.43 9.14l2.43-2.43 3.43 3.43L5 14.43l-1.57-1.57L5 11.29l-2.43-2.15zm9.43 5.71L10.43 17.29l-3.72-3.72 2.43-2.43-2.43-2.43L10.43 4.71l2.43 2.43 1.43-1.43 2.43 2.43-2.43 2.43 2.43 2.43-2.43 2.43-1.43-1.43z"/></svg>
+        <span>Workout</span>
+      </button>
+      <button class="tab" data-tab="history" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 7 7c-1.93 0-3.68-.79-4.95-2.05L6.64 18.36A9 9 0 1 0 13 3zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        <span>History</span>
+      </button>
+      <button class="tab" data-tab="exercises" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+        <span>Exercises</span>
+      </button>
+      <button class="tab" data-tab="progress" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor"><path d="M3.5 18.5l6-6.5 4 4L22 6.92 20.59 5.5l-7.09 8-4-4L2 17l1.5 1.5z"/></svg>
+        <span>Progress</span>
+      </button>
+    </nav>
+  </div>
+
+  <template id="tmpl-empty">
+    <div class="empty-state">
+      <div class="empty-icon"></div>
+      <h2></h2>
+      <p></p>
+    </div>
+  </template>
+
+  <script type="module" src="./src/main.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
