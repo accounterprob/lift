@@ -583,12 +583,6 @@ function openAddCustomExercise(onCreated) {
             <select id="ce-eq">${EQUIPMENT.map((e) => `<option>${e}</option>`).join('')}</select>
           </div>
         </div>
-        <div class="section">Notes</div>
-        <div class="form-section">
-          <div class="form-row">
-            <textarea id="ce-notes" placeholder="Optional"></textarea>
-          </div>
-        </div>
       </div>
     `,
     onMount(sheet) {
@@ -606,7 +600,7 @@ function openAddCustomExercise(onCreated) {
           name: nameInput.value.trim(),
           category: sheet.querySelector('#ce-cat').value,
           equipment: sheet.querySelector('#ce-eq').value,
-          notes: sheet.querySelector('#ce-notes').value,
+          notes: '',
           isCustom: true,
           createdAt: Date.now(),
         };
