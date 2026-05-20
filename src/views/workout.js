@@ -79,16 +79,11 @@ function renderActive(ctx, workout) {
       <div class="workout-header">
         <input class="workout-name-input" id="wname" value="${esc(workout.name)}" placeholder="Workout name" />
       </div>
+      <div class="workout-hint">Tap a set number to mark it as a warmup.</div>
       <div class="muscle-split" id="muscle-split"></div>
       <div id="exercise-sections"></div>
       <div class="action-section">
         <button id="add-exercise-btn" class="btn-secondary">+ Add Exercise</button>
-      </div>
-      <div class="section">Notes</div>
-      <div class="form-section">
-        <div class="form-row">
-          <textarea id="wnotes" placeholder="Anything to remember…">${esc(workout.notes)}</textarea>
-        </div>
       </div>
       <div class="action-section">
         <button id="finish-btn" class="btn-primary green">Finish Workout</button>
@@ -111,16 +106,14 @@ function renderActive(ctx, workout) {
     await put('workouts', workout);
   }, 250));
 
-  // Save notes
-  const notesInput = ctx.container.querySelector('#wnotes');
-  notesInput.addEventListener('input', debounce(async () => {
-    workout.notes = notesInput.value;
-    await put('workouts', workout);
-  }, 300));
-
   // Buttons
-  ctx.container.querySelector('#add-exercise-btn').addEventListener('click', () => {
-    openExercisePicker(allExercises, async (selectedIds) => {
+  ctx.container.querySelector('#add-exercise-btn').addEventListener('click', async () => {
+    const allSets = await getAll('sets');
+    const counts = new Map();
+    for (const s of allSets) {
+      counts.set(s.exerciseId, (counts.get(s.exerciseId) ?? 0) + 1);
+    }
+    openExercisePicker(allExercises, counts, async (selectedIds) => {
       await addExercisesToWorkout(workout, sets, selectedIds);
       await reload();
     });
@@ -431,7 +424,7 @@ async function finishWorkout(workout, sets) {
 
 // ----------------- Exercise picker sheet -----------------
 
-function openExercisePicker(allExercises, onConfirm) {
+function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
   let selected = new Set();
   let search = '';
   let category = null;
@@ -486,19 +479,31 @@ function openExercisePicker(allExercises, onConfirm) {
           .filter((e) =>
             !search || e.name.toLowerCase().includes(search.toLowerCase())
           )
-          .sort((a, b) => a.name.localeCompare(b.name));
+          .sort((a, b) => {
+            // Exercises with prior sets bubble to the top; then alphabetical.
+            const ca = setCountByExercise.get(a.id) ?? 0;
+            const cb = setCountByExercise.get(b.id) ?? 0;
+            if (ca !== cb) return cb - ca;
+            return a.name.localeCompare(b.name);
+          });
 
         listEl.innerHTML = filtered.length === 0
           ? `<div class="list-row"><div class="row-main" style="color:var(--text-secondary)">No matches</div></div>`
-          : filtered.map((e) => `
-              <button class="list-row" data-id="${e.id}">
-                <div class="row-main">
-                  <div class="row-title">${esc(e.name)}${e.isCustom ? ' <span class="badge">Custom</span>' : ''}</div>
-                  <div class="row-subtitle">${esc(e.equipment)} · ${esc(e.category)}</div>
-                </div>
-                <div class="row-trailing">${selected.has(e.id) ? checkmarkBlue() : ''}</div>
-              </button>
-            `).join('');
+          : filtered.map((e) => {
+              const count = setCountByExercise.get(e.id) ?? 0;
+              const countLabel = count > 0
+                ? ` <span class="exercise-count">${count} ${count === 1 ? 'set' : 'sets'}</span>`
+                : '';
+              return `
+                <button class="list-row" data-id="${e.id}">
+                  <div class="row-main">
+                    <div class="row-title">${esc(e.name)}${e.isCustom ? ' <span class="badge">Custom</span>' : ''}${countLabel}</div>
+                    <div class="row-subtitle">${esc(e.equipment)} · ${esc(e.category)}</div>
+                  </div>
+                  <div class="row-trailing">${selected.has(e.id) ? checkmarkBlue() : ''}</div>
+                </button>
+              `;
+            }).join('');
 
         for (const row of listEl.querySelectorAll('.list-row[data-id]')) {
           row.addEventListener('click', () => {
