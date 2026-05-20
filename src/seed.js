@@ -100,24 +100,27 @@ const SEEDS = [
   ["Farmer's Carry", 'Forearms', 'Dumbbell'],
 ];
 
+/**
+ * Only seeds the built-in exercise library on a TRULY EMPTY database
+ * (e.g. a brand-new install with no restore yet). Once the user has
+ * any exercises — imported, custom, or seeded earlier — we leave their
+ * library alone so deletions stick.
+ */
 export async function seedIfNeeded() {
   const existing = await getAll('exercises');
-  const existingNames = new Set(existing.map((e) => e.name.toLowerCase()));
+  if (existing.length > 0) return 0;
+
   const now = Date.now();
+  const toInsert = SEEDS.map(([name, category, equipment]) => ({
+    id: uuid(),
+    name,
+    category,
+    equipment,
+    notes: '',
+    isCustom: false,
+    createdAt: now,
+  }));
 
-  const toInsert = SEEDS.filter(([name]) => !existingNames.has(name.toLowerCase()))
-    .map(([name, category, equipment]) => ({
-      id: uuid(),
-      name,
-      category,
-      equipment,
-      notes: '',
-      isCustom: false,
-      createdAt: now,
-    }));
-
-  if (toInsert.length > 0) {
-    await putMany('exercises', toInsert);
-  }
+  await putMany('exercises', toInsert);
   return toInsert.length;
 }

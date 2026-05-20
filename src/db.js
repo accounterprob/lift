@@ -153,6 +153,27 @@ export async function previousWorkoutSetsForExercise(exerciseId, excludeWorkoutI
   return byWorkout.get(candidates[0].id).sort((a, b) => a.order - b.order);
 }
 
+/**
+ * Removes built-in exercises that have never been used (no associated sets).
+ * Custom user-created exercises are always preserved, even if unused.
+ */
+export async function deleteUnusedExercises() {
+  const [exercises, sets] = await Promise.all([
+    getAll('exercises'),
+    getAll('sets'),
+  ]);
+  const usedIds = new Set(sets.map((s) => s.exerciseId));
+
+  const toDelete = exercises.filter((e) => !usedIds.has(e.id) && !e.isCustom);
+  for (const e of toDelete) {
+    await del('exercises', e.id);
+  }
+  return {
+    deleted: toDelete.length,
+    kept: exercises.length - toDelete.length,
+  };
+}
+
 export async function deleteWorkoutAndSets(workoutId) {
   const db = await openDB();
   const sets = await getByIndex('sets', 'workoutId', workoutId);
