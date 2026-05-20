@@ -13,7 +13,7 @@ import {
   uuid, esc, formatDuration, todayWorkoutName, showSheet, emit, debounce, showToast,
 } from '../utils.js';
 import { CATEGORIES, EQUIPMENT } from '../seed.js';
-import { downloadBackup } from '../backup.js';
+import { downloadBackup, autoBackupSilent } from '../backup.js';
 
 export function renderWorkoutTab(ctx) {
   let mounted = true;
@@ -275,6 +275,9 @@ function renderActive(ctx, workout) {
         updateMuscleSplit();
         if (!wasCompleted && set.completed) {
           await maybeShowPRToast(set);
+          // Silently snapshot the full DB to iCloud Drive after every completed set.
+          // This is the "don't lose progress mid-workout" safety net.
+          autoBackupSilent();
         }
       });
 

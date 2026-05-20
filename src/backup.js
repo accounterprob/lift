@@ -16,14 +16,19 @@ export async function buildSnapshot() {
   };
 }
 
+function timestampedName() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `lift-backup-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`;
+}
+
 export async function downloadBackup() {
   const snapshot = await buildSnapshot();
   const json = JSON.stringify(snapshot, null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
 
-  const date = new Date().toISOString().slice(0, 10);
-  const filename = `lift-backup-${date}.json`;
+  const filename = timestampedName();
 
   const a = document.createElement('a');
   a.href = url;
@@ -37,6 +42,15 @@ export async function downloadBackup() {
   }, 1000);
 
   return { filename, bytes: blob.size, snapshot };
+}
+
+/**
+ * Fire-and-forget backup that swallows errors and doesn't surface UI.
+ * Used by the per-set auto-backup hook so completing a set is invisible
+ * to the user but the JSON snapshot still lands in iCloud Drive.
+ */
+export function autoBackupSilent() {
+  downloadBackup().catch((err) => console.warn('Auto-backup failed:', err));
 }
 
 export async function restoreFromFile(file) {
