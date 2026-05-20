@@ -7,6 +7,19 @@ import { renderHistoryTab } from './views/history.js';
 import { renderExercisesTab } from './views/exercises.js';
 import { renderProgressTab } from './views/progress.js';
 
+// iOS Safari and PWA standalone disagree about what `100vh`, `100dvh`, and
+// `position: fixed; bottom: 0` mean. Pin the app height to the actual visual
+// viewport — that's the full screen in PWA mode and the area above the
+// URL bar in Safari, both of which are exactly what we want.
+function syncAppHeight() {
+  const h = window.visualViewport?.height ?? window.innerHeight;
+  document.documentElement.style.setProperty('--app-height', `${h}px`);
+}
+syncAppHeight();
+window.addEventListener('resize', syncAppHeight);
+window.addEventListener('orientationchange', syncAppHeight);
+window.visualViewport?.addEventListener('resize', syncAppHeight);
+
 const TABS = {
   workout: { title: 'Workout', render: renderWorkoutTab },
   history: { title: 'History', render: renderHistoryTab },

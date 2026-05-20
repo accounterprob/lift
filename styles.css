@@ -77,13 +77,15 @@ button {
 #app {
   position: fixed;
   top: 0;
-  bottom: 0;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: 768px;
+  /* --app-height is set in JS from window.visualViewport.height — see main.js.
+     This is more reliable than 100dvh on iOS PWA standalone mode. */
+  height: var(--app-height, 100dvh);
 }
 
 /* ---------- Nav bar ---------- */
