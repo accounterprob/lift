@@ -6,6 +6,7 @@ import {
   del,
   deleteWorkoutAndSets,
   lastCompletedSetForExercise,
+  previousWorkoutSetsForExercise,
 } from '../db.js';
 import {
   uuid, esc, formatDuration, todayWorkoutName, showSheet, emit, debounce, showToast,
@@ -69,6 +70,7 @@ async function startNewWorkout() {
 function renderActive(ctx, workout) {
   let allExercises = [];
   let sets = [];
+  let prevByExercise = new Map();
   let timerInterval = null;
 
   ctx.container.innerHTML = `
@@ -76,6 +78,7 @@ function renderActive(ctx, workout) {
       <div class="workout-header">
         <input class="workout-name-input" id="wname" value="${esc(workout.name)}" placeholder="Workout name" />
       </div>
+      <div class="muscle-split" id="muscle-split"></div>
       <div id="exercise-sections"></div>
       <div class="action-section">
         <button id="add-exercise-btn" class="btn-secondary">+ Add Exercise</button>
@@ -143,7 +146,45 @@ function renderActive(ctx, workout) {
   async function reload() {
     sets = await getWorkoutSets(workout.id);
     allExercises = await getAll('exercises');
+    const exerciseIds = [...new Set(sets.map((s) => s.exerciseId))];
+    prevByExercise = new Map();
+    await Promise.all(
+      exerciseIds.map(async (eid) => {
+        prevByExercise.set(eid, await previousWorkoutSetsForExercise(eid, workout.id));
+      })
+    );
     renderSections();
+    updateMuscleSplit();
+  }
+
+  function updateMuscleSplit() {
+    const exMap = new Map(allExercises.map((e) => [e.id, e]));
+    const byCategory = new Map();
+    for (const s of sets) {
+      if (!s.completed) continue;
+      const ex = exMap.get(s.exerciseId);
+      if (!ex) continue;
+      const vol = (s.weight || 0) * (s.reps || 0);
+      if (vol <= 0) continue;
+      byCategory.set(ex.category, (byCategory.get(ex.category) ?? 0) + vol);
+    }
+    const sorted = [...byCategory.entries()].sort((a, b) => b[1] - a[1]);
+    const el = ctx.container.querySelector('#muscle-split');
+    if (!el) return;
+    if (sorted.length === 0) {
+      el.innerHTML = '';
+      return;
+    }
+    el.innerHTML = sorted
+      .map(([cat, vol]) =>
+        `<div class="muscle-split-pill"><strong>${esc(cat)}</strong> ${formatVolume(vol)}</div>`
+      )
+      .join('');
+  }
+
+  function formatVolume(v) {
+    if (v >= 10000) return `${(v / 1000).toFixed(1)}k`;
+    return Math.round(v).toLocaleString();
   }
 
   function renderSections() {
@@ -172,7 +213,8 @@ function renderActive(ctx, workout) {
       .map((eid) => {
         const ex = exMap.get(eid);
         const exSets = setsByExercise.get(eid);
-        return renderExerciseSection(ex, exSets);
+        const prev = prevByExercise.get(eid) ?? [];
+        return renderExerciseSection(ex, exSets, prev);
       })
       .join('');
 
@@ -189,11 +231,13 @@ function renderActive(ctx, workout) {
       weightInput.addEventListener('input', debounce(async () => {
         set.weight = parseFloat(weightInput.value) || 0;
         await put('sets', set);
+        if (set.completed) updateMuscleSplit();
       }, 200));
 
       repsInput.addEventListener('input', debounce(async () => {
         set.reps = parseInt(repsInput.value, 10) || 0;
         await put('sets', set);
+        if (set.completed) updateMuscleSplit();
       }, 200));
 
       completeBtn.addEventListener('click', async () => {
@@ -201,6 +245,7 @@ function renderActive(ctx, workout) {
         await put('sets', set);
         setRow.classList.toggle('completed', set.completed);
         completeBtn.innerHTML = checkIcon(set.completed);
+        updateMuscleSplit();
       });
     }
 
@@ -232,7 +277,7 @@ function renderActive(ctx, workout) {
   };
 }
 
-function renderExerciseSection(exercise, sets) {
+function renderExerciseSection(exercise, sets, prevSets = []) {
   return `
     <div class="exercise-section">
       <div class="exercise-section-header">
@@ -241,20 +286,25 @@ function renderExerciseSection(exercise, sets) {
       </div>
       <div class="set-table-header">
         <div class="col-set">SET</div>
+        <div>PREV</div>
         <div>LBS</div>
         <div>REPS</div>
         <div></div>
       </div>
-      ${sets.map((s, i) => renderSetRow(s, i)).join('')}
+      ${sets.map((s, i) => renderSetRow(s, i, prevSets[i])).join('')}
       <button class="add-set-btn" data-exercise-id="${exercise?.id}">+ Add Set</button>
     </div>
   `;
 }
 
-function renderSetRow(set, index) {
+function renderSetRow(set, index, prevSet) {
+  const prevText = prevSet && prevSet.weight > 0 && prevSet.reps > 0
+    ? `${formatWeight(prevSet.weight)} × ${prevSet.reps}`
+    : '—';
   return `
     <div class="set-row${set.completed ? ' completed' : ''}" data-set-id="${set.id}">
       <div class="set-number">${index + 1}</div>
+      <div class="prev" aria-label="Previous">${prevText}</div>
       <input class="weight-input" type="number" inputmode="decimal" step="0.5"
              placeholder="0" value="${set.weight > 0 ? set.weight : ''}" />
       <input class="reps-input" type="number" inputmode="numeric" step="1"
@@ -262,6 +312,12 @@ function renderSetRow(set, index) {
       <button class="complete-btn" aria-label="Toggle complete">${checkIcon(set.completed)}</button>
     </div>
   `;
+}
+
+function formatWeight(w) {
+  if (w == null) return '0';
+  if (w % 1 === 0) return String(w);
+  return String(Math.round(w * 10) / 10);
 }
 
 function checkIcon(completed) {
