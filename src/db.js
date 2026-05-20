@@ -127,8 +127,10 @@ export async function lastCompletedSetForExercise(exerciseId, excludeWorkoutId =
 }
 
 /**
- * Sets from the most recent finished workout that contains this exercise,
+ * Sets from the most recent prior workout that contains this exercise,
  * ordered by `order` ASC. Used to show "Previous" hints in the active workout.
+ * Doesn't require endedAt to be set — that filter was excluding legitimate
+ * imported data where the source CSV had no end time.
  */
 export async function previousWorkoutSetsForExercise(exerciseId, excludeWorkoutId = null) {
   const allSets = await getExerciseSets(exerciseId);
@@ -143,12 +145,12 @@ export async function previousWorkoutSetsForExercise(exerciseId, excludeWorkoutI
   const workouts = await Promise.all(
     Array.from(byWorkout.keys()).map((id) => get('workouts', id))
   );
-  const finished = workouts
-    .filter((w) => w && w.endedAt)
-    .sort((a, b) => b.startedAt - a.startedAt);
-  if (finished.length === 0) return [];
+  const candidates = workouts
+    .filter(Boolean)
+    .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+  if (candidates.length === 0) return [];
 
-  return byWorkout.get(finished[0].id).sort((a, b) => a.order - b.order);
+  return byWorkout.get(candidates[0].id).sort((a, b) => a.order - b.order);
 }
 
 export async function deleteWorkoutAndSets(workoutId) {

@@ -1,6 +1,7 @@
 import {
   getActiveWorkout,
   getWorkoutSets,
+  getExerciseSets,
   getAll,
   put,
   del,
@@ -162,6 +163,7 @@ function renderActive(ctx, workout) {
     const byCategory = new Map();
     for (const s of sets) {
       if (!s.completed) continue;
+      if ((s.setType || 'working') === 'warmup') continue;
       const ex = exMap.get(s.exerciseId);
       if (!ex) continue;
       const vol = (s.weight || 0) * (s.reps || 0);
@@ -180,6 +182,37 @@ function renderActive(ctx, workout) {
         `<div class="muscle-split-pill"><strong>${esc(cat)}</strong> ${formatVolume(vol)}</div>`
       )
       .join('');
+  }
+
+  async function maybeShowPRToast(set) {
+    if (!set.completed) return;
+    if ((set.setType || 'working') === 'warmup') return;
+    if (!(set.weight > 0) || !(set.reps > 0)) return;
+
+    const exercise = allExercises.find((e) => e.id === set.exerciseId);
+    if (!exercise) return;
+
+    const all = await getExerciseSets(set.exerciseId);
+    const prior = all.filter((s) =>
+      s.id !== set.id &&
+      s.completed &&
+      (s.setType || 'working') !== 'warmup' &&
+      s.weight > 0 && s.reps > 0
+    );
+    if (prior.length === 0) return;  // First time doing this exercise — don't claim a PR
+
+    const epley = (w, r) => r <= 1 ? w : w * (1 + r / 30);
+    const maxWeight = prior.reduce((m, s) => Math.max(m, s.weight), 0);
+    const maxE1RM = prior.reduce((m, s) => Math.max(m, epley(s.weight, s.reps)), 0);
+    const e1rm = epley(set.weight, set.reps);
+
+    const prs = [];
+    if (set.weight > maxWeight) prs.push(`Heaviest ${formatWeight(set.weight)} lbs`);
+    if (e1rm > maxE1RM + 0.01) prs.push(`1RM ${Math.round(e1rm)} lbs`);
+
+    if (prs.length > 0) {
+      showToast(`🏆 ${exercise.name} PR · ${prs.join(' · ')}`, 4500);
+    }
   }
 
   function formatVolume(v) {
@@ -241,12 +274,27 @@ function renderActive(ctx, workout) {
       }, 200));
 
       completeBtn.addEventListener('click', async () => {
+        const wasCompleted = set.completed;
         set.completed = !set.completed;
         await put('sets', set);
         setRow.classList.toggle('completed', set.completed);
         completeBtn.innerHTML = checkIcon(set.completed);
         updateMuscleSplit();
+        if (!wasCompleted && set.completed) {
+          await maybeShowPRToast(set);
+        }
       });
+
+      // Tap set number to cycle Working → Warmup → Working
+      const numBtn = setRow.querySelector('.set-number');
+      if (numBtn) {
+        numBtn.addEventListener('click', async () => {
+          const current = set.setType || 'working';
+          set.setType = current === 'warmup' ? 'working' : 'warmup';
+          await put('sets', set);
+          renderSections();  // re-render so set numbering updates correctly across the section
+        });
+      }
     }
 
     // Wire up add-set and exercise menu
@@ -278,6 +326,14 @@ function renderActive(ctx, workout) {
 }
 
 function renderExerciseSection(exercise, sets, prevSets = []) {
+  // Working-set numbering excludes warmups; PREV matches by raw index.
+  let workingIndex = 0;
+  const setBlocks = sets.map((s, i) => {
+    const type = s.setType || 'working';
+    const display = type === 'warmup' ? 'W' : String(++workingIndex);
+    return renderSetRow(s, display, prevSets[i]);
+  }).join('');
+
   return `
     <div class="exercise-section">
       <div class="exercise-section-header">
@@ -291,19 +347,20 @@ function renderExerciseSection(exercise, sets, prevSets = []) {
         <div>REPS</div>
         <div></div>
       </div>
-      ${sets.map((s, i) => renderSetRow(s, i, prevSets[i])).join('')}
+      ${setBlocks}
       <button class="add-set-btn" data-exercise-id="${exercise?.id}">+ Add Set</button>
     </div>
   `;
 }
 
-function renderSetRow(set, index, prevSet) {
+function renderSetRow(set, displayLabel, prevSet) {
+  const type = set.setType || 'working';
   const prevText = prevSet && prevSet.weight > 0 && prevSet.reps > 0
     ? `${formatWeight(prevSet.weight)} × ${prevSet.reps}`
     : '—';
   return `
-    <div class="set-row${set.completed ? ' completed' : ''}" data-set-id="${set.id}">
-      <div class="set-number">${index + 1}</div>
+    <div class="set-row type-${type}${set.completed ? ' completed' : ''}" data-set-id="${set.id}">
+      <button class="set-number" aria-label="Tap to toggle warmup">${displayLabel}</button>
       <div class="prev" aria-label="Previous">${prevText}</div>
       <input class="weight-input" type="number" inputmode="decimal" step="0.5"
              placeholder="0" value="${set.weight > 0 ? set.weight : ''}" />

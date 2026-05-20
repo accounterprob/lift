@@ -466,6 +466,22 @@ button {
   font-size: 15px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  background: transparent;
+  border: 0;
+  padding: 6px 2px;
+  min-width: 26px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.set-row.type-warmup .set-number {
+  color: var(--orange);
+  font-weight: 700;
+}
+
+.set-row.type-warmup .weight-input,
+.set-row.type-warmup .reps-input {
+  background: color-mix(in srgb, var(--orange) 12%, var(--fill-2));
 }
 
 .set-row input {

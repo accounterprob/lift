@@ -1,0 +1,8 @@
+# macOS
+.DS_Store
+
+# Personal data exports — these should never be committed.
+# Backups belong in iCloud Drive, not a public GitHub repo.
+lift-hevy-import.json
+lift-backup-*.json
+*.csv
