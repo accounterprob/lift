@@ -12,7 +12,7 @@ import {
 import {
   uuid, esc, formatDuration, todayWorkoutName, showSheet, emit, debounce, showToast,
 } from '../utils.js';
-import { CATEGORIES, EQUIPMENT } from '../seed.js';
+import { CATEGORIES, EQUIPMENT, primaryMuscleFor } from '../seed.js';
 import { downloadBackup } from '../backup.js';
 
 export function renderWorkoutTab(ctx) {
@@ -153,7 +153,7 @@ function renderActive(ctx, workout) {
 
   function updateMuscleSplit() {
     const exMap = new Map(allExercises.map((e) => [e.id, e]));
-    const byCategory = new Map();
+    const byMuscle = new Map();
     for (const s of sets) {
       if (!s.completed) continue;
       if ((s.setType || 'working') === 'warmup') continue;
@@ -161,9 +161,10 @@ function renderActive(ctx, workout) {
       if (!ex) continue;
       const vol = (s.weight || 0) * (s.reps || 0);
       if (vol <= 0) continue;
-      byCategory.set(ex.category, (byCategory.get(ex.category) ?? 0) + vol);
+      const muscle = primaryMuscleFor(ex);
+      byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + vol);
     }
-    const sorted = [...byCategory.entries()].sort((a, b) => b[1] - a[1]);
+    const sorted = [...byMuscle.entries()].sort((a, b) => b[1] - a[1]);
     const el = ctx.container.querySelector('#muscle-split');
     if (!el) return;
     if (sorted.length === 0) {
@@ -171,8 +172,8 @@ function renderActive(ctx, workout) {
       return;
     }
     el.innerHTML = sorted
-      .map(([cat, vol]) =>
-        `<div class="muscle-split-pill"><strong>${esc(cat)}</strong> ${formatVolume(vol)}</div>`
+      .map(([muscle, vol]) =>
+        `<div class="muscle-split-pill"><strong>${esc(muscle)}</strong> ${formatVolume(vol)}</div>`
       )
       .join('');
   }

@@ -106,6 +106,80 @@ const SEEDS = [
  * any exercises — imported, custom, or seeded earlier — we leave their
  * library alone so deletions stick.
  */
+/**
+ * Returns the primary muscle group worked by an exercise, drilling down past
+ * the broad category. e.g. "Lateral Raise" → "Side Delts", "Romanian Deadlift"
+ * → "Hamstrings", "Leg Extension" → "Quads". Order of checks matters: more
+ * specific patterns must come before generic ones (e.g. "Romanian Deadlift"
+ * before generic "deadlift", "leg curl" before "curl").
+ */
+export function primaryMuscleFor(exercise) {
+  const name = (exercise?.name || '').toLowerCase();
+  if (!name) return exercise?.category || 'Other';
+
+  // Hamstring-specific exercises (must precede generic "deadlift" and "curl")
+  if (/romanian deadlift|stiff.?leg|good morning/.test(name)) return 'Hamstrings';
+  if (/leg curl/.test(name)) return 'Hamstrings';
+
+  // Quad-focused isolation
+  if (/leg extension/.test(name)) return 'Quads';
+
+  // Calves
+  if (/calf/.test(name)) return 'Calves';
+
+  // Hip-focused
+  if (/hip adduction|adductor|inner thigh/.test(name)) return 'Adductors';
+  if (/hip thrust|glute|hip abduction|cable kickback|donkey kick/.test(name)) return 'Glutes';
+
+  // Compound leg → quads primary
+  if (/squat|leg press|lunge|step.?up|split squat/.test(name)) return 'Quads';
+
+  // Lower back / posterior chain
+  if (/back extension|hyperextension/.test(name)) return 'Lower Back';
+  if (/deadlift/.test(name)) return 'Lower Back';
+
+  // Shoulder subdivisions (before generic "press" and "raise")
+  if (/lateral raise|side delt/.test(name)) return 'Side Delts';
+  if (/rear delt|reverse fly|face pull|reverse pec deck/.test(name)) return 'Rear Delts';
+  if (/front raise|shoulder press|overhead press|arnold|military press/.test(name)) return 'Front Delts';
+
+  // Back details
+  if (/pulldown|pull.?up|chin.?up|pullover/.test(name)) return 'Lats';
+  if (/shrug/.test(name)) return 'Traps';
+
+  // Triceps (must precede chest "press" and biceps "curl")
+  if (/tricep|pushdown|skull ?crusher|close.?grip bench/.test(name)) return 'Triceps';
+
+  // Biceps
+  if (/bicep|hammer|preacher|concentration curl|barbell curl|dumbbell curl|cable curl|incline (db|dumbbell) curl|single arm curl/.test(name)) return 'Biceps';
+  // Generic "curl" if it didn't match anything else above (no leg/hamstring/wrist curls remain)
+  if (/\bcurl\b/.test(name) && !/wrist curl/.test(name)) return 'Biceps';
+
+  // Back rows
+  if (/\brow\b/.test(name)) return 'Mid Back';
+
+  // Chest
+  if (/bench press|chest press|chest fly|cable crossover|crossover|pec deck|butterfly|push.?up|dip \(chest\)|incline (db|dumbbell|barbell) press|decline (db|dumbbell|barbell) press/.test(name)) return 'Chest';
+
+  // Core / abs
+  if (/crunch|sit.?up|plank|leg raise|knee raise|ab wheel|russian twist|hanging|woodchop|rotation/.test(name)) return 'Abs';
+
+  // Cardio (added: spin, cycling, rowing-machine, jog)
+  if (/bike|treadmill|run|cardio|step.?mill|elliptical|stair|jog|cycling|spinning|spin|rowing machine|row machine/.test(name)) return 'Cardio';
+
+  // Forearms
+  if (/wrist curl|forearm|farmer/.test(name)) return 'Forearms';
+
+  // Glute isolation that didn't match earlier (e.g. "Rear Kick")
+  if (/rear kick/.test(name)) return 'Glutes';
+
+  // Generic "dip" → triceps (chest-dip variant matched in chest regex above)
+  if (/\bdip\b/.test(name)) return 'Triceps';
+
+  // Fallback to broad category
+  return exercise.category || 'Other';
+}
+
 export async function seedIfNeeded() {
   const existing = await getAll('exercises');
   if (existing.length > 0) return 0;
