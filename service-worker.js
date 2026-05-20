@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'lift-v3';
+const CACHE_VERSION = 'lift-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -19,7 +19,11 @@ const ASSETS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_VERSION).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_VERSION).then((cache) =>
+      // {cache: 'reload'} bypasses the browser HTTP cache so the SW always
+      // grabs the freshest version of each asset from the server on install.
+      cache.addAll(ASSETS.map((url) => new Request(url, { cache: 'reload' })))
+    ).then(() => self.skipWaiting())
   );
 });
 

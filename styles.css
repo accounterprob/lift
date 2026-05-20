@@ -562,6 +562,7 @@ button {
   position: sticky;
   top: 0;
   z-index: 2;
+  flex-shrink: 0;
 }
 
 .sheet-header .title { font-size: 17px; font-weight: 600; }
@@ -589,6 +590,7 @@ button {
 .search-bar {
   padding: 8px 16px;
   background: var(--bg);
+  flex-shrink: 0;
 }
 
 .search-input {
@@ -615,8 +617,10 @@ button {
   gap: 8px;
   padding: 4px 16px 12px;
   overflow-x: auto;
+  overflow-y: visible;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  flex-shrink: 0;
 }
 
 .chip-row::-webkit-scrollbar { display: none; }
