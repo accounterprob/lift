@@ -145,11 +145,12 @@ async function renderDetail(ctx, exerciseId) {
     null
   );
 
-  // Volume per set over time (weight × reps). Sets within the same workout
-  // get a small per-set offset so they don't stack on top of each other on
-  // the X axis.
+  // Volume per working set over time (weight × reps). Warmups are excluded
+  // because they're intentionally lighter and would zig-zag the line. Sets
+  // within the same workout get a small per-set offset so they don't stack on
+  // top of each other on the X axis.
   const chartData = completed
-    .filter((s) => s.weight > 0 && s.reps > 0)
+    .filter((s) => s.weight > 0 && s.reps > 0 && (s.setType || 'working') !== 'warmup')
     .map((s) => ({
       date: s.workout.startedAt + (s.order || 0) * 60_000,
       value: s.weight * s.reps,
@@ -175,8 +176,8 @@ async function renderDetail(ctx, exerciseId) {
       </div>
     ` : ''}
 
-    ${chartData.length >= 2 ? `
-      <div class="section">Volume per set over time</div>
+    ${chartData.length > 0 ? `
+      <div class="section">Volume per working set</div>
       <div class="chart-container">
         ${lineChartSvg(chartData)}
       </div>
@@ -216,7 +217,16 @@ export function lineChartSvg(data) {
   const innerH = H - pad.top - pad.bottom;
 
   if (data.length < 2) {
-    return `<svg viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" class="chart-axis-label">Need at least two data points</text></svg>`;
+    // Render the single point dead-center so the user sees their one data
+    // point instead of an unhelpful "Need at least two data points" message.
+    const x = pad.left + innerW / 2;
+    const y = pad.top + innerH / 2;
+    return `
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+        <circle cx="${x}" cy="${y}" r="4" class="chart-point"/>
+        <text x="${x}" y="${y - 10}" text-anchor="middle" class="chart-axis-label">${data.length === 1 ? `${Math.round(data[0].value)} lbs` : 'No working sets yet'}</text>
+      </svg>
+    `;
   }
 
   const xs = data.map((d) => +new Date(d.date));
