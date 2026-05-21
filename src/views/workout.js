@@ -13,7 +13,7 @@ import {
 import {
   uuid, esc, formatDuration, todayWorkoutName, showSheet, emit, debounce, showToast,
 } from '../utils.js';
-import { CATEGORIES, EQUIPMENT, primaryMuscleFor } from '../seed.js';
+import { CATEGORIES, EQUIPMENT, primaryMuscleFor, colorForMuscle } from '../seed.js';
 import { downloadBackup } from '../backup.js';
 
 export function renderWorkoutTab(ctx) {
@@ -158,8 +158,7 @@ function renderActive(ctx, workout) {
       <div class="workout-header">
         <input class="workout-name-input" id="wname" value="${esc(workout.name)}" placeholder="Workout name" />
       </div>
-      <div class="workout-hint">Tap a set number to mark it as a warmup.</div>
-      <div class="workout-volume" id="workout-volume"></div>
+      <div class="workout-progress" id="workout-progress"></div>
       <div class="muscle-split" id="muscle-split"></div>
       <div id="exercise-sections"></div>
       <div class="action-section">
@@ -207,7 +206,7 @@ function renderActive(ctx, workout) {
   });
 
   ctx.container.querySelector('#finish-btn').addEventListener('click', async () => {
-    if (!confirm('Finish this workout? Empty sets will be removed.')) return;
+    if (!confirm('Finish this workout?')) return;
     await finishWorkout(workout, sets);
     try {
       const { filename } = await downloadBackup();
@@ -249,29 +248,41 @@ function renderActive(ctx, workout) {
       if (!ex) continue;
       const vol = (s.weight || 0) * (s.reps || 0);
       if (vol <= 0) continue;
-      totalVolume += vol;  // total volume includes warmups now
-      // Per-muscle split also includes warmups (since user wants warmup weight counted)
+      totalVolume += vol;
       const muscle = primaryMuscleFor(ex);
       byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + vol);
     }
+    const sorted = [...byMuscle.entries()].sort((a, b) => b[1] - a[1]);
 
-    const volEl = ctx.container.querySelector('#workout-volume');
-    if (volEl) {
-      if (totalVolume > 0 || goalVolume > 0) {
-        const pct = goalVolume > 0 ? Math.round((totalVolume / goalVolume) * 100) : null;
-        const goalChunk = goalVolume > 0
-          ? `<div class="vol-goal">Goal <strong>${formatVolume(goalVolume)} lbs</strong>${pct !== null ? ` · <span class="vol-pct">${pct}%</span>` : ''}</div>`
-          : '';
-        volEl.innerHTML = `
-          <div class="vol-current">Total <strong>${formatVolume(totalVolume)} lbs</strong></div>
-          ${goalChunk}
-        `;
+    // Progress bar with one colored segment per muscle. Bar is normalized to
+    // max(goalVolume, totalVolume) so it always reaches 100% when current
+    // total meets or exceeds the goal.
+    const progressEl = ctx.container.querySelector('#workout-progress');
+    if (progressEl) {
+      if (sorted.length === 0 && goalVolume === 0) {
+        progressEl.innerHTML = '';
       } else {
-        volEl.innerHTML = '';
+        const denom = Math.max(goalVolume, totalVolume, 1);
+        const segments = sorted.map(([muscle, vol]) => {
+          const widthPct = (vol / denom) * 100;
+          return `<div class="vol-segment" style="width: ${widthPct.toFixed(2)}%; background: ${colorForMuscle(muscle)};" title="${esc(muscle)}: ${formatVolume(vol)} lbs"></div>`;
+        }).join('');
+        let label;
+        if (goalVolume > 0) {
+          const pct = Math.round((totalVolume / goalVolume) * 100);
+          label = `<strong>${formatVolume(totalVolume)}</strong> / ${formatVolume(goalVolume)} lbs · <span class="vol-pct">${pct}%</span>`;
+        } else if (totalVolume > 0) {
+          label = `<strong>${formatVolume(totalVolume)} lbs</strong> · no previous ${esc(workout.name)} to compare`;
+        } else {
+          label = `Goal: ${formatVolume(goalVolume)} lbs`;
+        }
+        progressEl.innerHTML = `
+          <div class="vol-bar">${segments}</div>
+          <div class="vol-label">${label}</div>
+        `;
       }
     }
 
-    const sorted = [...byMuscle.entries()].sort((a, b) => b[1] - a[1]);
     const el = ctx.container.querySelector('#muscle-split');
     if (!el) return;
     if (sorted.length === 0) {
@@ -280,7 +291,7 @@ function renderActive(ctx, workout) {
     }
     el.innerHTML = sorted
       .map(([muscle, vol]) =>
-        `<div class="muscle-split-pill"><strong>${esc(muscle)}</strong> ${formatVolume(vol)}</div>`
+        `<div class="muscle-split-pill" style="--muscle-color: ${colorForMuscle(muscle)};"><strong>${esc(muscle)}</strong> ${formatVolume(vol)}</div>`
       )
       .join('');
   }
@@ -372,7 +383,8 @@ function renderActive(ctx, workout) {
       .join('');
 
     // Wire up per-set events
-    for (const setRow of sectionsEl.querySelectorAll('.set-row')) {
+    for (const wrap of sectionsEl.querySelectorAll('.set-row-wrap')) {
+      const setRow = wrap.querySelector('.set-row');
       const setId = setRow.dataset.setId;
       const set = sets.find((s) => s.id === setId);
       if (!set) continue;
@@ -380,6 +392,12 @@ function renderActive(ctx, workout) {
       const weightInput = setRow.querySelector('.weight-input');
       const repsInput = setRow.querySelector('.reps-input');
       const completeBtn = setRow.querySelector('.complete-btn');
+
+      // Swipe left to reveal delete; tap delete to remove the set
+      attachSwipeToDelete(wrap, async () => {
+        await del('sets', set.id);
+        await reload();
+      });
 
       weightInput.addEventListener('input', debounce(async () => {
         set.weight = parseFloat(weightInput.value) || 0;
@@ -508,16 +526,105 @@ function renderSetRow(set, displayLabel, prevSet) {
     ? `${formatWeight(prevSet.weight)} × ${prevSet.reps}`
     : '—';
   return `
-    <div class="set-row type-${type}${set.completed ? ' completed' : ''}" data-set-id="${set.id}">
-      <button class="set-number" aria-label="Tap to toggle warmup">${displayLabel}</button>
-      <div class="prev" aria-label="Previous">${prevText}</div>
-      <input class="weight-input" type="number" inputmode="decimal" step="0.5"
-             placeholder="0" value="${set.weight > 0 ? set.weight : ''}" />
-      <input class="reps-input" type="number" inputmode="numeric" step="1"
-             placeholder="0" value="${set.reps > 0 ? set.reps : ''}" />
-      <button class="complete-btn" aria-label="Toggle complete">${checkIcon(set.completed)}</button>
+    <div class="set-row-wrap" data-set-id="${set.id}">
+      <button class="set-swipe-delete" data-set-id="${set.id}" aria-label="Delete set">Delete</button>
+      <div class="set-row type-${type}${set.completed ? ' completed' : ''}" data-set-id="${set.id}">
+        <button class="set-number" aria-label="Tap to toggle warmup">${displayLabel}</button>
+        <div class="prev" aria-label="Previous">${prevText}</div>
+        <input class="weight-input" type="number" inputmode="decimal" step="0.5"
+               placeholder="0" value="${set.weight > 0 ? set.weight : ''}" />
+        <input class="reps-input" type="number" inputmode="numeric" step="1"
+               placeholder="0" value="${set.reps > 0 ? set.reps : ''}" />
+        <button class="complete-btn" aria-label="Toggle complete">${checkIcon(set.completed)}</button>
+      </div>
     </div>
   `;
+}
+
+/**
+ * Attaches iOS-style swipe-left-to-reveal-delete behavior to a set row.
+ * onDelete is called when the user taps the revealed Delete button.
+ * Only one row stays open at a time — any other open row auto-closes.
+ */
+function attachSwipeToDelete(wrap, onDelete) {
+  const row = wrap.querySelector('.set-row');
+  const deleteBtn = wrap.querySelector('.set-swipe-delete');
+  if (!row || !deleteBtn) return;
+
+  const REVEAL_WIDTH = 88;  // px the row slides left to fully expose Delete
+  const TRIGGER = 40;       // px past which we snap open instead of closed
+
+  let startX = 0;
+  let startY = 0;
+  let currentDX = 0;
+  let tracking = false;
+  let horizontal = false;
+  let isOpen = false;
+
+  function setOffset(px, animate) {
+    row.style.transition = animate ? 'transform 0.18s ease' : 'none';
+    row.style.transform = `translateX(${px}px)`;
+  }
+  function close(animate = true) {
+    isOpen = false;
+    setOffset(0, animate);
+    wrap.classList.remove('swiped-open');
+  }
+  function open(animate = true) {
+    // Close any other open row first
+    document.querySelectorAll('.set-row-wrap.swiped-open').forEach((el) => {
+      if (el !== wrap) {
+        const r = el.querySelector('.set-row');
+        if (r) { r.style.transition = 'transform 0.18s ease'; r.style.transform = 'translateX(0)'; }
+        el.classList.remove('swiped-open');
+      }
+    });
+    isOpen = true;
+    setOffset(-REVEAL_WIDTH, animate);
+    wrap.classList.add('swiped-open');
+  }
+
+  row.addEventListener('touchstart', (e) => {
+    if (e.target.matches('input, button')) return;  // let inputs/buttons own their gesture
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    currentDX = 0;
+    tracking = true;
+    horizontal = false;
+  }, { passive: true });
+
+  row.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (!horizontal) {
+      if (Math.abs(dy) > Math.abs(dx) + 4) {
+        // Looks like a vertical scroll; bail
+        tracking = false;
+        return;
+      }
+      if (Math.abs(dx) > 6) horizontal = true;
+    }
+    if (!horizontal) return;
+    const base = isOpen ? -REVEAL_WIDTH : 0;
+    currentDX = Math.min(0, Math.max(-REVEAL_WIDTH, base + dx));
+    setOffset(currentDX, false);
+  }, { passive: true });
+
+  function endSwipe() {
+    if (!tracking) return;
+    tracking = false;
+    if (!horizontal) return;
+    if (currentDX < -TRIGGER) open();
+    else close();
+  }
+  row.addEventListener('touchend', endSwipe);
+  row.addEventListener('touchcancel', endSwipe);
+
+  deleteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onDelete();
+  });
 }
 
 function formatWeight(w) {

@@ -7,39 +7,28 @@ import {
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 
+// Cached snapshot per render of the Progress tab so sub-pages don't reload
+// from IndexedDB on every navigation.
+let snapshot = null;
+
 export function renderProgressTab(ctx) {
   let mounted = true;
-  renderProgress(ctx).catch((err) => {
+  loadSnapshot().then((snap) => {
+    if (!mounted) return;
+    snapshot = snap;
+    renderOverview(ctx);
+  }).catch((err) => {
     if (mounted) ctx.container.innerHTML = errorState(err);
   });
   return () => { mounted = false; };
 }
 
-async function renderProgress(ctx) {
-  ctx.setTitle('Progress');
-  ctx.setBack(null);
-  ctx.setAction({
-    html: shareIcon(),
-    onClick: () => openBackupSheet(),
-  });
-
+async function loadSnapshot() {
   const [workouts, allSets, allExercises] = await Promise.all([
     getFinishedWorkouts(),
     getAll('sets'),
     getAll('exercises'),
   ]);
-
-  if (workouts.length === 0) {
-    ctx.container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">📈</div>
-        <h2>No data yet</h2>
-        <p>Finish a workout and your stats and trends will show up here.</p>
-      </div>
-    `;
-    return;
-  }
-
   const exMap = new Map(allExercises.map((e) => [e.id, e]));
   const setsByWorkout = new Map();
   for (const s of allSets) {
@@ -88,17 +77,32 @@ async function renderProgress(ctx) {
 
   const topExercises = Array.from(exerciseCounts.entries())
     .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 5);
-
+    .map(([, e]) => e);
   const prs = Array.from(bestByExercise.values()).sort((a, b) => b.weight - a.weight);
 
-  const weekStart = (() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - d.getDay());
-    return d.getTime();
-  })();
-  const workoutsThisWeek = workouts.filter((w) => w.startedAt >= weekStart).length;
+  return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, volumePoints, topExercises, prs };
+}
+
+function renderOverview(ctx) {
+  ctx.setTitle('Progress');
+  ctx.setBack(null);
+  ctx.setAction({
+    html: shareIcon(),
+    onClick: () => openBackupSheet(),
+  });
+
+  if (!snapshot || snapshot.workouts.length === 0) {
+    ctx.container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📈</div>
+        <h2>No data yet</h2>
+        <p>Finish a workout and your stats and trends will show up here.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const { workouts, totalVolume, totalSets, volumePoints, topExercises, prs } = snapshot;
 
   ctx.container.innerHTML = `
     <div class="section">Totals</div>
@@ -106,7 +110,6 @@ async function renderProgress(ctx) {
       <div class="stat-row"><div class="stat-label">Workouts</div><div class="stat-value">${workouts.length}</div></div>
       <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${Math.round(totalVolume).toLocaleString()} lbs</div></div>
       <div class="stat-row"><div class="stat-label">Total Sets</div><div class="stat-value">${totalSets}</div></div>
-      <div class="stat-row"><div class="stat-label">This Week</div><div class="stat-value">${workoutsThisWeek} workout${workoutsThisWeek === 1 ? '' : 's'}</div></div>
     </div>
 
     ${volumePoints.length > 0 ? `
@@ -114,38 +117,94 @@ async function renderProgress(ctx) {
       <div class="chart-container">${barChartSvg(volumePoints)}</div>
     ` : ''}
 
-    ${topExercises.length > 0 ? `
-      <div class="section">Most-Trained Exercises</div>
-      <div class="form-section">
-        ${topExercises.map(([, e]) => `
-          <div class="stat-row">
-            <div class="stat-label">${esc(e.name)}</div>
-            <div class="stat-value">${e.count} set${e.count === 1 ? '' : 's'}</div>
-          </div>
-        `).join('')}
-      </div>
-    ` : ''}
+    <div class="list" style="margin-top: 16px;">
+      <button class="list-row" data-page="trained">
+        <div class="row-main">
+          <div class="row-title">Most-Trained Exercises</div>
+          <div class="row-subtitle">${topExercises.length} tracked</div>
+        </div>
+        <div class="chevron">›</div>
+      </button>
+      <button class="list-row" data-page="prs">
+        <div class="row-main">
+          <div class="row-title">Personal Records</div>
+          <div class="row-subtitle">${prs.length} exercises</div>
+        </div>
+        <div class="chevron">›</div>
+      </button>
+      <button class="list-row" data-page="history">
+        <div class="row-main">
+          <div class="row-title">Workout History</div>
+          <div class="row-subtitle">${workouts.length} workout${workouts.length === 1 ? '' : 's'}</div>
+        </div>
+        <div class="chevron">›</div>
+      </button>
+    </div>
+  `;
 
-    ${prs.length > 0 ? `
-      <div class="section">Personal Records (heaviest set)</div>
-      <div class="form-section">
-        ${prs.map((pr) => `
-          <div class="stat-row" style="align-items: flex-start;">
-            <div class="stat-label">
-              <div>${esc(pr.name)}</div>
-              <div style="font-size: 12px; color: var(--text-tertiary);">${formatDateShort(pr.date)}</div>
-            </div>
-            <div class="stat-value" style="text-align: right;">
-              <div style="font-weight: 600; color: var(--text);">${formatLbs(pr.weight)} lbs</div>
-              <div style="font-size: 12px; color: var(--text-tertiary);">${pr.reps} rep${pr.reps === 1 ? '' : 's'}</div>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    ` : ''}
+  for (const row of ctx.container.querySelectorAll('[data-page]')) {
+    row.addEventListener('click', () => {
+      const page = row.dataset.page;
+      if (page === 'trained') renderMostTrained(ctx);
+      else if (page === 'prs') renderPRs(ctx);
+      else if (page === 'history') renderHistoryList(ctx);
+    });
+  }
+}
 
-    <div class="section">Workout History</div>
-    <div class="list" style="margin-bottom: 16px;">
+function renderMostTrained(ctx) {
+  ctx.setTitle('Most-Trained');
+  ctx.setBack(() => renderOverview(ctx));
+  ctx.setAction(null);
+
+  const { topExercises } = snapshot;
+  ctx.container.innerHTML = `
+    <div class="list" style="margin-top: 16px;">
+      ${topExercises.map((e) => `
+        <div class="list-row" style="cursor: default;">
+          <div class="row-main">
+            <div class="row-title">${esc(e.name)}</div>
+          </div>
+          <div class="row-trailing">${e.count} set${e.count === 1 ? '' : 's'}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderPRs(ctx) {
+  ctx.setTitle('Personal Records');
+  ctx.setBack(() => renderOverview(ctx));
+  ctx.setAction(null);
+
+  const { prs } = snapshot;
+  ctx.container.innerHTML = `
+    <div class="section-footer" style="margin-top: 16px;">Heaviest set ever recorded per exercise.</div>
+    <div class="list">
+      ${prs.map((pr) => `
+        <div class="list-row" style="cursor: default; align-items: flex-start;">
+          <div class="row-main">
+            <div class="row-title">${esc(pr.name)}</div>
+            <div class="row-subtitle">${formatDateShort(pr.date)}</div>
+          </div>
+          <div class="row-trailing" style="text-align: right;">
+            <div style="font-weight: 600; color: var(--text);">${formatLbs(pr.weight)} lbs</div>
+            <div style="font-size: 12px; color: var(--text-tertiary);">${pr.reps} rep${pr.reps === 1 ? '' : 's'}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderHistoryList(ctx) {
+  ctx.setTitle('Workout History');
+  ctx.setBack(() => renderOverview(ctx));
+  ctx.setAction(null);
+
+  const { workouts, setsByWorkout, exMap } = snapshot;
+  ctx.container.innerHTML = `
+    <div class="list" style="margin-top: 16px;">
       ${workouts.map((w) => renderHistoryRow(w, setsByWorkout.get(w.id) || [], exMap)).join('')}
     </div>
   `;
@@ -191,7 +250,7 @@ function renderHistoryRow(workout, sets, exMap) {
 }
 
 async function renderWorkoutDetail(ctx, workoutId) {
-  ctx.setBack(() => renderProgress(ctx));
+  ctx.setBack(() => renderHistoryList(ctx));
   ctx.setAction({
     html: trashIcon(),
     onClick: async () => {

@@ -1,6 +1,35 @@
 import { getAll, putMany } from './db.js';
 import { uuid } from './utils.js';
 
+/**
+ * Stable color palette per muscle group. Used to color the per-muscle
+ * progress bar segments + the muscle pills under it.
+ */
+const MUSCLE_COLORS = {
+  'Chest': '#ef4444',
+  'Lats': '#06b6d4',
+  'Mid Back': '#0ea5e9',
+  'Lower Back': '#6366f1',
+  'Traps': '#8b5cf6',
+  'Front Delts': '#f59e0b',
+  'Side Delts': '#fbbf24',
+  'Rear Delts': '#f97316',
+  'Biceps': '#a855f7',
+  'Triceps': '#ec4899',
+  'Quads': '#10b981',
+  'Hamstrings': '#14b8a6',
+  'Glutes': '#84cc16',
+  'Calves': '#22c55e',
+  'Abs': '#64748b',
+  'Adductors': '#475569',
+  'Forearms': '#71717a',
+  'Cardio': '#38bdf8',
+  'Other': '#6b7280',
+};
+export function colorForMuscle(muscle) {
+  return MUSCLE_COLORS[muscle] ?? '#6b7280';
+}
+
 export const CATEGORIES = [
   'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Forearms',
   'Legs', 'Glutes', 'Calves', 'Core', 'Cardio', 'Full Body', 'Other',
