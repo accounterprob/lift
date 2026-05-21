@@ -1,11 +1,16 @@
-import { getFinishedWorkouts, getAll } from '../db.js';
-import { esc, formatVolume, formatDateShort, formatLbs } from '../utils.js';
+import {
+  getFinishedWorkouts, getAll, getWorkoutSets, deleteWorkoutAndSets,
+} from '../db.js';
+import {
+  esc, formatVolume, formatDateShort, formatDateLong, formatDurationShort,
+  formatLbs, emit,
+} from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 
 export function renderProgressTab(ctx) {
   let mounted = true;
   renderProgress(ctx).catch((err) => {
-    if (mounted) ctx.container.innerHTML = `<div class="empty-state"><div class="empty-icon">!</div><h2>Couldn't load</h2><p>${esc(err.message || String(err))}</p></div>`;
+    if (mounted) ctx.container.innerHTML = errorState(err);
   });
   return () => { mounted = false; };
 }
@@ -45,8 +50,8 @@ async function renderProgress(ctx) {
   let totalVolume = 0;
   let totalSets = 0;
   const volumePoints = [];
-  const exerciseCounts = new Map(); // id -> { name, count }
-  const bestByExercise = new Map(); // id -> { weight, reps, e1, date, name }
+  const exerciseCounts = new Map();
+  const bestByExercise = new Map();
 
   const now = Date.now();
   const eightWeeks = 56 * 24 * 60 * 60 * 1000;
@@ -72,7 +77,6 @@ async function renderProgress(ctx) {
 
       if (s.weight > 0 && s.reps > 0) {
         const cur = bestByExercise.get(s.exerciseId);
-        // Track heaviest weight ever lifted on this exercise; tie-break by reps.
         if (!cur || s.weight > cur.weight || (s.weight === cur.weight && s.reps > cur.reps)) {
           bestByExercise.set(s.exerciseId, {
             weight: s.weight, reps: s.reps, date: w.startedAt, name: ex.name,
@@ -91,7 +95,7 @@ async function renderProgress(ctx) {
   const weekStart = (() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - d.getDay()); // Sunday-start
+    d.setDate(d.getDate() - d.getDay());
     return d.getTime();
   })();
   const workoutsThisWeek = workouts.filter((w) => w.startedAt >= weekStart).length;
@@ -139,11 +143,138 @@ async function renderProgress(ctx) {
         `).join('')}
       </div>
     ` : ''}
+
+    <div class="section">Workout History</div>
+    <div class="list" style="margin-bottom: 16px;">
+      ${workouts.map((w) => renderHistoryRow(w, setsByWorkout.get(w.id) || [], exMap)).join('')}
+    </div>
+  `;
+
+  for (const row of ctx.container.querySelectorAll('[data-workout-id]')) {
+    row.addEventListener('click', () => {
+      const wid = row.dataset.workoutId;
+      renderWorkoutDetail(ctx, wid).catch((err) => {
+        ctx.container.innerHTML = errorState(err);
+      });
+    });
+  }
+}
+
+function renderHistoryRow(workout, sets, exMap) {
+  const completed = sets.filter((s) => s.completed);
+  const volume = completed.reduce((sum, s) => sum + s.weight * s.reps, 0);
+  const duration = (workout.endedAt - workout.startedAt) / 1000;
+  const exNames = [];
+  const seen = new Set();
+  for (const s of sets) {
+    if (seen.has(s.exerciseId)) continue;
+    seen.add(s.exerciseId);
+    const ex = exMap.get(s.exerciseId);
+    if (ex) exNames.push(ex.name);
+    if (exNames.length >= 3) break;
+  }
+
+  return `
+    <button class="list-row" data-workout-id="${workout.id}">
+      <div class="row-main">
+        <div class="row-title" style="font-weight: 600;">${esc(workout.name)}</div>
+        <div class="row-subtitle" style="margin-top: 4px;">
+          ${formatDateShort(workout.startedAt)} · ${formatDurationShort(duration)} · ${completed.length} sets · ${formatVolume(volume)}
+        </div>
+        ${exNames.length > 0
+          ? `<div class="row-subtitle" style="margin-top: 4px;">${esc(exNames.join(' · '))}${seen.size > 3 ? ' …' : ''}</div>`
+          : ''}
+      </div>
+      <div class="chevron">›</div>
+    </button>
+  `;
+}
+
+async function renderWorkoutDetail(ctx, workoutId) {
+  ctx.setBack(() => renderProgress(ctx));
+  ctx.setAction({
+    html: trashIcon(),
+    onClick: async () => {
+      if (!confirm('Delete this workout?')) return;
+      await deleteWorkoutAndSets(workoutId);
+      emit('data:changed');
+    },
+  });
+
+  const [workouts, allExercises, allSets] = await Promise.all([
+    getFinishedWorkouts(),
+    getAll('exercises'),
+    getWorkoutSets(workoutId),
+  ]);
+
+  const workout = workouts.find((w) => w.id === workoutId);
+  if (!workout) {
+    ctx.container.innerHTML = errorState({ message: 'Workout not found.' });
+    return;
+  }
+
+  ctx.setTitle(workout.name);
+
+  const exMap = new Map(allExercises.map((e) => [e.id, e]));
+  const setsByExercise = new Map();
+  const exerciseIds = [];
+  for (const s of allSets) {
+    if (!setsByExercise.has(s.exerciseId)) {
+      setsByExercise.set(s.exerciseId, []);
+      exerciseIds.push(s.exerciseId);
+    }
+    setsByExercise.get(s.exerciseId).push(s);
+  }
+
+  const totalVolume = allSets
+    .filter((s) => s.completed)
+    .reduce((sum, s) => sum + s.weight * s.reps, 0);
+  const completedCount = allSets.filter((s) => s.completed).length;
+  const duration = (workout.endedAt - workout.startedAt) / 1000;
+
+  ctx.container.innerHTML = `
+    <div class="section">Summary</div>
+    <div class="form-section">
+      <div class="stat-row"><div class="stat-label">Date</div><div class="stat-value">${formatDateLong(workout.startedAt)}</div></div>
+      <div class="stat-row"><div class="stat-label">Duration</div><div class="stat-value">${formatDurationShort(duration)}</div></div>
+      <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${formatVolume(totalVolume)}</div></div>
+      <div class="stat-row"><div class="stat-label">Completed Sets</div><div class="stat-value">${completedCount}</div></div>
+    </div>
+
+    ${exerciseIds.map((eid) => {
+      const ex = exMap.get(eid);
+      const sets = setsByExercise.get(eid);
+      let workingIdx = 0;
+      let warmupIdx = 0;
+      return `
+        <div class="section">${esc(ex?.name ?? 'Unknown exercise')}</div>
+        <div class="form-section">
+          ${sets.map((s) => {
+            const type = s.setType || 'working';
+            const label = type === 'warmup' ? `W${++warmupIdx}` : String(++workingIdx);
+            return `
+              <div class="stat-row">
+                <div class="stat-label">Set ${label}</div>
+                <div class="stat-value">${formatLbs(s.weight)} × ${s.reps}${s.completed ? ' ✓' : ''}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }).join('')}
   `;
 }
 
 function shareIcon() {
   return `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M16 5l-1.42 1.42-1.59-1.59V16h-2V4.83L9.41 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z"/></svg>`;
+}
+
+function trashIcon() {
+  return `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" style="color: var(--red);"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>`;
+}
+
+function errorState(err) {
+  return `<div class="empty-state"><div class="empty-icon">!</div><h2>Couldn't load</h2><p>${esc(err.message || String(err))}</p></div>`;
 }
 
 function barChartSvg(data) {

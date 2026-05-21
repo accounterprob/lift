@@ -3,7 +3,6 @@ import { seedIfNeeded } from './seed.js';
 import { on, showToast, esc } from './utils.js';
 import { setCurrentTab } from './state.js';
 import { renderWorkoutTab } from './views/workout.js';
-import { renderHistoryTab } from './views/history.js';
 import { renderExercisesTab } from './views/exercises.js';
 import { renderProgressTab } from './views/progress.js';
 
@@ -39,7 +38,6 @@ window.visualViewport?.addEventListener('resize', syncAppHeight);
 
 const TABS = {
   workout: { title: 'Workout', render: renderWorkoutTab },
-  history: { title: 'History', render: renderHistoryTab },
   exercises: { title: 'Exercises', render: renderExercisesTab },
   progress: { title: 'Progress', render: renderProgressTab },
 };

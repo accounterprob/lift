@@ -148,7 +148,10 @@ button {
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
   border-top: 0.5px solid var(--separator);
-  height: calc(var(--tab-height) + env(safe-area-inset-bottom));
+  /* Use min-height so safe-area inset always adds height instead of eating
+     into the icon/label area when iOS reports a larger inset. */
+  min-height: calc(56px + env(safe-area-inset-bottom));
+  padding-top: 6px;
   padding-bottom: env(safe-area-inset-bottom);
   flex-shrink: 0;
 }
@@ -157,13 +160,14 @@ button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 2px;
+  justify-content: flex-start;
+  gap: 3px;
   flex: 1;
   color: var(--text-tertiary);
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.1px;
+  padding-bottom: 2px;
 }
 
 .tab[aria-selected="true"] {
