@@ -1,5 +1,5 @@
 import { getFinishedWorkouts, getAll } from '../db.js';
-import { esc, epley1RM, formatVolume, formatDateShort, formatLbs } from '../utils.js';
+import { esc, formatVolume, formatDateShort, formatLbs } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 
 export function renderProgressTab(ctx) {
@@ -71,11 +71,11 @@ async function renderProgress(ctx) {
       exerciseCounts.set(s.exerciseId, ec);
 
       if (s.weight > 0 && s.reps > 0) {
-        const e1 = epley1RM(s.weight, s.reps);
         const cur = bestByExercise.get(s.exerciseId);
-        if (!cur || e1 > cur.e1) {
+        // Track heaviest weight ever lifted on this exercise; tie-break by reps.
+        if (!cur || s.weight > cur.weight || (s.weight === cur.weight && s.reps > cur.reps)) {
           bestByExercise.set(s.exerciseId, {
-            weight: s.weight, reps: s.reps, e1, date: w.startedAt, name: ex.name,
+            weight: s.weight, reps: s.reps, date: w.startedAt, name: ex.name,
           });
         }
       }
@@ -86,7 +86,7 @@ async function renderProgress(ctx) {
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 5);
 
-  const prs = Array.from(bestByExercise.values()).sort((a, b) => b.e1 - a.e1);
+  const prs = Array.from(bestByExercise.values()).sort((a, b) => b.weight - a.weight);
 
   const weekStart = (() => {
     const d = new Date();
@@ -123,7 +123,7 @@ async function renderProgress(ctx) {
     ` : ''}
 
     ${prs.length > 0 ? `
-      <div class="section">Personal Records (est. 1RM)</div>
+      <div class="section">Personal Records (heaviest set)</div>
       <div class="form-section">
         ${prs.map((pr) => `
           <div class="stat-row" style="align-items: flex-start;">
@@ -132,8 +132,8 @@ async function renderProgress(ctx) {
               <div style="font-size: 12px; color: var(--text-tertiary);">${formatDateShort(pr.date)}</div>
             </div>
             <div class="stat-value" style="text-align: right;">
-              <div style="font-weight: 600; color: var(--text);">${Math.round(pr.e1)} lbs</div>
-              <div style="font-size: 12px; color: var(--text-tertiary);">${formatLbs(pr.weight)} × ${pr.reps}</div>
+              <div style="font-weight: 600; color: var(--text);">${formatLbs(pr.weight)} lbs</div>
+              <div style="font-size: 12px; color: var(--text-tertiary);">${pr.reps} rep${pr.reps === 1 ? '' : 's'}</div>
             </div>
           </div>
         `).join('')}

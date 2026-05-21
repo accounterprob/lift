@@ -2,7 +2,7 @@ import {
   getAll, getExerciseSets, del,
 } from '../db.js';
 import {
-  esc, formatLbs, formatDateShort, epley1RM, emit, formatWeight,
+  esc, formatLbs, formatDateShort, emit, formatWeight,
 } from '../utils.js';
 import { openAddCustomExercise } from './workout.js';
 
@@ -139,16 +139,18 @@ async function renderDetail(ctx, exerciseId) {
     .sort((a, b) => a.workout.startedAt - b.workout.startedAt);
 
   const totalVolume = completed.reduce((sum, s) => sum + s.weight * s.reps, 0);
-  const bestSet = completed.reduce((best, s) => (epley1RM(s.weight, s.reps) > epley1RM(best?.weight ?? 0, best?.reps ?? 0) ? s : best), null);
-  const best1RM = bestSet ? epley1RM(bestSet.weight, bestSet.reps) : 0;
+  // Heaviest set on this exercise (tie-break by reps)
+  const bestSet = completed.reduce(
+    (best, s) => (!best || s.weight > best.weight || (s.weight === best.weight && s.reps > best.reps)) ? s : best,
+    null
+  );
 
-  // 1RM per workout
+  // Heaviest weight per workout (for the progress chart)
   const workoutBest = new Map();
   for (const s of completed) {
     const cur = workoutBest.get(s.workoutId);
-    const e1 = epley1RM(s.weight, s.reps);
-    if (!cur || e1 > cur.value) {
-      workoutBest.set(s.workoutId, { date: s.workout.startedAt, value: e1 });
+    if (!cur || s.weight > cur.value) {
+      workoutBest.set(s.workoutId, { date: s.workout.startedAt, value: s.weight });
     }
   }
   const chartData = Array.from(workoutBest.values()).sort((a, b) => a.date - b.date);
@@ -168,13 +170,12 @@ async function renderDetail(ctx, exerciseId) {
         <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${Math.round(totalVolume).toLocaleString()} lbs</div></div>
         ${bestSet ? `
           <div class="stat-row"><div class="stat-label">Best Set</div><div class="stat-value">${formatLbs(bestSet.weight)} × ${bestSet.reps}</div></div>
-          <div class="stat-row"><div class="stat-label">Est. 1RM</div><div class="stat-value">${Math.round(best1RM)} lbs</div></div>
         ` : ''}
       </div>
     ` : ''}
 
     ${chartData.length >= 2 ? `
-      <div class="section">Estimated 1RM</div>
+      <div class="section">Heaviest set over time</div>
       <div class="chart-container">
         ${lineChartSvg(chartData)}
       </div>

@@ -7,17 +7,34 @@ import { renderHistoryTab } from './views/history.js';
 import { renderExercisesTab } from './views/exercises.js';
 import { renderProgressTab } from './views/progress.js';
 
-// iOS Safari and PWA standalone disagree about what `100vh`, `100dvh`, and
-// `position: fixed; bottom: 0` mean. Pin the app height to the actual visual
-// viewport — that's the full screen in PWA mode and the area above the
-// URL bar in Safari, both of which are exactly what we want.
+// iOS PWA standalone mode misreports `visualViewport.height` and `innerHeight`
+// — it leaves a phantom Safari-URL-bar-sized gap at the bottom. The OS-reported
+// `screen.height` doesn't lie, so use that in standalone mode. In Safari we
+// still want visualViewport.height (it correctly excludes the URL bar so the
+// tab bar lands above the chrome).
 function syncAppHeight() {
-  const h = window.visualViewport?.height ?? window.innerHeight;
+  const isStandalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    window.navigator.standalone === true;
+
+  let h;
+  if (isStandalone) {
+    // Take the largest reading available — screen.height is the OS-level
+    // logical-pixel height and is the most reliable in standalone mode.
+    h = Math.max(
+      window.innerHeight || 0,
+      window.visualViewport?.height || 0,
+      window.screen?.height || 0,
+    );
+  } else {
+    h = window.visualViewport?.height || window.innerHeight;
+  }
   document.documentElement.style.setProperty('--app-height', `${h}px`);
 }
 syncAppHeight();
 window.addEventListener('resize', syncAppHeight);
 window.addEventListener('orientationchange', syncAppHeight);
+window.addEventListener('pageshow', syncAppHeight);
 window.visualViewport?.addEventListener('resize', syncAppHeight);
 
 const TABS = {
