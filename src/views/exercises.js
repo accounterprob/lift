@@ -145,15 +145,16 @@ async function renderDetail(ctx, exerciseId) {
     null
   );
 
-  // Heaviest weight per workout (for the progress chart)
-  const workoutBest = new Map();
-  for (const s of completed) {
-    const cur = workoutBest.get(s.workoutId);
-    if (!cur || s.weight > cur.value) {
-      workoutBest.set(s.workoutId, { date: s.workout.startedAt, value: s.weight });
-    }
-  }
-  const chartData = Array.from(workoutBest.values()).sort((a, b) => a.date - b.date);
+  // Volume per set over time (weight × reps). Sets within the same workout
+  // get a small per-set offset so they don't stack on top of each other on
+  // the X axis.
+  const chartData = completed
+    .filter((s) => s.weight > 0 && s.reps > 0)
+    .map((s) => ({
+      date: s.workout.startedAt + (s.order || 0) * 60_000,
+      value: s.weight * s.reps,
+    }))
+    .sort((a, b) => a.date - b.date);
 
   ctx.container.innerHTML = `
     <div class="section">Details</div>
@@ -175,7 +176,7 @@ async function renderDetail(ctx, exerciseId) {
     ` : ''}
 
     ${chartData.length >= 2 ? `
-      <div class="section">Heaviest set over time</div>
+      <div class="section">Volume per set over time</div>
       <div class="chart-container">
         ${lineChartSvg(chartData)}
       </div>
@@ -248,10 +249,11 @@ export function lineChartSvg(data) {
     .join('');
 
   const ticks = 4;
+  const fmt = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
   const yLabels = Array.from({ length: ticks + 1 }, (_, i) => {
     const val = yMin + ((yMax - yMin) * i) / ticks;
     const y = yScale(val);
-    return `<text x="${pad.left - 6}" y="${y + 3}" text-anchor="end" class="chart-axis-label">${Math.round(val)}</text>`;
+    return `<text x="${pad.left - 6}" y="${y + 3}" text-anchor="end" class="chart-axis-label">${fmt(val)}</text>`;
   }).join('');
 
   const grid = Array.from({ length: ticks + 1 }, (_, i) => {
