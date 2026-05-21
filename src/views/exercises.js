@@ -145,16 +145,21 @@ async function renderDetail(ctx, exerciseId) {
     null
   );
 
-  // Volume per working set over time (weight × reps). Warmups are excluded
-  // because they're intentionally lighter and would zig-zag the line. Sets
-  // within the same workout get a small per-set offset so they don't stack on
-  // top of each other on the X axis.
-  const chartData = completed
-    .filter((s) => s.weight > 0 && s.reps > 0 && (s.setType || 'working') !== 'warmup')
-    .map((s) => ({
-      date: s.workout.startedAt + (s.order || 0) * 60_000,
-      value: s.weight * s.reps,
-    }))
+  // One point per workout: the AVERAGE working-set volume that day.
+  // Warmups are excluded and same-day sets are collapsed so the line tracks
+  // session-to-session progression instead of jumping around within a single
+  // workout.
+  const byWorkout = new Map();
+  for (const s of completed) {
+    if (s.weight <= 0 || s.reps <= 0) continue;
+    if ((s.setType || 'working') === 'warmup') continue;
+    const cur = byWorkout.get(s.workoutId) || { date: s.workout.startedAt, total: 0, count: 0 };
+    cur.total += s.weight * s.reps;
+    cur.count += 1;
+    byWorkout.set(s.workoutId, cur);
+  }
+  const chartData = Array.from(byWorkout.values())
+    .map(({ date, total, count }) => ({ date, value: total / count }))
     .sort((a, b) => a.date - b.date);
 
   ctx.container.innerHTML = `
@@ -177,7 +182,7 @@ async function renderDetail(ctx, exerciseId) {
     ` : ''}
 
     ${chartData.length > 0 ? `
-      <div class="section">Volume per working set</div>
+      <div class="section">Avg working-set volume per workout</div>
       <div class="chart-container">
         ${lineChartSvg(chartData)}
       </div>
