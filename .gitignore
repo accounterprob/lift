@@ -6,3 +6,7 @@
 lift-hevy-import.json
 lift-backup-*.json
 *.csv
+
+# Mac-only LaunchAgent + prune script. Local to your machine, not part of the
+# web app deployed to GitHub Pages.
+tools/
