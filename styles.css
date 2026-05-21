@@ -357,6 +357,23 @@ button {
   padding: 16px 16px 4px;
 }
 
+.workout-volume {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 0 16px 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.workout-volume:empty { display: none; }
+.workout-volume strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.workout-volume .vol-goal { color: var(--text-tertiary); }
+.workout-volume .vol-pct { color: var(--green); font-weight: 600; }
+
 .muscle-split {
   display: flex;
   flex-wrap: wrap;

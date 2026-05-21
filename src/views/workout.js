@@ -56,16 +56,75 @@ function renderStart(ctx) {
   ctx.container.querySelector('#start-btn').addEventListener('click', startNewWorkout);
 }
 
-async function startNewWorkout() {
-  const workout = {
-    id: uuid(),
-    name: todayWorkoutName(),
-    startedAt: Date.now(),
-    endedAt: null,
-    notes: '',
-  };
-  await put('workouts', workout);
-  emit('workout:changed');
+function startNewWorkout() {
+  openWorkoutTypePicker(async (name) => {
+    const workout = {
+      id: uuid(),
+      name,
+      startedAt: Date.now(),
+      endedAt: null,
+      notes: '',
+    };
+    await put('workouts', workout);
+    emit('workout:changed');
+  });
+}
+
+function openWorkoutTypePicker(onPick) {
+  const PRESETS = ['Chest Day', 'Leg Day', 'Back Day', 'Cardio Day'];
+  const dismiss = showSheet({
+    html: `
+      <div class="sheet-header">
+        <button class="btn-text" id="wt-cancel">Cancel</button>
+        <div class="title">New Workout</div>
+        <span style="width: 60px;"></span>
+      </div>
+      <div class="sheet-content">
+        <div class="section">Pick a type</div>
+        <div class="form-section">
+          ${PRESETS.map((p) => `
+            <button class="list-row button" data-name="${esc(p)}">
+              <div class="row-main"><div class="row-title" style="color: var(--accent);">${esc(p)}</div></div>
+            </button>
+          `).join('')}
+        </div>
+        <div class="section">Other</div>
+        <div class="form-section">
+          <div class="form-row">
+            <input id="wt-custom" placeholder="e.g. Push Day, Cardio" style="text-align: left;" />
+          </div>
+        </div>
+        <div class="action-section">
+          <button class="btn-primary" id="wt-go" disabled>Start with custom name</button>
+        </div>
+      </div>
+    `,
+    onMount(sheet) {
+      sheet.querySelector('#wt-cancel').addEventListener('click', () => dismiss());
+
+      for (const btn of sheet.querySelectorAll('.list-row.button[data-name]')) {
+        btn.addEventListener('click', () => {
+          const name = btn.dataset.name;
+          dismiss();
+          onPick(name);
+        });
+      }
+
+      const input = sheet.querySelector('#wt-custom');
+      const goBtn = sheet.querySelector('#wt-go');
+      input.addEventListener('input', () => {
+        goBtn.disabled = input.value.trim().length === 0;
+      });
+      goBtn.addEventListener('click', () => {
+        const name = input.value.trim();
+        if (!name) return;
+        dismiss();
+        onPick(name);
+      });
+
+      setTimeout(() => input.focus(), 50);
+    },
+  });
 }
 
 function renderActive(ctx, workout) {
@@ -80,6 +139,7 @@ function renderActive(ctx, workout) {
         <input class="workout-name-input" id="wname" value="${esc(workout.name)}" placeholder="Workout name" />
       </div>
       <div class="workout-hint">Tap a set number to mark it as a warmup.</div>
+      <div class="workout-volume" id="workout-volume"></div>
       <div class="muscle-split" id="muscle-split"></div>
       <div id="exercise-sections"></div>
       <div class="action-section">
@@ -99,12 +159,19 @@ function renderActive(ctx, workout) {
   updateTimer();
   timerInterval = setInterval(updateTimer, 1000);
 
-  // Save name on input
+  // Save name on input; recompute the goal whenever it changes
   const nameInput = ctx.container.querySelector('#wname');
   nameInput.addEventListener('input', debounce(async () => {
     workout.name = nameInput.value;
     await put('workouts', workout);
-  }, 250));
+    await refreshGoal();
+  }, 300));
+
+  let goalVolume = 0;
+  async function refreshGoal() {
+    goalVolume = await getGoalVolume(workout.name, workout.id);
+    updateRunningStats();
+  }
 
   // Buttons
   ctx.container.querySelector('#add-exercise-btn').addEventListener('click', async () => {
@@ -148,22 +215,42 @@ function renderActive(ctx, workout) {
       })
     );
     renderSections();
-    updateMuscleSplit();
+    await refreshGoal();
+    updateRunningStats();
   }
 
-  function updateMuscleSplit() {
+  function updateRunningStats() {
     const exMap = new Map(allExercises.map((e) => [e.id, e]));
     const byMuscle = new Map();
+    let totalVolume = 0;
     for (const s of sets) {
       if (!s.completed) continue;
-      if ((s.setType || 'working') === 'warmup') continue;
       const ex = exMap.get(s.exerciseId);
       if (!ex) continue;
       const vol = (s.weight || 0) * (s.reps || 0);
       if (vol <= 0) continue;
+      totalVolume += vol;  // total volume includes warmups now
+      // Per-muscle split also includes warmups (since user wants warmup weight counted)
       const muscle = primaryMuscleFor(ex);
       byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + vol);
     }
+
+    const volEl = ctx.container.querySelector('#workout-volume');
+    if (volEl) {
+      if (totalVolume > 0 || goalVolume > 0) {
+        const pct = goalVolume > 0 ? Math.round((totalVolume / goalVolume) * 100) : null;
+        const goalChunk = goalVolume > 0
+          ? `<div class="vol-goal">Goal <strong>${formatVolume(goalVolume)} lbs</strong>${pct !== null ? ` · <span class="vol-pct">${pct}%</span>` : ''}</div>`
+          : '';
+        volEl.innerHTML = `
+          <div class="vol-current">Total <strong>${formatVolume(totalVolume)} lbs</strong></div>
+          ${goalChunk}
+        `;
+      } else {
+        volEl.innerHTML = '';
+      }
+    }
+
     const sorted = [...byMuscle.entries()].sort((a, b) => b[1] - a[1]);
     const el = ctx.container.querySelector('#muscle-split');
     if (!el) return;
@@ -176,6 +263,23 @@ function renderActive(ctx, workout) {
         `<div class="muscle-split-pill"><strong>${esc(muscle)}</strong> ${formatVolume(vol)}</div>`
       )
       .join('');
+  }
+
+  /** Most-recent finished workout with the same name → its total completed volume. */
+  async function getGoalVolume(name, excludeId) {
+    if (!name) return 0;
+    const all = await getAll('workouts');
+    const candidates = all
+      .filter((w) => w.id !== excludeId && w.endedAt && w.name === name)
+      .sort((a, b) => b.startedAt - a.startedAt);
+    if (candidates.length === 0) return 0;
+    const recent = candidates[0];
+    const recentSets = sets.filter(() => false); // typing helper
+    const setsAll = await getAll('sets');
+    const recentVolume = setsAll
+      .filter((s) => s.workoutId === recent.id && s.completed)
+      .reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
+    return recentVolume;
   }
 
   async function maybeShowPRToast(set) {
@@ -195,14 +299,16 @@ function renderActive(ctx, workout) {
     );
     if (prior.length === 0) return;  // First time doing this exercise — don't claim a PR
 
-    const epley = (w, r) => r <= 1 ? w : w * (1 + r / 30);
     const maxWeight = prior.reduce((m, s) => Math.max(m, s.weight), 0);
-    const maxE1RM = prior.reduce((m, s) => Math.max(m, epley(s.weight, s.reps)), 0);
-    const e1rm = epley(set.weight, set.reps);
-
     const prs = [];
     if (set.weight > maxWeight) prs.push(`Heaviest ${formatWeight(set.weight)} lbs`);
-    if (e1rm > maxE1RM + 0.01) prs.push(`1RM ${Math.round(e1rm)} lbs`);
+    // Rep PR at this exact weight: did we ever do more reps at this weight or heavier?
+    const repsAtOrAbove = prior
+      .filter((s) => s.weight >= set.weight)
+      .reduce((m, s) => Math.max(m, s.reps), 0);
+    if (set.reps > repsAtOrAbove && set.weight > 0) {
+      prs.push(`${set.reps} reps @ ${formatWeight(set.weight)} lbs`);
+    }
 
     if (prs.length > 0) {
       showToast(`🏆 ${exercise.name} PR · ${prs.join(' · ')}`, 4500);
@@ -258,13 +364,13 @@ function renderActive(ctx, workout) {
       weightInput.addEventListener('input', debounce(async () => {
         set.weight = parseFloat(weightInput.value) || 0;
         await put('sets', set);
-        if (set.completed) updateMuscleSplit();
+        if (set.completed) updateRunningStats();
       }, 200));
 
       repsInput.addEventListener('input', debounce(async () => {
         set.reps = parseInt(repsInput.value, 10) || 0;
         await put('sets', set);
-        if (set.completed) updateMuscleSplit();
+        if (set.completed) updateRunningStats();
       }, 200));
 
       completeBtn.addEventListener('click', async () => {
@@ -273,7 +379,7 @@ function renderActive(ctx, workout) {
         await put('sets', set);
         setRow.classList.toggle('completed', set.completed);
         completeBtn.innerHTML = checkIcon(set.completed);
-        updateMuscleSplit();
+        updateRunningStats();
         if (!wasCompleted && set.completed) {
           await maybeShowPRToast(set);
         }
@@ -320,12 +426,26 @@ function renderActive(ctx, workout) {
 }
 
 function renderExerciseSection(exercise, sets, prevSets = []) {
-  // Working-set numbering excludes warmups; PREV matches by raw index.
+  // Warmups get their own counter (W1, W2, W3); working sets get 1, 2, 3.
+  // PREV matches by type AND position-within-type so W1 lines up with last
+  // workout's W1, working-set 2 lines up with last workout's working-set 2, etc.
   let workingIndex = 0;
-  const setBlocks = sets.map((s, i) => {
+  let warmupIndex = 0;
+  const setBlocks = sets.map((s) => {
     const type = s.setType || 'working';
-    const display = type === 'warmup' ? 'W' : String(++workingIndex);
-    return renderSetRow(s, display, prevSets[i]);
+    let display;
+    let positionInType;
+    if (type === 'warmup') {
+      warmupIndex += 1;
+      positionInType = warmupIndex;
+      display = `W${warmupIndex}`;
+    } else {
+      workingIndex += 1;
+      positionInType = workingIndex;
+      display = String(workingIndex);
+    }
+    const prev = findPrevSetByTypeAndPosition(type, positionInType, prevSets);
+    return renderSetRow(s, display, prev);
   }).join('');
 
   return `
@@ -345,6 +465,21 @@ function renderExerciseSection(exercise, sets, prevSets = []) {
       <button class="add-set-btn" data-exercise-id="${exercise?.id}">+ Add Set</button>
     </div>
   `;
+}
+
+/**
+ * Walk through prevSets (already sorted by `order`) and find the n-th
+ * set of the given type. positionInType is 1-indexed.
+ */
+function findPrevSetByTypeAndPosition(type, positionInType, prevSets) {
+  let count = 0;
+  for (const p of prevSets) {
+    if ((p.setType || 'working') === type) {
+      count += 1;
+      if (count === positionInType) return p;
+    }
+  }
+  return null;
 }
 
 function renderSetRow(set, displayLabel, prevSet) {
