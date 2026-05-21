@@ -3,6 +3,7 @@ import {
   getWorkoutSets,
   getExerciseSets,
   getAll,
+  getFinishedWorkouts,
   put,
   del,
   deleteWorkoutAndSets,
@@ -41,19 +42,38 @@ export function renderWorkoutTab(ctx) {
   };
 }
 
-function renderStart(ctx) {
+async function renderStart(ctx) {
   ctx.setTitle('Workout');
+  const finished = await getFinishedWorkouts();
+  const last = finished[0]; // already sorted newest first
+  const lastHint = last
+    ? `<div class="last-workout-hint">Last workout: <strong>${esc(last.name)}</strong> · ${relativeDay(last.startedAt)}</div>`
+    : '';
+
   ctx.container.innerHTML = `
     <div class="workout-start">
       <div class="icon">🏋️</div>
       <h2>No active workout</h2>
       <p>Start one to begin logging sets.</p>
+      ${lastHint}
     </div>
     <div class="action-section">
       <button id="start-btn" class="btn-primary">Start Empty Workout</button>
     </div>
   `;
   ctx.container.querySelector('#start-btn').addEventListener('click', startNewWorkout);
+}
+
+function relativeDay(ts) {
+  const now = new Date();
+  const then = new Date(ts);
+  const stripTime = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((stripTime(now) - stripTime(then)) / (24 * 60 * 60 * 1000));
+  if (diffDays === 0) return 'today';
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 14) return 'a week ago';
+  return `${Math.round(diffDays / 7)} weeks ago`;
 }
 
 function startNewWorkout() {
