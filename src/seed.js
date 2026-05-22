@@ -2,30 +2,42 @@ import { getAll, putMany } from './db.js';
 import { uuid } from './utils.js';
 
 /**
- * Stable color palette per muscle group. Used to color the per-muscle
- * progress bar segments + the muscle pills under it.
+ * Stable color palette per muscle group. Chosen so that any single workout's
+ * 4-5 muscle groups land on maximally distinct HUES (not just shades), which
+ * matters for colorblind viewing. Muscles trained on the same day get
+ * different hues; muscles on different days can repeat colors.
+ *
+ * Palette: Blue / Orange / Purple / Yellow / Pink / Brown / Green / Cyan / Red / Gray
  */
 const MUSCLE_COLORS = {
-  'Chest': '#ef4444',
-  'Lats': '#06b6d4',
-  'Mid Back': '#0ea5e9',
-  'Lower Back': '#6366f1',
-  'Traps': '#8b5cf6',
-  'Front Delts': '#f59e0b',
-  'Side Delts': '#fbbf24',
-  'Rear Delts': '#f97316',
-  'Biceps': '#a855f7',
-  'Triceps': '#ec4899',
-  'Quads': '#10b981',
-  'Hamstrings': '#14b8a6',
-  'Glutes': '#84cc16',
-  'Calves': '#22c55e',
-  'Abs': '#64748b',
-  'Adductors': '#475569',
-  'Forearms': '#71717a',
-  'Cardio': '#38bdf8',
-  'Other': '#6b7280',
+  // Leg Day: Quads, Hamstrings, Glutes, Calves, Adductors
+  'Quads':       '#3b82f6', // blue
+  'Hamstrings':  '#f97316', // orange
+  'Glutes':      '#a855f7', // purple
+  'Calves':      '#eab308', // yellow
+  'Adductors':   '#ec4899', // pink
+
+  // Chest Day: Chest, Triceps, Front Delts, Side Delts
+  'Chest':       '#3b82f6', // blue
+  'Triceps':     '#f97316', // orange
+  'Front Delts': '#a855f7', // purple
+  'Side Delts':  '#eab308', // yellow
+
+  // Back Day: Lats, Mid Back, Biceps, Rear Delts, Traps
+  'Lats':        '#3b82f6', // blue
+  'Mid Back':    '#f97316', // orange
+  'Biceps':      '#ec4899', // pink (so Back Day with Lats/MB/Biceps/RD/Traps stays distinct)
+  'Rear Delts':  '#a855f7', // purple
+  'Traps':       '#eab308', // yellow
+
+  // Misc / cross-day
+  'Lower Back':  '#92400e', // brown
+  'Forearms':    '#22c55e', // green
+  'Abs':         '#92400e', // brown
+  'Cardio':      '#06b6d4', // cyan
+  'Other':       '#6b7280', // gray
 };
+
 export function colorForMuscle(muscle) {
   return MUSCLE_COLORS[muscle] ?? '#6b7280';
 }

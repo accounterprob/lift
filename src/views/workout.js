@@ -159,7 +159,6 @@ function renderActive(ctx, workout) {
         <input class="workout-name-input" id="wname" value="${esc(workout.name)}" placeholder="Workout name" />
       </div>
       <div class="workout-progress" id="workout-progress"></div>
-      <div class="muscle-split" id="muscle-split"></div>
       <div id="exercise-sections"></div>
       <div class="action-section">
         <button id="add-exercise-btn" class="btn-secondary">+ Add Exercise</button>
@@ -254,9 +253,11 @@ function renderActive(ctx, workout) {
     }
     const sorted = [...byMuscle.entries()].sort((a, b) => b[1] - a[1]);
 
-    // Progress bar with one colored segment per muscle. Bar is normalized to
-    // max(goalVolume, totalVolume) so it always reaches 100% when current
-    // total meets or exceeds the goal.
+    // Progress bar with one colored segment per muscle. Each segment carries
+    // its own muscle name + volume INSIDE (visible only when the segment is
+    // wide enough; CSS hides overflow on narrow ones). Bar width is
+    // normalized to max(goalVolume, totalVolume) so we hit 100% exactly when
+    // the user matches their previous workout total.
     const progressEl = ctx.container.querySelector('#workout-progress');
     if (progressEl) {
       if (sorted.length === 0 && goalVolume === 0) {
@@ -265,7 +266,12 @@ function renderActive(ctx, workout) {
         const denom = Math.max(goalVolume, totalVolume, 1);
         const segments = sorted.map(([muscle, vol]) => {
           const widthPct = (vol / denom) * 100;
-          return `<div class="vol-segment" style="width: ${widthPct.toFixed(2)}%; background: ${colorForMuscle(muscle)};" title="${esc(muscle)}: ${formatVolume(vol)} lbs"></div>`;
+          return `
+            <div class="vol-segment" style="width: ${widthPct.toFixed(2)}%; background: ${colorForMuscle(muscle)};" title="${esc(muscle)}: ${formatVolume(vol)} lbs">
+              <span class="seg-name">${esc(muscle)}</span>
+              <span class="seg-vol">${formatVolume(vol)}</span>
+            </div>
+          `;
         }).join('');
         let label;
         if (goalVolume > 0) {
@@ -282,18 +288,6 @@ function renderActive(ctx, workout) {
         `;
       }
     }
-
-    const el = ctx.container.querySelector('#muscle-split');
-    if (!el) return;
-    if (sorted.length === 0) {
-      el.innerHTML = '';
-      return;
-    }
-    el.innerHTML = sorted
-      .map(([muscle, vol]) =>
-        `<div class="muscle-split-pill" style="--muscle-color: ${colorForMuscle(muscle)};"><strong>${esc(muscle)}</strong> ${formatVolume(vol)}</div>`
-      )
-      .join('');
   }
 
   /** Most-recent finished workout with the same name → its total completed volume. */
