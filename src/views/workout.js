@@ -286,7 +286,46 @@ function renderActive(ctx, workout) {
           <div class="vol-bar">${segments}</div>
           <div class="vol-label">${label}</div>
         `;
+        // Auto-shrink each segment's name until the full word fits.
+        // Falls back to hiding the name (volume-only) if even at min size
+        // the name would overflow.
+        requestAnimationFrame(() => {
+          for (const seg of progressEl.querySelectorAll('.vol-segment')) {
+            fitSegmentLabel(seg);
+          }
+        });
       }
+    }
+  }
+
+  function fitSegmentLabel(segEl) {
+    const nameEl = segEl.querySelector('.seg-name');
+    const volEl = segEl.querySelector('.seg-vol');
+    const innerW = segEl.clientWidth - 6; // padding allowance
+    if (innerW <= 0) return;
+
+    // Volume is the priority: shrink it from 10px down to 8px until it fits.
+    if (volEl) {
+      let volSize = 10;
+      volEl.style.fontSize = `${volSize}px`;
+      while (volEl.scrollWidth > innerW && volSize > 8) {
+        volSize -= 0.5;
+        volEl.style.fontSize = `${volSize}px`;
+      }
+    }
+
+    if (!nameEl) return;
+
+    // Name is shown only if it can fit at 8px or larger. Otherwise hide it.
+    let nameSize = 11;
+    nameEl.style.display = '';
+    nameEl.style.fontSize = `${nameSize}px`;
+    while (nameEl.scrollWidth > innerW && nameSize > 8) {
+      nameSize -= 0.5;
+      nameEl.style.fontSize = `${nameSize}px`;
+    }
+    if (nameEl.scrollWidth > innerW) {
+      nameEl.style.display = 'none';
     }
   }
 

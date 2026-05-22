@@ -402,11 +402,12 @@ button {
 .vol-segment .seg-name {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.1px;
+  letter-spacing: -0.1px;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  /* No text-overflow: ellipsis — JS shrinks the font until the full name
+     fits, or hides the name entirely if even 8px would still overflow. */
 }
 .vol-segment .seg-vol {
   font-size: 10px;
@@ -414,7 +415,6 @@ button {
   opacity: 0.95;
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .vol-label {
