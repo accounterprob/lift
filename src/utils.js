@@ -119,8 +119,24 @@ export function showSheet({ html, onMount }) {
   const sheet = backdrop.querySelector('.sheet');
   sheet.innerHTML = html;
 
+  // Track the iOS on-screen keyboard so the sheet height shrinks above it
+  // (iOS PWA standalone doesn't fire window.resize on keyboard show, but
+  // visualViewport does). Without this, the picker's list scrolls behind
+  // the keyboard and becomes unreachable.
+  function syncHeight() {
+    const vv = window.visualViewport;
+    const h = vv ? vv.height : window.innerHeight;
+    sheet.style.maxHeight = `${h - 12}px`;
+  }
+  syncHeight();
+  const vv = window.visualViewport;
+  vv?.addEventListener('resize', syncHeight);
+  vv?.addEventListener('scroll', syncHeight);
+
   function dismiss() {
     backdrop.remove();
+    vv?.removeEventListener('resize', syncHeight);
+    vv?.removeEventListener('scroll', syncHeight);
   }
 
   backdrop.addEventListener('click', (e) => {

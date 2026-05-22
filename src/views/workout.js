@@ -301,14 +301,14 @@ function renderActive(ctx, workout) {
   function fitSegmentLabel(segEl) {
     const nameEl = segEl.querySelector('.seg-name');
     const volEl = segEl.querySelector('.seg-vol');
-    const innerW = segEl.clientWidth - 6; // padding allowance
+    const innerW = segEl.clientWidth - 4; // small padding allowance
     if (innerW <= 0) return;
 
-    // Volume is the priority: shrink it from 10px down to 8px until it fits.
+    // Volume first: shrink 10px → 6px until it fits.
     if (volEl) {
       let volSize = 10;
       volEl.style.fontSize = `${volSize}px`;
-      while (volEl.scrollWidth > innerW && volSize > 8) {
+      while (volEl.scrollWidth > innerW && volSize > 6) {
         volSize -= 0.5;
         volEl.style.fontSize = `${volSize}px`;
       }
@@ -316,16 +316,15 @@ function renderActive(ctx, workout) {
 
     if (!nameEl) return;
 
-    // Name is shown only if it can fit at 8px or larger. Otherwise hide it.
-    let nameSize = 11;
+    // Name: shrink 11px → 5px until it fits. Never hide — even at 5px the
+    // user wants to see the muscle name. (5px is borderline-readable on
+    // a 3x retina display but still better than nothing.)
     nameEl.style.display = '';
+    let nameSize = 11;
     nameEl.style.fontSize = `${nameSize}px`;
-    while (nameEl.scrollWidth > innerW && nameSize > 8) {
+    while (nameEl.scrollWidth > innerW && nameSize > 5) {
       nameSize -= 0.5;
       nameEl.style.fontSize = `${nameSize}px`;
-    }
-    if (nameEl.scrollWidth > innerW) {
-      nameEl.style.display = 'none';
     }
   }
 
