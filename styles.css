@@ -366,6 +366,19 @@ button {
   font-weight: 600;
 }
 
+.next-workout-hint {
+  margin-top: 8px;
+  padding: 8px 14px;
+  background: var(--accent);
+  color: #ffffff;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.next-workout-hint strong {
+  font-weight: 700;
+}
+
 .active-workout {
   padding: 0 0 24px;
 }

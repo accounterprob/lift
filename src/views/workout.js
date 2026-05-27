@@ -45,10 +45,14 @@ export function renderWorkoutTab(ctx) {
 async function renderStart(ctx) {
   ctx.setTitle('Workout');
   const finished = await getFinishedWorkouts();
-  const last = finished[0]; // already sorted newest first
+  const last = finished[0]; // sorted newest first
+  const lastRotation = lastRotationWorkout(finished);
+  const todayName = lastRotation ? nextInRotation(lastRotation.normalized) : ROTATION[0];
+
   const lastHint = last
-    ? `<div class="last-workout-hint">Last workout: <strong>${esc(last.name)}</strong> · ${relativeDay(last.startedAt)}</div>`
+    ? `<div class="last-workout-hint">Last: <strong>${esc(last.name)}</strong> · ${relativeDay(last.startedAt)}</div>`
     : '';
+  const todayHint = `<div class="next-workout-hint">Today: <strong>${esc(todayName)}</strong></div>`;
 
   ctx.container.innerHTML = `
     <div class="workout-start">
@@ -56,12 +60,45 @@ async function renderStart(ctx) {
       <h2>No active workout</h2>
       <p>Start one to begin logging sets.</p>
       ${lastHint}
+      ${todayHint}
     </div>
     <div class="action-section">
       <button id="start-btn" class="btn-primary">Start Empty Workout</button>
     </div>
   `;
-  ctx.container.querySelector('#start-btn').addEventListener('click', startNewWorkout);
+  ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName));
+}
+
+// PPL rotation: Chest → Legs → Back/Bi → Chest → ...
+const ROTATION = ['Chest Day', 'Leg Day', 'Back/Bi Day'];
+
+/**
+ * Maps any workout name (current or historical) to its rotation slot, or
+ * null if it doesn't fit the cycle (e.g. "Cardio Day", custom names).
+ */
+function normalizeDayName(name) {
+  if (!name) return null;
+  const lower = name.toLowerCase();
+  if (lower.includes('chest')) return 'Chest Day';
+  if (lower.includes('leg') && !lower.includes('curl') && !lower.includes('extension')) return 'Leg Day';
+  if (lower.includes('back')) return 'Back/Bi Day';  // matches "Back Day" + "Back/Bi Day"
+  if (lower.includes('pull')) return 'Back/Bi Day';  // legacy "Pull Day"
+  if (lower.includes('push')) return 'Chest Day';    // legacy "Push Day"
+  return null;
+}
+
+function lastRotationWorkout(finishedWorkouts) {
+  for (const w of finishedWorkouts) {
+    const norm = normalizeDayName(w.name);
+    if (norm) return { name: w.name, normalized: norm };
+  }
+  return null;
+}
+
+function nextInRotation(currentNormalized) {
+  const idx = ROTATION.indexOf(currentNormalized);
+  if (idx === -1) return ROTATION[0];
+  return ROTATION[(idx + 1) % ROTATION.length];
 }
 
 function relativeDay(ts) {
@@ -76,8 +113,8 @@ function relativeDay(ts) {
   return `${Math.round(diffDays / 7)} weeks ago`;
 }
 
-function startNewWorkout() {
-  openWorkoutTypePicker(async (name) => {
+function startNewWorkout(recommendedName) {
+  openWorkoutTypePicker(recommendedName, async (name) => {
     const workout = {
       id: uuid(),
       name,
@@ -90,8 +127,8 @@ function startNewWorkout() {
   });
 }
 
-function openWorkoutTypePicker(onPick) {
-  const PRESETS = ['Chest Day', 'Leg Day', 'Back Day', 'Cardio Day'];
+function openWorkoutTypePicker(recommendedName, onPick) {
+  const PRESETS = ['Chest Day', 'Leg Day', 'Back/Bi Day', 'Cardio Day'];
   const dismiss = showSheet({
     html: `
       <div class="sheet-header">
@@ -102,11 +139,15 @@ function openWorkoutTypePicker(onPick) {
       <div class="sheet-content">
         <div class="section">Pick a type</div>
         <div class="form-section">
-          ${PRESETS.map((p) => `
-            <button class="list-row button" data-name="${esc(p)}">
-              <div class="row-main"><div class="row-title" style="color: var(--accent);">${esc(p)}</div></div>
-            </button>
-          `).join('')}
+          ${PRESETS.map((p) => {
+            const isRecommended = p === recommendedName;
+            const tag = isRecommended ? ' <span class="badge">Today</span>' : '';
+            return `
+              <button class="list-row button" data-name="${esc(p)}">
+                <div class="row-main"><div class="row-title" style="color: var(--accent);">${esc(p)}${tag}</div></div>
+              </button>
+            `;
+          }).join('')}
         </div>
         <div class="section">Other</div>
         <div class="form-section">
@@ -331,13 +372,16 @@ function renderActive(ctx, workout) {
   /** Most-recent finished workout with the same name → its total completed volume. */
   async function getGoalVolume(name, excludeId) {
     if (!name) return 0;
+    const norm = normalizeDayName(name);
     const all = await getAll('workouts');
+    // Match by exact name OR by normalized rotation slot — so a "Back/Bi Day"
+    // can use a prior "Back Day" total as its goal, and vice versa.
     const candidates = all
-      .filter((w) => w.id !== excludeId && w.endedAt && w.name === name)
+      .filter((w) => w.id !== excludeId && w.endedAt)
+      .filter((w) => w.name === name || (norm && normalizeDayName(w.name) === norm))
       .sort((a, b) => b.startedAt - a.startedAt);
     if (candidates.length === 0) return 0;
     const recent = candidates[0];
-    const recentSets = sets.filter(() => false); // typing helper
     const setsAll = await getAll('sets');
     const recentVolume = setsAll
       .filter((s) => s.workoutId === recent.id && s.completed)
