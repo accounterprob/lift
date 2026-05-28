@@ -1,34 +1,38 @@
 :root {
-  --bg: #f2f2f7;
+  --bg: #eaf3e4;
   --card: #ffffff;
-  --card-2: #f9f9fb;
-  --text: #000000;
-  --text-secondary: #6c6c70;
-  --text-tertiary: #8e8e93;
-  --separator: rgba(60, 60, 67, 0.18);
-  --accent: #007aff;
-  --green: #34c759;
-  --red: #ff3b30;
+  --card-2: #f3f9ef;
+  --text: #14241a;
+  --text-secondary: #586b5e;
+  --text-tertiary: #8a978c;
+  --separator: rgba(40, 75, 50, 0.14);
+  --accent: #1aa459;
+  --accent-2: #7c5cff;
+  --green: #2bbd63;
+  --red: #ff453a;
   --orange: #ff9500;
   --yellow: #ffcc00;
-  --fill-1: rgba(120, 120, 128, 0.20);
-  --fill-2: rgba(120, 120, 128, 0.12);
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --fill-1: rgba(50, 120, 75, 0.18);
+  --fill-2: rgba(50, 120, 75, 0.10);
+  --shadow: 0 2px 10px rgba(30, 80, 45, 0.07);
   --nav-height: 52px;
   --tab-height: 56px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #000000;
-    --card: #1c1c1e;
-    --card-2: #2c2c2e;
-    --text: #ffffff;
-    --text-secondary: #aeaeb2;
-    --text-tertiary: #8e8e93;
-    --separator: rgba(84, 84, 88, 0.65);
-    --fill-1: rgba(120, 120, 128, 0.36);
-    --fill-2: rgba(120, 120, 128, 0.20);
+    --bg: #0c130e;
+    --card: #16211a;
+    --card-2: #1f2b23;
+    --text: #f0f5f1;
+    --text-secondary: #a9b6ac;
+    --text-tertiary: #7f8c82;
+    --separator: rgba(120, 165, 130, 0.22);
+    --accent: #2fd07f;
+    --accent-2: #9d88ff;
+    --green: #34d97a;
+    --fill-1: rgba(120, 175, 135, 0.22);
+    --fill-2: rgba(120, 175, 135, 0.12);
     --shadow: none;
   }
 }
@@ -204,7 +208,7 @@ button {
 .list {
   background: var(--card);
   margin: 0 16px 16px;
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
   box-shadow: var(--shadow);
 }
@@ -269,21 +273,33 @@ button {
   display: block;
   width: 100%;
   padding: 14px 20px;
-  background: var(--accent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, #ffffff) 0%, var(--accent) 100%);
   color: white;
   font-size: 17px;
   font-weight: 600;
-  border-radius: 12px;
+  border-radius: 16px;
   text-align: center;
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.btn-primary:active {
+  transform: translateY(1px);
 }
 
 .btn-primary:disabled {
   background: var(--fill-1);
   color: var(--text-tertiary);
+  box-shadow: none;
 }
 
-.btn-primary.green { background: var(--green); }
-.btn-primary.red { background: var(--red); }
+.btn-primary.green {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--green) 82%, #ffffff) 0%, var(--green) 100%);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--green) 32%, transparent);
+}
+.btn-primary.red {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--red) 82%, #ffffff) 0%, var(--red) 100%);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--red) 32%, transparent);
+}
 
 .btn-secondary {
   display: block;
@@ -292,8 +308,8 @@ button {
   background: var(--fill-2);
   color: var(--accent);
   font-size: 16px;
-  font-weight: 500;
-  border-radius: 10px;
+  font-weight: 600;
+  border-radius: 14px;
   text-align: center;
 }
 
@@ -368,12 +384,13 @@ button {
 
 .next-workout-hint {
   margin-top: 8px;
-  padding: 8px 14px;
-  background: var(--accent);
+  padding: 9px 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 80%, #ffffff) 0%, var(--accent) 100%);
   color: #ffffff;
   border-radius: 999px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 .next-workout-hint strong {
   font-weight: 700;
@@ -495,7 +512,7 @@ button {
 .exercise-section {
   margin: 12px 16px;
   background: var(--card);
-  border-radius: 14px;
+  border-radius: 18px;
   overflow: hidden;
   box-shadow: var(--shadow);
 }
@@ -828,7 +845,7 @@ button {
   padding: 16px;
   background: var(--card);
   margin: 0 16px 16px;
-  border-radius: 12px;
+  border-radius: 16px;
   box-shadow: var(--shadow);
 }
 
@@ -902,8 +919,9 @@ button {
 .form-section {
   background: var(--card);
   margin: 8px 16px;
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
+  box-shadow: var(--shadow);
 }
 
 .form-row {
@@ -959,11 +977,11 @@ button {
 .badge {
   display: inline-block;
   padding: 2px 8px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--accent-2) 16%, transparent);
+  color: var(--accent-2);
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.3px;
   margin-left: 6px;
 }
