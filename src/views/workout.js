@@ -50,10 +50,15 @@ async function renderStart(ctx) {
   const lastRotation = lastRotationWorkout(finished);
   const todayName = lastRotation ? nextInRotation(lastRotation.normalized) : ROTATION[0];
 
+  // If the last rotation workout was already done today, the recommendation
+  // is for the NEXT session ("Tomorrow"), not today.
+  const doneToday = lastRotation && relativeDay(lastRotation.startedAt) === 'today';
+  const hintLabel = doneToday ? 'Tomorrow' : 'Today';
+
   const lastHint = last
     ? `<div class="last-workout-hint">Last: <strong>${esc(last.name)}</strong> · ${relativeDay(last.startedAt)}</div>`
     : '';
-  const todayHint = `<div class="next-workout-hint">Today: <strong>${esc(todayName)}</strong></div>`;
+  const todayHint = `<div class="next-workout-hint">${hintLabel}: <strong>${esc(todayName)}</strong></div>`;
 
   ctx.container.innerHTML = `
     <div class="workout-start">
@@ -67,7 +72,7 @@ async function renderStart(ctx) {
       <button id="start-btn" class="btn-primary">Start Empty Workout</button>
     </div>
   `;
-  ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName));
+  ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName, hintLabel));
 }
 
 // PPL rotation: Chest → Legs → Back/Bi → Chest → ...
@@ -91,7 +96,7 @@ function normalizeDayName(name) {
 function lastRotationWorkout(finishedWorkouts) {
   for (const w of finishedWorkouts) {
     const norm = normalizeDayName(w.name);
-    if (norm) return { name: w.name, normalized: norm };
+    if (norm) return { name: w.name, normalized: norm, startedAt: w.startedAt };
   }
   return null;
 }
@@ -114,7 +119,7 @@ function relativeDay(ts) {
   return `${Math.round(diffDays / 7)} weeks ago`;
 }
 
-function startNewWorkout(recommendedName) {
+function startNewWorkout(recommendedName, badgeLabel = 'Today') {
   openWorkoutTypePicker(recommendedName, async (name) => {
     const workout = {
       id: uuid(),
@@ -125,10 +130,10 @@ function startNewWorkout(recommendedName) {
     };
     await put('workouts', workout);
     emit('workout:changed');
-  });
+  }, badgeLabel);
 }
 
-function openWorkoutTypePicker(recommendedName, onPick) {
+function openWorkoutTypePicker(recommendedName, onPick, badgeLabel = 'Today') {
   const PRESETS = ['Chest Day', 'Leg Day', 'Back/Bi Day', 'Cardio Day'];
   const dismiss = showSheet({
     html: `
@@ -142,7 +147,7 @@ function openWorkoutTypePicker(recommendedName, onPick) {
         <div class="form-section">
           ${PRESETS.map((p) => {
             const isRecommended = p === recommendedName;
-            const tag = isRecommended ? ' <span class="badge">Today</span>' : '';
+            const tag = isRecommended ? ` <span class="badge">${esc(badgeLabel)}</span>` : '';
             return `
               <button class="list-row button" data-name="${esc(p)}">
                 <div class="row-main"><div class="row-title" style="color: var(--accent);">${esc(p)}${tag}</div></div>
