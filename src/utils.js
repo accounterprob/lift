@@ -121,24 +121,23 @@ export function showSheet({ html, onMount }) {
 
   const topInset = readSafeAreaTop();
 
-  // Resize the backdrop to exactly the VISUAL viewport (the area not covered
-  // by the keyboard). Because the sheet bottom-aligns inside the backdrop,
-  // this makes it sit flush above the keyboard with no gap, and capping the
-  // sheet's height below the status bar / Dynamic Island keeps its header
-  // (Cancel / Add / Done) tappable. iOS PWA standalone doesn't fire
-  // window.resize on keyboard show — visualViewport does.
+  // Keep the backdrop covering the FULL layout viewport so its dim overlay
+  // never exposes a strip of the page below the sheet. To make the
+  // bottom-aligned sheet sit flush above the keyboard, pad the backdrop's
+  // bottom by the keyboard's overlap height (the part of the viewport the
+  // keyboard now covers). Capping the sheet's height below the status bar /
+  // Dynamic Island keeps its header (Cancel / Add / Done) tappable. iOS PWA
+  // standalone doesn't fire window.resize on keyboard show — visualViewport
+  // does.
   function syncHeight() {
     const vv = window.visualViewport;
     if (!vv) {
       sheet.style.maxHeight = `${window.innerHeight - topInset - 10}px`;
       return;
     }
-    backdrop.style.top = `${vv.offsetTop}px`;
-    backdrop.style.left = `${vv.offsetLeft}px`;
-    backdrop.style.width = `${vv.width}px`;
-    backdrop.style.height = `${vv.height}px`;
-    backdrop.style.right = 'auto';
-    backdrop.style.bottom = 'auto';
+    const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
+    const keyboardInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop);
+    backdrop.style.paddingBottom = `${keyboardInset}px`;
     sheet.style.maxHeight = `${vv.height - topInset - 10}px`;
   }
   syncHeight();
