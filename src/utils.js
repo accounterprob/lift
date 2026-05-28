@@ -121,14 +121,14 @@ export function showSheet({ html, onMount }) {
 
   const topInset = readSafeAreaTop();
 
-  // Keep the backdrop covering the FULL layout viewport so its dim overlay
-  // never exposes a strip of the page below the sheet. To make the
-  // bottom-aligned sheet sit flush above the keyboard, pad the backdrop's
-  // bottom by the keyboard's overlap height (the part of the viewport the
-  // keyboard now covers). Capping the sheet's height below the status bar /
-  // Dynamic Island keeps its header (Cancel / Add / Done) tappable. iOS PWA
-  // standalone doesn't fire window.resize on keyboard show — visualViewport
-  // does.
+  // The backdrop always covers the FULL layout viewport (its dim never
+  // exposes the page). The sheet bottom-aligns to the very bottom of the
+  // viewport so its BACKGROUND fills all the way down — behind the keyboard
+  // AND its accessory toolbar — leaving no gap. To keep the sheet's CONTENT
+  // above the keyboard, we pad the sheet's bottom by the keyboard's overlap
+  // height. Capping the height below the status bar / Dynamic Island keeps
+  // the header (Cancel / Add / Done) tappable. iOS PWA standalone doesn't
+  // fire window.resize on keyboard show — visualViewport does.
   function syncHeight() {
     const vv = window.visualViewport;
     if (!vv) {
@@ -137,8 +137,15 @@ export function showSheet({ html, onMount }) {
     }
     const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
     const keyboardInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop);
-    backdrop.style.paddingBottom = `${keyboardInset}px`;
-    sheet.style.maxHeight = `${vv.height - topInset - 10}px`;
+    backdrop.style.paddingBottom = '0px';
+    if (keyboardInset > 0) {
+      // box-sizing is border-box, so max-height includes the bottom padding.
+      sheet.style.paddingBottom = `${keyboardInset}px`;
+      sheet.style.maxHeight = `${vv.height - topInset - 10 + keyboardInset}px`;
+    } else {
+      sheet.style.paddingBottom = '';
+      sheet.style.maxHeight = `${vv.height - topInset - 10}px`;
+    }
   }
   syncHeight();
   const vv = window.visualViewport;
