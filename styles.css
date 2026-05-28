@@ -273,32 +273,28 @@ button {
   display: block;
   width: 100%;
   padding: 14px 20px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, #ffffff) 0%, var(--accent) 100%);
+  background: var(--accent);
   color: white;
   font-size: 17px;
   font-weight: 600;
-  border-radius: 16px;
+  border-radius: 14px;
   text-align: center;
-  box-shadow: 0 5px 16px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
 .btn-primary:active {
-  transform: translateY(1px);
+  opacity: 0.85;
 }
 
 .btn-primary:disabled {
   background: var(--fill-1);
   color: var(--text-tertiary);
-  box-shadow: none;
 }
 
 .btn-primary.green {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--green) 82%, #ffffff) 0%, var(--green) 100%);
-  box-shadow: 0 5px 16px color-mix(in srgb, var(--green) 32%, transparent);
+  background: var(--green);
 }
 .btn-primary.red {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--red) 82%, #ffffff) 0%, var(--red) 100%);
-  box-shadow: 0 5px 16px color-mix(in srgb, var(--red) 32%, transparent);
+  background: var(--red);
 }
 
 .btn-secondary {
@@ -385,12 +381,11 @@ button {
 .next-workout-hint {
   margin-top: 8px;
   padding: 9px 16px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 80%, #ffffff) 0%, var(--accent) 100%);
+  background: var(--accent);
   color: #ffffff;
   border-radius: 999px;
   font-size: 14px;
   font-weight: 600;
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 32%, transparent);
 }
 .next-workout-hint strong {
   font-weight: 700;
