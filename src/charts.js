@@ -32,7 +32,7 @@ export function mountTimeSeriesChart(container, rawPoints, opts = {}) {
     .map((d) => ({ date: d.date, value: d.total / d.count }))
     .sort((a, b) => a.date - b.date);
 
-  const defaultKey = opts.defaultPeriod || '1Y';
+  const defaultKey = opts.defaultPeriod || 'All';
   let activeIdx = Math.max(0, PERIODS.findIndex((p) => p.key === defaultKey));
   const maxIdx = PERIODS.length - 1;
 
