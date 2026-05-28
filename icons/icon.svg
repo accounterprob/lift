@@ -1,6 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect width="1024" height="1024" rx="220" fill="#007aff"/>
-  <g fill="white" transform="translate(512 512)">
+  <style>
+    .bg { fill: #1aa459; }
+    .bar { fill: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #000000; }
+      .bar { fill: #2fd07f; }
+    }
+  </style>
+  <rect class="bg" width="1024" height="1024" rx="220"/>
+  <g class="bar" transform="translate(512 512)">
     <rect x="-280" y="-32" width="560" height="64" rx="12"/>
     <rect x="-340" y="-112" width="56" height="224" rx="14"/>
     <rect x="-396" y="-152" width="56" height="304" rx="14"/>
