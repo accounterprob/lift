@@ -119,23 +119,27 @@ export function showSheet({ html, onMount }) {
   const sheet = backdrop.querySelector('.sheet');
   sheet.innerHTML = html;
 
-  // Track the iOS on-screen keyboard so the sheet height shrinks above it
-  // (iOS PWA standalone doesn't fire window.resize on keyboard show, but
-  // visualViewport does). Without this, the picker's list scrolls behind
-  // the keyboard and becomes unreachable.
+  const topInset = readSafeAreaTop();
+
+  // Resize the backdrop to exactly the VISUAL viewport (the area not covered
+  // by the keyboard). Because the sheet bottom-aligns inside the backdrop,
+  // this makes it sit flush above the keyboard with no gap, and capping the
+  // sheet's height below the status bar / Dynamic Island keeps its header
+  // (Cancel / Add / Done) tappable. iOS PWA standalone doesn't fire
+  // window.resize on keyboard show — visualViewport does.
   function syncHeight() {
     const vv = window.visualViewport;
     if (!vv) {
-      sheet.style.maxHeight = `${window.innerHeight - 12}px`;
+      sheet.style.maxHeight = `${window.innerHeight - topInset - 10}px`;
       return;
     }
-    // Keyboard height = layout viewport minus the visible viewport. Push the
-    // sheet up by that (margin-bottom, since the backdrop bottom-aligns it)
-    // AND cap height to the visible area, so the scrollable list always sits
-    // fully above the keyboard instead of behind it.
-    const keyboard = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    sheet.style.maxHeight = `${vv.height - 12}px`;
-    sheet.style.marginBottom = `${keyboard}px`;
+    backdrop.style.top = `${vv.offsetTop}px`;
+    backdrop.style.left = `${vv.offsetLeft}px`;
+    backdrop.style.width = `${vv.width}px`;
+    backdrop.style.height = `${vv.height}px`;
+    backdrop.style.right = 'auto';
+    backdrop.style.bottom = 'auto';
+    sheet.style.maxHeight = `${vv.height - topInset - 10}px`;
   }
   syncHeight();
   const vv = window.visualViewport;
@@ -155,6 +159,16 @@ export function showSheet({ html, onMount }) {
   document.body.appendChild(backdrop);
   onMount?.(sheet, dismiss);
   return dismiss;
+}
+
+/** Reads the px value of env(safe-area-inset-top) via a throwaway probe element. */
+function readSafeAreaTop() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top);';
+  document.body.appendChild(probe);
+  const px = probe.offsetHeight || 0;
+  probe.remove();
+  return px;
 }
 
 /** Confirm dialog backed by window.confirm — simple but works on iOS. */
