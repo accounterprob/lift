@@ -2,11 +2,11 @@
 // Used by the per-exercise detail and the Progress volume trend.
 
 const PERIODS = [
-  { key: '1M', days: 30 },
-  { key: 'YTD', ytd: true },
-  { key: '1Y', days: 365 },
-  { key: '3Y', days: 365 * 3 },
-  { key: 'All', all: true },
+  { key: '1W', tick: '1W', days: 7 },
+  { key: '1M', tick: '1M', days: 30 },
+  { key: '3M', tick: '3M', days: 90 },
+  { key: '1Y', tick: '1Y', days: 365 },
+  { key: 'All', tick: 'All', all: true },
 ];
 
 /**
@@ -32,41 +32,50 @@ export function mountTimeSeriesChart(container, rawPoints, opts = {}) {
     .map((d) => ({ date: d.date, value: d.total / d.count }))
     .sort((a, b) => a.date - b.date);
 
-  // Only offer periods that actually contain data; always offer "All".
-  const span = points.length ? Date.now() - points[0].date : 0;
-  const available = PERIODS.filter((p) => {
-    if (p.all) return true;
-    if (p.ytd) return true;
-    return span >= p.days * 86400000 * 0.5; // show if data spans at least half the window
-  });
-  let active = opts.defaultPeriod && available.some((p) => p.key === opts.defaultPeriod)
-    ? opts.defaultPeriod
-    : (available.find((p) => p.key === '1Y') ? '1Y' : 'All');
+  const defaultKey = opts.defaultPeriod || '1Y';
+  let activeIdx = Math.max(0, PERIODS.findIndex((p) => p.key === defaultKey));
+  const maxIdx = PERIODS.length - 1;
 
   function filtered() {
-    const p = available.find((x) => x.key === active) || { all: true };
+    const p = PERIODS[activeIdx];
     if (p.all) return points;
-    let cutoff;
-    if (p.ytd) cutoff = +new Date(new Date().getFullYear(), 0, 1);
-    else cutoff = Date.now() - p.days * 86400000;
+    const cutoff = Date.now() - p.days * 86400000;
     const within = points.filter((pt) => pt.date >= cutoff);
     return within.length >= 1 ? within : points.slice(-1);
   }
 
-  function render() {
-    const pts = filtered();
-    container.innerHTML = `
-      <div class="chart-periods">
-        ${available.map((p) => `<button class="chart-period${p.key === active ? ' active' : ''}" data-key="${p.key}">${p.key}</button>`).join('')}
+  // Build the static shell once (chart + date range + slider). Dragging the
+  // slider only re-renders the chart body, so the slider keeps focus mid-drag.
+  container.innerHTML = `
+    <div class="chart-container" data-role="chart"></div>
+    <div class="chart-daterange" data-role="range"></div>
+    <div class="chart-slider">
+      <input type="range" class="chart-range" min="0" max="${maxIdx}" step="1"
+             value="${activeIdx}" aria-label="Time range" />
+      <div class="chart-slider-ticks">
+        ${PERIODS.map((p, i) => `<span data-i="${i}">${p.tick}</span>`).join('')}
       </div>
-      <div class="chart-container">${smoothLineSvg(pts, opts.unit || 'lbs')}</div>
-      ${pts.length >= 2 ? `<div class="chart-daterange"><span>${fmtDate(pts[0].date)}</span><span>${fmtDate(pts[pts.length - 1].date)}</span></div>` : ''}
-    `;
-    for (const btn of container.querySelectorAll('.chart-period')) {
-      btn.addEventListener('click', () => { active = btn.dataset.key; render(); });
-    }
+    </div>
+  `;
+  const chartEl = container.querySelector('[data-role="chart"]');
+  const rangeEl = container.querySelector('[data-role="range"]');
+  const slider = container.querySelector('.chart-range');
+  const tickEls = [...container.querySelectorAll('.chart-slider-ticks span')];
+
+  function update() {
+    const pts = filtered();
+    chartEl.innerHTML = smoothLineSvg(pts, opts.unit || 'lbs');
+    rangeEl.innerHTML = pts.length >= 2
+      ? `<span>${fmtDate(pts[0].date)}</span><span>${fmtDate(pts[pts.length - 1].date)}</span>`
+      : '';
+    tickEls.forEach((t, i) => t.classList.toggle('active', i === activeIdx));
   }
-  render();
+
+  slider.addEventListener('input', () => {
+    activeIdx = Number(slider.value);
+    update();
+  });
+  update();
 }
 
 function fmtDate(ms) {
