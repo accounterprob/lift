@@ -511,6 +511,19 @@ button {
 .exercise-section-header .name {
   font-size: 17px;
   font-weight: 600;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.exercise-section-header .name-chevron {
+  color: var(--text-tertiary);
+  font-size: 18px;
+  font-weight: 400;
 }
 
 .exercise-section-header .menu {
@@ -827,9 +840,40 @@ button {
 
 .chart-axis-line { stroke: var(--separator); stroke-width: 1; }
 .chart-axis-label { fill: var(--text-tertiary); font-size: 10px; }
-.chart-line { stroke: var(--accent); stroke-width: 2.5; fill: none; }
+.chart-line { stroke: var(--accent); stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .chart-point { fill: var(--accent); }
 .chart-bar { fill: var(--accent); opacity: 0.85; }
+
+/* Period selector above interactive charts */
+.chart-periods {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 16px 8px;
+}
+.chart-period {
+  flex: 1;
+  max-width: 72px;
+  padding: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--fill-2);
+  border: 0;
+  border-radius: 8px;
+  text-align: center;
+}
+.chart-period.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+.chart-daterange {
+  display: flex;
+  justify-content: space-between;
+  margin: 4px 28px 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
 
 /* ---------- Form ---------- */
 .form-section {

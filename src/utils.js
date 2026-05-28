@@ -125,8 +125,17 @@ export function showSheet({ html, onMount }) {
   // the keyboard and becomes unreachable.
   function syncHeight() {
     const vv = window.visualViewport;
-    const h = vv ? vv.height : window.innerHeight;
-    sheet.style.maxHeight = `${h - 12}px`;
+    if (!vv) {
+      sheet.style.maxHeight = `${window.innerHeight - 12}px`;
+      return;
+    }
+    // Keyboard height = layout viewport minus the visible viewport. Push the
+    // sheet up by that (margin-bottom, since the backdrop bottom-aligns it)
+    // AND cap height to the visible area, so the scrollable list always sits
+    // fully above the keyboard instead of behind it.
+    const keyboard = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    sheet.style.maxHeight = `${vv.height - 12}px`;
+    sheet.style.marginBottom = `${keyboard}px`;
   }
   syncHeight();
   const vv = window.visualViewport;

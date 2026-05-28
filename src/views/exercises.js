@@ -2,9 +2,10 @@ import {
   getAll, getExerciseSets, del,
 } from '../db.js';
 import {
-  esc, formatLbs, formatDateShort, emit, formatWeight,
+  esc, formatLbs, formatDateShort, emit, formatWeight, showSheet,
 } from '../utils.js';
 import { openAddCustomExercise } from './workout.js';
+import { mountTimeSeriesChart } from '../charts.js';
 
 export function renderExercisesTab(ctx) {
   let mounted = true;
@@ -103,26 +104,19 @@ async function renderList(ctx) {
 async function renderDetail(ctx, exerciseId) {
   ctx.setBack(() => renderList(ctx));
 
-  const [allExercises, exerciseSets, allWorkouts] = await Promise.all([
-    getAll('exercises'),
-    getExerciseSets(exerciseId),
-    getAll('workouts'),
-  ]);
-
-  const exercise = allExercises.find((e) => e.id === exerciseId);
-  if (!exercise) {
+  const detail = await buildExerciseDetail(exerciseId);
+  if (!detail) {
     ctx.container.innerHTML = errorState({ message: 'Exercise not found.' });
     return;
   }
 
-  ctx.setTitle(exercise.name);
-  ctx.setAction(exercise.isCustom
+  ctx.setTitle(detail.exercise.name);
+  ctx.setAction(detail.exercise.isCustom
     ? {
         html: trashIcon(),
         onClick: async () => {
-          const usedSets = exerciseSets.length;
-          if (usedSets > 0) {
-            alert(`Can't delete — this exercise has ${usedSets} logged set${usedSets === 1 ? '' : 's'}.`);
+          if (detail.completed.length > 0) {
+            alert(`Can't delete — this exercise has ${detail.completed.length} logged set${detail.completed.length === 1 ? '' : 's'}.`);
             return;
           }
           if (!confirm('Delete this custom exercise?')) return;
@@ -132,6 +126,51 @@ async function renderDetail(ctx, exerciseId) {
       }
     : null);
 
+  ctx.container.innerHTML = detail.html;
+  const mount = ctx.container.querySelector('.exercise-chart-mount');
+  if (mount && detail.chartData.length > 0) {
+    mountTimeSeriesChart(mount, detail.chartData, { unit: 'lbs' });
+  }
+}
+
+/**
+ * Opens the per-exercise history/stats/chart in a bottom sheet — used from the
+ * active workout so you can tap a movement's name and see its progression
+ * without leaving your workout.
+ */
+export async function openExerciseDetailSheet(exerciseId) {
+  const detail = await buildExerciseDetail(exerciseId);
+  if (!detail) return;
+  const dismiss = showSheet({
+    html: `
+      <div class="sheet-header">
+        <button class="btn-text" id="exd-close">Done</button>
+        <div class="title">${esc(detail.exercise.name)}</div>
+        <span style="width: 60px;"></span>
+      </div>
+      <div class="sheet-content">${detail.html}</div>
+    `,
+    onMount(sheet) {
+      sheet.querySelector('#exd-close').addEventListener('click', () => dismiss());
+      const mount = sheet.querySelector('.exercise-chart-mount');
+      if (mount && detail.chartData.length > 0) {
+        mountTimeSeriesChart(mount, detail.chartData, { unit: 'lbs' });
+      }
+    },
+  });
+}
+
+/** Computes stats + chart data + HTML body for an exercise. Returns null if not found. */
+async function buildExerciseDetail(exerciseId) {
+  const [allExercises, exerciseSets, allWorkouts] = await Promise.all([
+    getAll('exercises'),
+    getExerciseSets(exerciseId),
+    getAll('workouts'),
+  ]);
+
+  const exercise = allExercises.find((e) => e.id === exerciseId);
+  if (!exercise) return null;
+
   const workoutMap = new Map(allWorkouts.map((w) => [w.id, w]));
   const completed = exerciseSets
     .filter((s) => s.completed && workoutMap.get(s.workoutId)?.endedAt)
@@ -139,16 +178,12 @@ async function renderDetail(ctx, exerciseId) {
     .sort((a, b) => a.workout.startedAt - b.workout.startedAt);
 
   const totalVolume = completed.reduce((sum, s) => sum + s.weight * s.reps, 0);
-  // Heaviest set on this exercise (tie-break by reps)
   const bestSet = completed.reduce(
     (best, s) => (!best || s.weight > best.weight || (s.weight === best.weight && s.reps > best.reps)) ? s : best,
     null
   );
 
-  // One point per workout: the AVERAGE working-set volume that day.
-  // Warmups are excluded and same-day sets are collapsed so the line tracks
-  // session-to-session progression instead of jumping around within a single
-  // workout.
+  // One point per workout: average working-set volume that day (warmups out).
   const byWorkout = new Map();
   for (const s of completed) {
     if (s.weight <= 0 || s.reps <= 0) continue;
@@ -162,12 +197,11 @@ async function renderDetail(ctx, exerciseId) {
     .map(({ date, total, count }) => ({ date, value: total / count }))
     .sort((a, b) => a.date - b.date);
 
-  ctx.container.innerHTML = `
+  const html = `
     <div class="section">Details</div>
     <div class="form-section">
       <div class="stat-row"><div class="stat-label">Equipment</div><div class="stat-value">${esc(exercise.equipment)}</div></div>
       <div class="stat-row"><div class="stat-label">Category</div><div class="stat-value">${esc(exercise.category)}</div></div>
-      ${exercise.notes ? `<div class="stat-row" style="flex-direction: column; align-items: flex-start; gap: 4px;"><div class="stat-label">Notes</div><div style="color: var(--text-secondary);">${esc(exercise.notes)}</div></div>` : ''}
     </div>
 
     ${completed.length > 0 ? `
@@ -175,17 +209,13 @@ async function renderDetail(ctx, exerciseId) {
       <div class="form-section">
         <div class="stat-row"><div class="stat-label">Total Sets</div><div class="stat-value">${completed.length}</div></div>
         <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${Math.round(totalVolume).toLocaleString()} lbs</div></div>
-        ${bestSet ? `
-          <div class="stat-row"><div class="stat-label">Best Set</div><div class="stat-value">${formatLbs(bestSet.weight)} × ${bestSet.reps}</div></div>
-        ` : ''}
+        ${bestSet ? `<div class="stat-row"><div class="stat-label">Best Set</div><div class="stat-value">${formatLbs(bestSet.weight)} × ${bestSet.reps}</div></div>` : ''}
       </div>
     ` : ''}
 
     ${chartData.length > 0 ? `
       <div class="section">Avg working-set volume per workout</div>
-      <div class="chart-container">
-        ${lineChartSvg(chartData)}
-      </div>
+      <div class="exercise-chart-mount"></div>
     ` : ''}
 
     ${completed.length > 0 ? `
@@ -204,6 +234,8 @@ async function renderDetail(ctx, exerciseId) {
       </div>
     `}
   `;
+
+  return { exercise, completed, chartData, html };
 }
 
 function trashIcon() {

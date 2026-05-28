@@ -6,6 +6,7 @@ import {
   formatLbs, emit,
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
+import { mountTimeSeriesChart } from '../charts.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
 // from IndexedDB on every navigation.
@@ -42,10 +43,6 @@ async function loadSnapshot() {
   const exerciseCounts = new Map();
   const bestByExercise = new Map();
 
-  const now = Date.now();
-  const eightWeeks = 56 * 24 * 60 * 60 * 1000;
-  const cutoff = now - eightWeeks;
-
   for (const w of workouts) {
     const sets = setsByWorkout.get(w.id) || [];
     const completed = sets.filter((s) => s.completed);
@@ -53,9 +50,8 @@ async function loadSnapshot() {
     totalVolume += vol;
     totalSets += completed.length;
 
-    if (w.startedAt >= cutoff) {
-      volumePoints.push({ date: w.startedAt, value: vol });
-    }
+    // All workouts — the chart's period selector handles the time window.
+    if (vol > 0) volumePoints.push({ date: w.startedAt, value: vol });
 
     for (const s of completed) {
       const ex = exMap.get(s.exerciseId);
@@ -113,8 +109,8 @@ function renderOverview(ctx) {
     </div>
 
     ${volumePoints.length > 0 ? `
-      <div class="section">Volume — last 8 weeks</div>
-      <div class="chart-container">${barChartSvg(volumePoints)}</div>
+      <div class="section">Workout Volume</div>
+      <div class="volume-chart-mount"></div>
     ` : ''}
 
     <div class="list" style="margin-top: 16px;">
@@ -141,6 +137,11 @@ function renderOverview(ctx) {
       </button>
     </div>
   `;
+
+  const chartMount = ctx.container.querySelector('.volume-chart-mount');
+  if (chartMount && volumePoints.length > 0) {
+    mountTimeSeriesChart(chartMount, volumePoints, { unit: 'lbs' });
+  }
 
   for (const row of ctx.container.querySelectorAll('[data-page]')) {
     row.addEventListener('click', () => {

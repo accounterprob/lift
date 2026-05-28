@@ -15,6 +15,7 @@ import {
 } from '../utils.js';
 import { CATEGORIES, EQUIPMENT, primaryMuscleFor, colorForMuscle } from '../seed.js';
 import { downloadBackup } from '../backup.js';
+import { openExerciseDetailSheet } from './exercises.js';
 
 export function renderWorkoutTab(ctx) {
   let mounted = true;
@@ -530,6 +531,13 @@ function renderActive(ctx, workout) {
         await reload();
       });
     }
+
+    // Tap the exercise name → open its history/stats/chart in a sheet.
+    for (const nameBtn of sectionsEl.querySelectorAll('.exercise-name-btn')) {
+      nameBtn.addEventListener('click', () => {
+        openExerciseDetailSheet(nameBtn.dataset.exerciseId);
+      });
+    }
   }
 
   reload();
@@ -565,7 +573,7 @@ function renderExerciseSection(exercise, sets, prevSets = []) {
   return `
     <div class="exercise-section">
       <div class="exercise-section-header">
-        <div class="name">${esc(exercise?.name ?? 'Unknown exercise')}</div>
+        <button class="name exercise-name-btn" data-exercise-id="${exercise?.id}">${esc(exercise?.name ?? 'Unknown exercise')} <span class="name-chevron">›</span></button>
         <button class="menu exercise-menu" data-exercise-id="${exercise?.id}" aria-label="Remove">×</button>
       </div>
       <div class="set-table-header">
@@ -717,21 +725,41 @@ function checkIcon(completed) {
 }
 
 async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
-  const baseOrder = existingSets.reduce((m, s) => Math.max(m, s.order), -1) + 1;
-  let order = baseOrder;
+  let order = existingSets.reduce((m, s) => Math.max(m, s.order), -1) + 1;
   for (const exerciseId of exerciseIds) {
-    const last = await lastCompletedSetForExercise(exerciseId, workout.id);
-    const set = {
-      id: uuid(),
-      workoutId: workout.id,
-      exerciseId,
-      weight: last?.weight ?? 0,
-      reps: last?.reps ?? 0,
-      completed: false,
-      order: order++,
-      createdAt: Date.now(),
-    };
-    await put('sets', set);
+    // Recreate last workout's set structure for this exercise, prefilling each
+    // set with its own previous weight/reps (and warmup/working type). So if
+    // last time you did W1 95×12, W2 135×12, then 3 working sets at 155×10,
+    // those 5 sets come pre-populated and you just tweak + check them off.
+    const prevSets = await previousWorkoutSetsForExercise(exerciseId, workout.id);
+    if (prevSets.length > 0) {
+      for (const prev of prevSets) {
+        const set = {
+          id: uuid(),
+          workoutId: workout.id,
+          exerciseId,
+          weight: prev.weight ?? 0,
+          reps: prev.reps ?? 0,
+          setType: prev.setType || 'working',
+          completed: false,
+          order: order++,
+          createdAt: Date.now(),
+        };
+        await put('sets', set);
+      }
+    } else {
+      const set = {
+        id: uuid(),
+        workoutId: workout.id,
+        exerciseId,
+        weight: 0,
+        reps: 0,
+        completed: false,
+        order: order++,
+        createdAt: Date.now(),
+      };
+      await put('sets', set);
+    }
   }
 }
 
