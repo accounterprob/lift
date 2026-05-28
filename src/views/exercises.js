@@ -2,7 +2,7 @@ import {
   getAll, getExerciseSets, del,
 } from '../db.js';
 import {
-  esc, formatLbs, formatDateShort, emit, formatWeight, showSheet,
+  esc, formatLbs, formatDateShort, emit, showSheet, trashIcon, errorState,
 } from '../utils.js';
 import { openAddCustomExercise } from './workout.js';
 import { mountTimeSeriesChart } from '../charts.js';
@@ -236,84 +236,4 @@ async function buildExerciseDetail(exerciseId) {
   `;
 
   return { exercise, completed, chartData, html };
-}
-
-function trashIcon() {
-  return `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" style="color: var(--red);"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>`;
-}
-
-function errorState(err) {
-  return `<div class="empty-state"><div class="empty-icon">!</div><h2>Couldn't load</h2><p>${esc(err.message || String(err))}</p></div>`;
-}
-
-// ----- Inline SVG line chart -----
-export function lineChartSvg(data) {
-  const W = 400, H = 220;
-  const pad = { top: 20, right: 16, bottom: 26, left: 44 };
-  const innerW = W - pad.left - pad.right;
-  const innerH = H - pad.top - pad.bottom;
-
-  if (data.length < 2) {
-    // Render the single point dead-center so the user sees their one data
-    // point instead of an unhelpful "Need at least two data points" message.
-    const x = pad.left + innerW / 2;
-    const y = pad.top + innerH / 2;
-    return `
-      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
-        <circle cx="${x}" cy="${y}" r="4" class="chart-point"/>
-        <text x="${x}" y="${y - 10}" text-anchor="middle" class="chart-axis-label">${data.length === 1 ? `${Math.round(data[0].value)} lbs` : 'No working sets yet'}</text>
-      </svg>
-    `;
-  }
-
-  const xs = data.map((d) => +new Date(d.date));
-  const ys = data.map((d) => d.value);
-  const minX = Math.min(...xs), maxX = Math.max(...xs);
-  const maxY = Math.max(...ys);
-  const minY = Math.min(...ys);
-  const yRange = Math.max(maxY - minY, 1);
-  const yPad = yRange * 0.15;
-  const yMin = Math.max(0, minY - yPad);
-  const yMax = maxY + yPad;
-
-  const xScale = (x) => pad.left + ((x - minX) / Math.max(maxX - minX, 1)) * innerW;
-  const yScale = (y) => pad.top + innerH - ((y - yMin) / (yMax - yMin)) * innerH;
-
-  const linePath = data
-    .map((d, i) => {
-      const x = xScale(+new Date(d.date));
-      const y = yScale(d.value);
-      return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(' ');
-
-  const dots = data
-    .map((d) => {
-      const x = xScale(+new Date(d.date));
-      const y = yScale(d.value);
-      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" class="chart-point"/>`;
-    })
-    .join('');
-
-  const ticks = 4;
-  const fmt = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
-  const yLabels = Array.from({ length: ticks + 1 }, (_, i) => {
-    const val = yMin + ((yMax - yMin) * i) / ticks;
-    const y = yScale(val);
-    return `<text x="${pad.left - 6}" y="${y + 3}" text-anchor="end" class="chart-axis-label">${fmt(val)}</text>`;
-  }).join('');
-
-  const grid = Array.from({ length: ticks + 1 }, (_, i) => {
-    const y = pad.top + (innerH * i) / ticks;
-    return `<line x1="${pad.left}" x2="${W - pad.right}" y1="${y}" y2="${y}" class="chart-axis-line"/>`;
-  }).join('');
-
-  return `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
-      ${grid}
-      ${yLabels}
-      <path d="${linePath}" class="chart-line"/>
-      ${dots}
-    </svg>
-  `;
 }

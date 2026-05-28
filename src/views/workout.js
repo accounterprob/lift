@@ -11,7 +11,7 @@ import {
   previousWorkoutSetsForExercise,
 } from '../db.js';
 import {
-  uuid, esc, formatDuration, todayWorkoutName, showSheet, emit, debounce, showToast,
+  uuid, esc, formatDuration, formatWeight, showSheet, emit, debounce, showToast,
 } from '../utils.js';
 import { CATEGORIES, EQUIPMENT, primaryMuscleFor, colorForMuscle } from '../seed.js';
 import { downloadBackup } from '../backup.js';
@@ -714,12 +714,6 @@ function attachSwipeToDelete(wrap, onDelete) {
     e.stopPropagation();
     onDelete();
   });
-}
-
-function formatWeight(w) {
-  if (w == null) return '0';
-  if (w % 1 === 0) return String(w);
-  return String(Math.round(w * 10) / 10);
 }
 
 function checkIcon(completed) {

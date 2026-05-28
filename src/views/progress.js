@@ -3,7 +3,7 @@ import {
 } from '../db.js';
 import {
   esc, formatVolume, formatDateShort, formatDateLong, formatDurationShort,
-  formatLbs, emit,
+  formatLbs, emit, shareIcon, trashIcon, errorState,
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
@@ -323,67 +323,4 @@ async function renderWorkoutDetail(ctx, workoutId) {
       `;
     }).join('')}
   `;
-}
-
-function shareIcon() {
-  return `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M16 5l-1.42 1.42-1.59-1.59V16h-2V4.83L9.41 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z"/></svg>`;
-}
-
-function trashIcon() {
-  return `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" style="color: var(--red);"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>`;
-}
-
-function errorState(err) {
-  return `<div class="empty-state"><div class="empty-icon">!</div><h2>Couldn't load</h2><p>${esc(err.message || String(err))}</p></div>`;
-}
-
-function barChartSvg(data) {
-  const W = 400, H = 220;
-  const pad = { top: 16, right: 12, bottom: 24, left: 44 };
-  const innerW = W - pad.left - pad.right;
-  const innerH = H - pad.top - pad.bottom;
-
-  if (data.length === 0) {
-    return `<svg viewBox="0 0 ${W} ${H}"></svg>`;
-  }
-
-  const maxY = Math.max(...data.map((d) => d.value), 1);
-  const yScale = (y) => pad.top + innerH - (y / maxY) * innerH;
-  const barWidth = Math.max(2, Math.min(28, innerW / data.length - 4));
-  const spacing = innerW / data.length;
-
-  const ticks = 4;
-  const yLabels = Array.from({ length: ticks + 1 }, (_, i) => {
-    const val = (maxY * i) / ticks;
-    const y = yScale(val);
-    return `<text x="${pad.left - 6}" y="${y + 3}" text-anchor="end" class="chart-axis-label">${formatVolumeShort(val)}</text>`;
-  }).join('');
-
-  const grid = Array.from({ length: ticks + 1 }, (_, i) => {
-    const y = pad.top + (innerH * i) / ticks;
-    return `<line x1="${pad.left}" x2="${W - pad.right}" y1="${y}" y2="${y}" class="chart-axis-line"/>`;
-  }).join('');
-
-  const sortedData = [...data].sort((a, b) => a.date - b.date);
-  const bars = sortedData
-    .map((d, i) => {
-      const x = pad.left + spacing * i + (spacing - barWidth) / 2;
-      const y = yScale(d.value);
-      const h = pad.top + innerH - y;
-      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${h.toFixed(1)}" rx="2" class="chart-bar"/>`;
-    })
-    .join('');
-
-  return `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
-      ${grid}
-      ${yLabels}
-      ${bars}
-    </svg>
-  `;
-}
-
-function formatVolumeShort(v) {
-  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
-  return String(Math.round(v));
 }

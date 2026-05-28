@@ -142,12 +142,6 @@ const SEEDS = [
 ];
 
 /**
- * Only seeds the built-in exercise library on a TRULY EMPTY database
- * (e.g. a brand-new install with no restore yet). Once the user has
- * any exercises — imported, custom, or seeded earlier — we leave their
- * library alone so deletions stick.
- */
-/**
  * Returns the primary muscle group worked by an exercise, drilling down past
  * the broad category. e.g. "Lateral Raise" → "Side Delts", "Romanian Deadlift"
  * → "Hamstrings", "Leg Extension" → "Quads". Order of checks matters: more
@@ -221,6 +215,12 @@ export function primaryMuscleFor(exercise) {
   return exercise.category || 'Other';
 }
 
+/**
+ * Only seeds the built-in exercise library on a TRULY EMPTY database
+ * (e.g. a brand-new install with no restore yet). Once the user has
+ * any exercises — imported, custom, or seeded earlier — we leave their
+ * library alone so deletions stick.
+ */
 export async function seedIfNeeded() {
   const existing = await getAll('exercises');
   if (existing.length > 0) return 0;
