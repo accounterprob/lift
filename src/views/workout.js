@@ -521,7 +521,7 @@ function renderActive(ctx, workout) {
     for (const addBtn of sectionsEl.querySelectorAll('.add-set-btn')) {
       addBtn.addEventListener('click', async () => {
         const eid = addBtn.dataset.exerciseId;
-        await addSet(workout, sets, eid);
+        await addSet(workout, sets, eid, prevByExercise.get(eid) ?? []);
         await reload();
       });
     }
@@ -762,15 +762,44 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
   }
 }
 
-async function addSet(workout, existingSets, exerciseId) {
+async function addSet(workout, existingSets, exerciseId, prevSets = []) {
   const setsForEx = existingSets.filter((s) => s.exerciseId === exerciseId);
   const last = setsForEx[setsForEx.length - 1];
+
+  // The new set is a working set appended at the end of this exercise.
+  const vol = (s) => (s?.weight || 0) * (s?.reps || 0);
+  const workingSets = setsForEx.filter((s) => (s.setType || 'working') !== 'warmup');
+  const newPosition = workingSets.length + 1;
+  const prevForNew = findPrevSetByTypeAndPosition('working', newPosition, prevSets);
+
+  // Heaviest working set entered so far this workout (by volume).
+  const bestSoFar = workingSets
+    .filter((s) => s.weight > 0 && s.reps > 0)
+    .reduce((best, s) => (!best || vol(s) > vol(best) ? s : best), null);
+
+  // Have we already beaten the previous workout at any matching set position?
+  const beatenPrevious = workingSets.some((s, i) => {
+    const prev = findPrevSetByTypeAndPosition('working', i + 1, prevSets);
+    return prev && prev.weight > 0 && prev.reps > 0 && vol(s) > vol(prev);
+  });
+
+  // Progressive overload: when there's no previous-workout history for this next
+  // set, or we've already exceeded the previous volume, carry the heaviest set
+  // of the workout forward instead of just repeating the last (possibly lighter)
+  // set. Otherwise keep the default "repeat last set" behavior.
+  let weight = last?.weight ?? 0;
+  let reps = last?.reps ?? 0;
+  if (bestSoFar && (!prevForNew || beatenPrevious)) {
+    weight = bestSoFar.weight;
+    reps = bestSoFar.reps;
+  }
+
   const set = {
     id: uuid(),
     workoutId: workout.id,
     exerciseId,
-    weight: last?.weight ?? 0,
-    reps: last?.reps ?? 0,
+    weight,
+    reps,
     completed: false,
     order: (last?.order ?? -1) + 1,
     createdAt: Date.now(),
