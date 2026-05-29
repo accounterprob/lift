@@ -7,6 +7,7 @@ import {
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
+import { openExerciseDetailSheet } from './exercises.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
 // from IndexedDB on every navigation.
@@ -56,7 +57,7 @@ async function loadSnapshot() {
     for (const s of completed) {
       const ex = exMap.get(s.exerciseId);
       if (!ex) continue;
-      const ec = exerciseCounts.get(s.exerciseId) || { name: ex.name, count: 0 };
+      const ec = exerciseCounts.get(s.exerciseId) || { id: s.exerciseId, name: ex.name, count: 0 };
       ec.count += 1;
       exerciseCounts.set(s.exerciseId, ec);
 
@@ -64,7 +65,7 @@ async function loadSnapshot() {
         const cur = bestByExercise.get(s.exerciseId);
         if (!cur || s.weight > cur.weight || (s.weight === cur.weight && s.reps > cur.reps)) {
           bestByExercise.set(s.exerciseId, {
-            weight: s.weight, reps: s.reps, date: w.startedAt, name: ex.name,
+            id: s.exerciseId, weight: s.weight, reps: s.reps, date: w.startedAt, name: ex.name,
           });
         }
       }
@@ -162,15 +163,18 @@ function renderMostTrained(ctx) {
   ctx.container.innerHTML = `
     <div class="list" style="margin-top: 16px;">
       ${topExercises.map((e) => `
-        <div class="list-row" style="cursor: default;">
+        <button class="list-row" data-exercise-id="${esc(e.id)}">
           <div class="row-main">
             <div class="row-title">${esc(e.name)}</div>
           </div>
           <div class="row-trailing">${e.count} set${e.count === 1 ? '' : 's'}</div>
-        </div>
+          <div class="chevron">›</div>
+        </button>
       `).join('')}
     </div>
   `;
+
+  wireExerciseLinks(ctx);
 }
 
 function renderPRs(ctx) {
@@ -183,7 +187,7 @@ function renderPRs(ctx) {
     <div class="section-footer" style="margin-top: 16px;">Heaviest set ever recorded per exercise.</div>
     <div class="list">
       ${prs.map((pr) => `
-        <div class="list-row" style="cursor: default; align-items: flex-start;">
+        <button class="list-row" data-exercise-id="${esc(pr.id)}" style="align-items: flex-start;">
           <div class="row-main">
             <div class="row-title">${esc(pr.name)}</div>
             <div class="row-subtitle">${formatDateShort(pr.date)}</div>
@@ -192,10 +196,26 @@ function renderPRs(ctx) {
             <div style="font-weight: 600; color: var(--text);">${formatLbs(pr.weight)} lbs</div>
             <div style="font-size: 12px; color: var(--text-tertiary);">${pr.reps} rep${pr.reps === 1 ? '' : 's'}</div>
           </div>
-        </div>
+          <div class="chevron">›</div>
+        </button>
       `).join('')}
     </div>
   `;
+
+  wireExerciseLinks(ctx);
+}
+
+/**
+ * Wires every `[data-exercise-id]` element in the current view to open that
+ * movement's history/stats page in a bottom sheet — used by Most-Trained,
+ * Personal Records, and the workout-history detail.
+ */
+function wireExerciseLinks(ctx) {
+  for (const el of ctx.container.querySelectorAll('[data-exercise-id]')) {
+    el.addEventListener('click', () => {
+      openExerciseDetailSheet(el.dataset.exerciseId);
+    });
+  }
 }
 
 function renderHistoryList(ctx) {
@@ -306,8 +326,11 @@ async function renderWorkoutDetail(ctx, workoutId) {
       const sets = setsByExercise.get(eid);
       let workingIdx = 0;
       let warmupIdx = 0;
+      const heading = ex
+        ? `<button class="section section-link" data-exercise-id="${esc(eid)}">${esc(ex.name)}<span class="name-chevron">›</span></button>`
+        : `<div class="section">Unknown exercise</div>`;
       return `
-        <div class="section">${esc(ex?.name ?? 'Unknown exercise')}</div>
+        ${heading}
         <div class="form-section">
           ${sets.map((s) => {
             const type = s.setType || 'working';
@@ -323,4 +346,6 @@ async function renderWorkoutDetail(ctx, workoutId) {
       `;
     }).join('')}
   `;
+
+  wireExerciseLinks(ctx);
 }
