@@ -1,4 +1,4 @@
-import { openDB } from './db.js';
+import { openDB, purgeCardioData } from './db.js';
 import { seedIfNeeded } from './seed.js';
 import { on, showToast, esc } from './utils.js';
 import { setCurrentTab } from './state.js';
@@ -137,6 +137,10 @@ async function init() {
     await openDB();
     const seededCount = await seedIfNeeded();
     if (seededCount > 0) console.info(`Seeded ${seededCount} exercises.`);
+    const purged = await purgeCardioData();
+    if (purged.exercises > 0) {
+      console.info(`Removed ${purged.exercises} cardio exercise(s), ${purged.sets} set(s), ${purged.workouts} cardio-only workout(s).`);
+    }
     renderTab('workout');
   } catch (err) {
     console.error('Init failed:', err);

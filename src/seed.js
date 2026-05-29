@@ -34,7 +34,6 @@ const MUSCLE_COLORS = {
   'Lower Back':  '#92400e', // brown
   'Forearms':    '#22c55e', // green
   'Abs':         '#92400e', // brown
-  'Cardio':      '#06b6d4', // cyan
   'Other':       '#6b7280', // gray
 };
 
@@ -44,7 +43,7 @@ export function colorForMuscle(muscle) {
 
 export const CATEGORIES = [
   'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Forearms',
-  'Legs', 'Glutes', 'Calves', 'Core', 'Cardio', 'Full Body', 'Other',
+  'Legs', 'Glutes', 'Calves', 'Core', 'Full Body', 'Other',
 ];
 
 export const EQUIPMENT = [
@@ -198,9 +197,6 @@ export function primaryMuscleFor(exercise) {
 
   // Core / abs
   if (/crunch|sit.?up|plank|leg raise|knee raise|ab wheel|russian twist|hanging|woodchop|rotation/.test(name)) return 'Abs';
-
-  // Cardio (added: spin, cycling, rowing-machine, jog)
-  if (/bike|treadmill|run|cardio|step.?mill|elliptical|stair|jog|cycling|spinning|spin|rowing machine|row machine/.test(name)) return 'Cardio';
 
   // Forearms
   if (/wrist curl|forearm|farmer/.test(name)) return 'Forearms';

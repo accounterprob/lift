@@ -174,6 +174,53 @@ export async function deleteUnusedExercises() {
   };
 }
 
+/**
+ * One-time cleanup for the retired "Cardio" category: deletes every exercise
+ * filed under it along with all sets logged against those exercises. Idempotent
+ * and cheap — a no-op once no cardio data remains, so it's safe to run on every
+ * launch (which also scrubs cardio out of any restored backup).
+ */
+export async function purgeCardioData() {
+  const [exercises, sets, workouts] = await Promise.all([
+    getAll('exercises'),
+    getAll('sets'),
+    getAll('workouts'),
+  ]);
+  const cardioIds = new Set(
+    exercises.filter((e) => e.category === 'Cardio').map((e) => e.id)
+  );
+  if (cardioIds.size === 0) return { exercises: 0, sets: 0, workouts: 0 };
+
+  const setsToDelete = sets.filter((s) => cardioIds.has(s.exerciseId));
+
+  // Workouts whose every set was cardio become empty shells once those sets
+  // go — drop them too. Mixed workouts keep their non-cardio sets and survive.
+  const nonCardioByWorkout = new Map();
+  for (const s of sets) {
+    if (cardioIds.has(s.exerciseId)) continue;
+    nonCardioByWorkout.set(s.workoutId, (nonCardioByWorkout.get(s.workoutId) || 0) + 1);
+  }
+  const affectedWorkouts = new Set(setsToDelete.map((s) => s.workoutId));
+  const workoutsToDelete = workouts.filter(
+    (w) => affectedWorkouts.has(w.id) && !nonCardioByWorkout.get(w.id)
+  );
+
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(['exercises', 'sets', 'workouts'], 'readwrite');
+    const exStore = tx.objectStore('exercises');
+    const setStore = tx.objectStore('sets');
+    const woStore = tx.objectStore('workouts');
+    for (const id of cardioIds) exStore.delete(id);
+    for (const s of setsToDelete) setStore.delete(s.id);
+    for (const w of workoutsToDelete) woStore.delete(w.id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+  return { exercises: cardioIds.size, sets: setsToDelete.length, workouts: workoutsToDelete.length };
+}
+
 export async function deleteWorkoutAndSets(workoutId) {
   const db = await openDB();
   const sets = await getByIndex('sets', 'workoutId', workoutId);

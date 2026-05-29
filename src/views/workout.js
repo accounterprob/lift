@@ -80,7 +80,7 @@ const ROTATION = ['Chest Day', 'Leg Day', 'Back/Bi Day'];
 
 /**
  * Maps any workout name (current or historical) to its rotation slot, or
- * null if it doesn't fit the cycle (e.g. "Cardio Day", custom names).
+ * null if it doesn't fit the cycle (e.g. custom names).
  */
 function normalizeDayName(name) {
   if (!name) return null;
@@ -134,7 +134,7 @@ function startNewWorkout(recommendedName, badgeLabel = 'Today') {
 }
 
 function openWorkoutTypePicker(recommendedName, onPick, badgeLabel = 'Today') {
-  const PRESETS = ['Chest Day', 'Leg Day', 'Back/Bi Day', 'Cardio Day'];
+  const PRESETS = ['Chest Day', 'Leg Day', 'Back/Bi Day'];
   const dismiss = showSheet({
     html: `
       <div class="sheet-header">
@@ -158,7 +158,7 @@ function openWorkoutTypePicker(recommendedName, onPick, badgeLabel = 'Today') {
         <div class="section">Other</div>
         <div class="form-section">
           <div class="form-row">
-            <input id="wt-custom" placeholder="e.g. Push Day, Cardio" style="text-align: left;" />
+            <input id="wt-custom" placeholder="e.g. Push Day, Arms" style="text-align: left;" />
           </div>
         </div>
         <div class="action-section">
