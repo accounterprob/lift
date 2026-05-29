@@ -1,5 +1,5 @@
-import { openDB, purgeCardioData } from './db.js';
-import { seedIfNeeded } from './seed.js';
+import { openDB, purgeCardioData, reorganizeOtherExercises } from './db.js';
+import { seedIfNeeded, categoryFor } from './seed.js';
 import { on, showToast, esc } from './utils.js';
 import { setCurrentTab } from './state.js';
 import { renderWorkoutTab } from './views/workout.js';
@@ -140,6 +140,14 @@ async function init() {
     const purged = await purgeCardioData();
     if (purged.exercises > 0) {
       console.info(`Removed ${purged.exercises} cardio exercise(s), ${purged.sets} set(s), ${purged.workouts} cardio-only workout(s).`);
+    }
+    const reorg = await reorganizeOtherExercises(categoryFor);
+    if (reorg.recategorized > 0 || reorg.deleted > 0) {
+      console.info(`Reorganized "Other": recategorized ${reorg.recategorized}, removed ${reorg.deleted} cardio, dropped ${reorg.workouts} empty workout(s).`);
+      const parts = [];
+      if (reorg.recategorized > 0) parts.push(`sorted ${reorg.recategorized} exercise${reorg.recategorized === 1 ? '' : 's'}`);
+      if (reorg.deleted > 0) parts.push(`removed ${reorg.deleted} cardio`);
+      showToast(`Cleaned up “Other”: ${parts.join(', ')}.`);
     }
     renderTab('workout');
   } catch (err) {

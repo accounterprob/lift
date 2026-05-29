@@ -221,6 +221,60 @@ export async function purgeCardioData() {
   return { exercises: cardioIds.size, sets: setsToDelete.length, workouts: workoutsToDelete.length };
 }
 
+/**
+ * Empties out the retired "Other" category. Cardio movements filed there are
+ * deleted (with their sets, and any workout left with nothing else), and every
+ * other movement is reassigned to its best-fit category via `classify(name)`,
+ * which returns a target category or 'Cardio' to signal deletion. Idempotent —
+ * a no-op once nothing remains under "Other".
+ */
+export async function reorganizeOtherExercises(classify) {
+  const [exercises, sets, workouts] = await Promise.all([
+    getAll('exercises'),
+    getAll('sets'),
+    getAll('workouts'),
+  ]);
+  const others = exercises.filter((e) => e.category === 'Other');
+  if (others.length === 0) return { recategorized: 0, deleted: 0, workouts: 0 };
+
+  const toUpdate = [];
+  const deleteIds = new Set();
+  for (const e of others) {
+    const target = classify(e.name);
+    if (target === 'Cardio') deleteIds.add(e.id);
+    else toUpdate.push({ ...e, category: target && target !== 'Other' ? target : 'Full Body' });
+  }
+
+  const setsToDelete = sets.filter((s) => deleteIds.has(s.exerciseId));
+  // Workouts whose every set belonged to a deleted cardio movement become empty
+  // shells — drop them too. Anything with a surviving set stays.
+  const survivingByWorkout = new Map();
+  for (const s of sets) {
+    if (deleteIds.has(s.exerciseId)) continue;
+    survivingByWorkout.set(s.workoutId, (survivingByWorkout.get(s.workoutId) || 0) + 1);
+  }
+  const affected = new Set(setsToDelete.map((s) => s.workoutId));
+  const workoutsToDelete = workouts.filter(
+    (w) => affected.has(w.id) && !survivingByWorkout.get(w.id)
+  );
+
+  const db = await openDB();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(['exercises', 'sets', 'workouts'], 'readwrite');
+    const exStore = tx.objectStore('exercises');
+    const setStore = tx.objectStore('sets');
+    const woStore = tx.objectStore('workouts');
+    for (const e of toUpdate) exStore.put(e);
+    for (const id of deleteIds) exStore.delete(id);
+    for (const s of setsToDelete) setStore.delete(s.id);
+    for (const w of workoutsToDelete) woStore.delete(w.id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+  return { recategorized: toUpdate.length, deleted: deleteIds.size, workouts: workoutsToDelete.length };
+}
+
 export async function deleteWorkoutAndSets(workoutId) {
   const db = await openDB();
   const sets = await getByIndex('sets', 'workoutId', workoutId);

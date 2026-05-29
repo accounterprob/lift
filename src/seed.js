@@ -43,7 +43,7 @@ export function colorForMuscle(muscle) {
 
 export const CATEGORIES = [
   'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Forearms',
-  'Legs', 'Glutes', 'Calves', 'Core', 'Full Body', 'Other',
+  'Legs', 'Glutes', 'Calves', 'Core', 'Full Body',
 ];
 
 export const EQUIPMENT = [
@@ -209,6 +209,38 @@ export function primaryMuscleFor(exercise) {
 
   // Fallback to broad category
   return exercise.category || 'Other';
+}
+
+// Clear-cut cardio movements that may have been filed under the retired
+// "Other" or "Cardio" categories. Matched against an exercise name to flag it
+// for removal. Deliberately conservative — borderline conditioning work (sled,
+// battle ropes, kettlebell swings, etc.) is kept and re-homed, not deleted, and
+// "walk" is excluded so it can't catch "Walking Lunge" / "Farmer's Walk".
+const CARDIO_RE = /\b(bike|biking|treadmill|run|running|cardio|step.?mill|elliptical|stair.?master|stair.?climber|jog|jogging|cycling|spinning|spin class|rowing machine|row machine|\berg\b|sprints?|jump.?rope|skipping rope|swim|swimming|hike|hiking)\b/;
+
+// Maps the fine-grained muscle from `primaryMuscleFor` up to a broad category.
+const MUSCLE_TO_CATEGORY = {
+  Quads: 'Legs', Hamstrings: 'Legs', Adductors: 'Legs',
+  Glutes: 'Glutes', Calves: 'Calves',
+  Chest: 'Chest',
+  'Front Delts': 'Shoulders', 'Side Delts': 'Shoulders', 'Rear Delts': 'Shoulders',
+  Lats: 'Back', 'Mid Back': 'Back', Traps: 'Back', 'Lower Back': 'Back',
+  Biceps: 'Biceps', Triceps: 'Triceps', Forearms: 'Forearms', Abs: 'Core',
+};
+
+/**
+ * Best-fit category for an exercise name, used to re-home movements out of the
+ * retired "Other" category. Returns 'Cardio' to signal the movement is cardio
+ * and should be removed; otherwise one of the real `CATEGORIES`, falling back
+ * to 'Full Body' when the name matches no known pattern.
+ */
+export function categoryFor(name) {
+  const n = (name || '').toLowerCase().trim();
+  if (!n) return 'Full Body';
+  if (CARDIO_RE.test(n)) return 'Cardio';
+  // Pass a blank category so the muscle lookup can't echo back "Other".
+  const muscle = primaryMuscleFor({ name: n, category: '' });
+  return MUSCLE_TO_CATEGORY[muscle] || 'Full Body';
 }
 
 /**
