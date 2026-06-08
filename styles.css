@@ -428,26 +428,27 @@ button {
   border-radius: 8px;
   overflow: hidden;
 }
-.vol-marker {
+/* Darker hatched stretch from the most-recent total to the all-time best, so
+   the boundary distinguishes "matched last workout" from "all-time record". */
+.vol-zone {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
-  transform: translateX(-1px);
+  z-index: 0;
   pointer-events: none;
-  z-index: 2;
-}
-/* The 100% / most-recent-workout target. */
-.vol-marker-prev {
-  background: #ffffff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
-}
-/* The all-time best for this category — the end the bar reaches toward. */
-.vol-marker-best {
-  background: var(--orange);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(120, 120, 128, 0.45) 0,
+      rgba(120, 120, 128, 0.45) 2px,
+      transparent 2px,
+      transparent 7px
+    ),
+    rgba(120, 120, 128, 0.18);
 }
 .vol-segment {
+  position: relative;
+  z-index: 1;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -488,7 +489,7 @@ button {
 }
 .vol-label strong { color: var(--text); font-weight: 700; }
 .vol-pct { color: var(--green); font-weight: 600; }
-.vol-best { color: var(--orange); font-weight: 600; }
+.vol-best { color: var(--text-secondary); font-weight: 600; }
 
 .muscle-split {
   display: flex;

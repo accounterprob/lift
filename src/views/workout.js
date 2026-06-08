@@ -307,14 +307,18 @@ function renderActive(ctx, workout) {
     // its own muscle name + volume INSIDE (visible only when the segment is
     // wide enough; CSS hides overflow on narrow ones). The bar is normalized so
     // its full width represents the best same-category workout ever (or today's
-    // total if it's a new all-time best). A marker line sits at the most-recent
-    // workout total — that's the 100% target — and another at the all-time best.
+    // total if it's a new all-time best). The stretch between the most-recent
+    // workout total (the 100% target) and the all-time best is drawn as a darker
+    // hatched zone, so the boundary marks "matched last time" vs "new record".
     const progressEl = ctx.container.querySelector('#workout-progress');
     if (progressEl) {
-      if (sorted.length === 0 && goalVolume === 0) {
+      // Show the bar on every workout that has sets, even before anything is
+      // completed or when there's no history to compare against yet.
+      if (sets.length === 0 && goalVolume === 0) {
         progressEl.innerHTML = '';
       } else {
         const denom = Math.max(maxVolume, goalVolume, totalVolume, 1);
+        const pctOf = (v) => Math.min(100, (v / denom) * 100);
         const segments = sorted.map(([muscle, vol]) => {
           const widthPct = (vol / denom) * 100;
           return `
@@ -324,16 +328,15 @@ function renderActive(ctx, workout) {
             </div>
           `;
         }).join('');
-        const marker = (v, cls, title) => {
-          if (v <= 0) return '';
-          const pct = Math.min(100, (v / denom) * 100);
-          return `<div class="vol-marker ${cls}" style="left: ${pct.toFixed(2)}%;" title="${title}"></div>`;
-        };
-        const markers =
-          marker(goalVolume, 'vol-marker-prev', `Last ${esc(workout.name)}: ${formatVolume(goalVolume)} lbs (100%)`) +
-          (maxVolume > goalVolume
-            ? marker(maxVolume, 'vol-marker-best', `Best ${esc(workout.name)}: ${formatVolume(maxVolume)} lbs`)
-            : '');
+        // Hatched zone covering most-recent total → all-time best.
+        let zone = '';
+        if (maxVolume > goalVolume) {
+          const start = pctOf(goalVolume);
+          const width = pctOf(maxVolume) - start;
+          if (width > 0) {
+            zone = `<div class="vol-zone" style="left: ${start.toFixed(2)}%; width: ${width.toFixed(2)}%;" title="Last ${esc(workout.name)} → all-time best: ${formatVolume(goalVolume)} → ${formatVolume(maxVolume)} lbs"></div>`;
+          }
+        }
         let label;
         if (goalVolume > 0) {
           const pct = Math.round((totalVolume / goalVolume) * 100);
@@ -341,13 +344,11 @@ function renderActive(ctx, workout) {
           if (maxVolume > goalVolume) {
             label += ` · <span class="vol-best">best ${formatVolume(maxVolume)}</span>`;
           }
-        } else if (totalVolume > 0) {
-          label = `<strong>${formatVolume(totalVolume)} lbs</strong> · no previous ${esc(workout.name)} to compare`;
         } else {
-          label = `Goal: ${formatVolume(goalVolume)} lbs`;
+          label = `<strong>${formatVolume(totalVolume)} lbs</strong> · no previous ${esc(workout.name)} to compare`;
         }
         progressEl.innerHTML = `
-          <div class="vol-bar">${segments}${markers}</div>
+          <div class="vol-bar">${zone}${segments}</div>
           <div class="vol-label">${label}</div>
         `;
         // Auto-shrink each segment's name until the full word fits.
