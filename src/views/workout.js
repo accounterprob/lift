@@ -9,6 +9,7 @@ import {
   deleteWorkoutAndSets,
   lastCompletedSetForExercise,
   previousWorkoutSetsForExercise,
+  previousSetsByPositionForExercise,
 } from '../db.js';
 import {
   uuid, esc, formatDuration, formatWeight, showSheet, emit, debounce, showToast,
@@ -279,7 +280,7 @@ function renderActive(ctx, workout) {
     prevByExercise = new Map();
     await Promise.all(
       exerciseIds.map(async (eid) => {
-        prevByExercise.set(eid, await previousWorkoutSetsForExercise(eid, workout.id));
+        prevByExercise.set(eid, await previousSetsByPositionForExercise(eid, workout.id));
       })
     );
     renderSections();
@@ -488,7 +489,7 @@ function renderActive(ctx, workout) {
       .map((eid) => {
         const ex = exMap.get(eid);
         const exSets = setsByExercise.get(eid);
-        const prev = prevByExercise.get(eid) ?? [];
+        const prev = prevByExercise.get(eid) ?? new Map();
         return renderExerciseSection(ex, exSets, prev);
       })
       .join('');
@@ -552,7 +553,7 @@ function renderActive(ctx, workout) {
     for (const addBtn of sectionsEl.querySelectorAll('.add-set-btn')) {
       addBtn.addEventListener('click', async () => {
         const eid = addBtn.dataset.exerciseId;
-        await addSet(workout, sets, eid, prevByExercise.get(eid) ?? []);
+        await addSet(workout, sets, eid, prevByExercise.get(eid) ?? new Map());
         await reload();
       });
     }
@@ -583,10 +584,11 @@ function renderActive(ctx, workout) {
   };
 }
 
-function renderExerciseSection(exercise, sets, prevSets = []) {
+function renderExerciseSection(exercise, sets, prevSets = new Map()) {
   // Warmups get their own counter (W1, W2, W3); working sets get 1, 2, 3.
   // PREV matches by type AND position-within-type so W1 lines up with last
   // workout's W1, working-set 2 lines up with last workout's working-set 2, etc.
+  // Each slot can come from a different past workout (see prevSets above).
   let workingIndex = 0;
   let warmupIndex = 0;
   const setBlocks = sets.map((s) => {
@@ -626,18 +628,14 @@ function renderExerciseSection(exercise, sets, prevSets = []) {
 }
 
 /**
- * Walk through prevSets (already sorted by `order`) and find the n-th
- * set of the given type. positionInType is 1-indexed.
+ * Look up the previous set for a given slot. `prevMap` is keyed
+ * `${type}#${position}` (1-indexed) and already encodes the per-slot fallback to
+ * older workouts (see previousSetsByPositionForExercise). Returns null when no
+ * prior workout ever had this slot — a genuinely new set.
  */
-function findPrevSetByTypeAndPosition(type, positionInType, prevSets) {
-  let count = 0;
-  for (const p of prevSets) {
-    if ((p.setType || 'working') === type) {
-      count += 1;
-      if (count === positionInType) return p;
-    }
-  }
-  return null;
+function findPrevSetByTypeAndPosition(type, positionInType, prevMap) {
+  if (!prevMap || typeof prevMap.get !== 'function') return null;
+  return prevMap.get(`${type}#${positionInType}`) ?? null;
 }
 
 function renderSetRow(set, displayLabel, prevSet) {
@@ -822,7 +820,7 @@ async function bumpSucceedingSets(completedSet, allSets) {
   return changed;
 }
 
-async function addSet(workout, existingSets, exerciseId, prevSets = []) {
+async function addSet(workout, existingSets, exerciseId, prevSets = new Map()) {
   const setsForEx = existingSets.filter((s) => s.exerciseId === exerciseId);
   const last = setsForEx[setsForEx.length - 1];
 

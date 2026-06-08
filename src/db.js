@@ -154,6 +154,47 @@ export async function previousWorkoutSetsForExercise(exerciseId, excludeWorkoutI
 }
 
 /**
+ * For every set "slot" (type + position-within-type) this exercise has ever
+ * had, find the matching set from the most recent prior workout that actually
+ * contains that slot. Walks workouts newest→oldest, so e.g. set 5 falls back to
+ * an older workout when the last one only had 4 sets, while sets 1–4 still come
+ * from the latest. Warmups fall back independently of working sets. Returns a
+ * Map keyed `${type}#${position}` (position is 1-indexed). Slots that no prior
+ * workout ever had simply won't be present — a genuinely new set → blank PREV.
+ */
+export async function previousSetsByPositionForExercise(exerciseId, excludeWorkoutId = null) {
+  const allSets = await getExerciseSets(exerciseId);
+  const byWorkout = new Map();
+  for (const s of allSets) {
+    if (excludeWorkoutId && s.workoutId === excludeWorkoutId) continue;
+    if (!byWorkout.has(s.workoutId)) byWorkout.set(s.workoutId, []);
+    byWorkout.get(s.workoutId).push(s);
+  }
+  if (byWorkout.size === 0) return new Map();
+
+  const workouts = await Promise.all(
+    Array.from(byWorkout.keys()).map((id) => get('workouts', id))
+  );
+  const ordered = workouts
+    .filter(Boolean)
+    .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+
+  const result = new Map();
+  for (const w of ordered) {
+    const sets = byWorkout.get(w.id).sort((a, b) => a.order - b.order);
+    let working = 0;
+    let warmup = 0;
+    for (const s of sets) {
+      const type = s.setType || 'working';
+      const pos = type === 'warmup' ? (warmup += 1) : (working += 1);
+      const key = `${type}#${pos}`;
+      if (!result.has(key)) result.set(key, s);  // newest workout wins per slot
+    }
+  }
+  return result;
+}
+
+/**
  * Removes built-in exercises that have never been used (no associated sets).
  * Custom user-created exercises are always preserved, even if unused.
  */
