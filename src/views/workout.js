@@ -232,9 +232,12 @@ function renderActive(ctx, workout) {
     await refreshGoal();
   }, 300));
 
-  let goalVolume = 0;
+  let goalVolume = 0;  // most-recent same-category workout → the 100% mark
+  let maxVolume = 0;   // best same-category workout ever → the end of the bar
   async function refreshGoal() {
-    goalVolume = await getGoalVolume(workout.name, workout.id);
+    const targets = await getVolumeTargets(workout.name, workout.id);
+    goalVolume = targets.goal;
+    maxVolume = targets.max;
     updateRunningStats();
   }
 
@@ -302,15 +305,16 @@ function renderActive(ctx, workout) {
 
     // Progress bar with one colored segment per muscle. Each segment carries
     // its own muscle name + volume INSIDE (visible only when the segment is
-    // wide enough; CSS hides overflow on narrow ones). Bar width is
-    // normalized to max(goalVolume, totalVolume) so we hit 100% exactly when
-    // the user matches their previous workout total.
+    // wide enough; CSS hides overflow on narrow ones). The bar is normalized so
+    // its full width represents the best same-category workout ever (or today's
+    // total if it's a new all-time best). A marker line sits at the most-recent
+    // workout total — that's the 100% target — and another at the all-time best.
     const progressEl = ctx.container.querySelector('#workout-progress');
     if (progressEl) {
       if (sorted.length === 0 && goalVolume === 0) {
         progressEl.innerHTML = '';
       } else {
-        const denom = Math.max(goalVolume, totalVolume, 1);
+        const denom = Math.max(maxVolume, goalVolume, totalVolume, 1);
         const segments = sorted.map(([muscle, vol]) => {
           const widthPct = (vol / denom) * 100;
           return `
@@ -320,17 +324,30 @@ function renderActive(ctx, workout) {
             </div>
           `;
         }).join('');
+        const marker = (v, cls, title) => {
+          if (v <= 0) return '';
+          const pct = Math.min(100, (v / denom) * 100);
+          return `<div class="vol-marker ${cls}" style="left: ${pct.toFixed(2)}%;" title="${title}"></div>`;
+        };
+        const markers =
+          marker(goalVolume, 'vol-marker-prev', `Last ${esc(workout.name)}: ${formatVolume(goalVolume)} lbs (100%)`) +
+          (maxVolume > goalVolume
+            ? marker(maxVolume, 'vol-marker-best', `Best ${esc(workout.name)}: ${formatVolume(maxVolume)} lbs`)
+            : '');
         let label;
         if (goalVolume > 0) {
           const pct = Math.round((totalVolume / goalVolume) * 100);
           label = `<strong>${formatVolume(totalVolume)}</strong> / ${formatVolume(goalVolume)} lbs · <span class="vol-pct">${pct}%</span>`;
+          if (maxVolume > goalVolume) {
+            label += ` · <span class="vol-best">best ${formatVolume(maxVolume)}</span>`;
+          }
         } else if (totalVolume > 0) {
           label = `<strong>${formatVolume(totalVolume)} lbs</strong> · no previous ${esc(workout.name)} to compare`;
         } else {
           label = `Goal: ${formatVolume(goalVolume)} lbs`;
         }
         progressEl.innerHTML = `
-          <div class="vol-bar">${segments}</div>
+          <div class="vol-bar">${segments}${markers}</div>
           <div class="vol-label">${label}</div>
         `;
         // Auto-shrink each segment's name until the full word fits.
@@ -375,24 +392,35 @@ function renderActive(ctx, workout) {
     }
   }
 
-  /** Most-recent finished workout with the same name → its total completed volume. */
-  async function getGoalVolume(name, excludeId) {
-    if (!name) return 0;
+  /**
+   * For same-category finished workouts, return both the most-recent total
+   * volume (`goal`, the 100% mark) and the best-ever total volume (`max`, the
+   * end of the bar). Categories match by exact name OR normalized rotation slot
+   * — so a "Back/Bi Day" can compare against a prior "Back Day", and vice versa.
+   */
+  async function getVolumeTargets(name, excludeId) {
+    if (!name) return { goal: 0, max: 0 };
     const norm = normalizeDayName(name);
     const all = await getAll('workouts');
-    // Match by exact name OR by normalized rotation slot — so a "Back/Bi Day"
-    // can use a prior "Back Day" total as its goal, and vice versa.
     const candidates = all
       .filter((w) => w.id !== excludeId && w.endedAt)
       .filter((w) => w.name === name || (norm && normalizeDayName(w.name) === norm))
       .sort((a, b) => b.startedAt - a.startedAt);
-    if (candidates.length === 0) return 0;
-    const recent = candidates[0];
+    if (candidates.length === 0) return { goal: 0, max: 0 };
+    const ids = new Set(candidates.map((w) => w.id));
     const setsAll = await getAll('sets');
-    const recentVolume = setsAll
-      .filter((s) => s.workoutId === recent.id && s.completed)
-      .reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
-    return recentVolume;
+    const volByWorkout = new Map();
+    for (const s of setsAll) {
+      if (!ids.has(s.workoutId) || !s.completed) continue;
+      volByWorkout.set(
+        s.workoutId,
+        (volByWorkout.get(s.workoutId) ?? 0) + (s.weight || 0) * (s.reps || 0)
+      );
+    }
+    const goal = volByWorkout.get(candidates[0].id) ?? 0;
+    let max = 0;
+    for (const v of volByWorkout.values()) if (v > max) max = v;
+    return { goal, max };
   }
 
   async function maybeShowPRToast(set) {
@@ -501,6 +529,8 @@ function renderActive(ctx, workout) {
         completeBtn.innerHTML = checkIcon(set.completed);
         updateRunningStats();
         if (!wasCompleted && set.completed) {
+          const bumped = await bumpSucceedingSets(set, sets);
+          if (bumped) renderSections();
           await maybeShowPRToast(set);
         }
       });
@@ -760,6 +790,35 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
       await put('sets', set);
     }
   }
+}
+
+/**
+ * When a set is marked complete, pull any later sets of the same exercise (and
+ * same type) that are lighter up to match the just-completed set. Later sets
+ * that already meet or exceed the completed volume are left alone, so they keep
+ * the previous-workout target they were prefilled with. Already-logged
+ * (completed) later sets are never rewritten.
+ * Returns true if any set was changed.
+ */
+async function bumpSucceedingSets(completedSet, allSets) {
+  const completedVol = (completedSet.weight || 0) * (completedSet.reps || 0);
+  if (completedVol <= 0) return false;
+  const type = completedSet.setType || 'working';
+  let changed = false;
+  for (const s of allSets) {
+    if (s.exerciseId !== completedSet.exerciseId) continue;
+    if (s.id === completedSet.id) continue;
+    if ((s.order ?? 0) <= (completedSet.order ?? 0)) continue;
+    if (s.completed) continue;
+    if ((s.setType || 'working') !== type) continue;
+    if ((s.weight || 0) * (s.reps || 0) < completedVol) {
+      s.weight = completedSet.weight;
+      s.reps = completedSet.reps;
+      await put('sets', s);
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 async function addSet(workout, existingSets, exerciseId, prevSets = []) {
