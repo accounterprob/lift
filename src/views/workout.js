@@ -235,10 +235,12 @@ function renderActive(ctx, workout) {
 
   let goalVolume = 0;  // most-recent same-category workout → the 100% mark
   let maxVolume = 0;   // best same-category workout ever → the end of the bar
+  let volDebug = '';   // TEMP
   async function refreshGoal() {
     const targets = await getVolumeTargets(workout.name, workout.id);
     goalVolume = targets.goal;
     maxVolume = targets.max;
+    volDebug = targets.debug ?? '';  // TEMP
     updateRunningStats();
   }
 
@@ -351,6 +353,7 @@ function renderActive(ctx, workout) {
         progressEl.innerHTML = `
           <div class="vol-bar">${zone}${segments}</div>
           <div class="vol-label">${label}</div>
+          <div class="vol-label" style="font-size:10px;opacity:0.7;word-break:break-word;">DEBUG name="${esc(workout.name)}" goal=${Math.round(goalVolume)} max=${Math.round(maxVolume)} · ${esc(volDebug)}</div>
         `;
         // Auto-shrink each segment's name until the full word fits.
         // Falls back to hiding the name (volume-only) if even at min size
@@ -435,7 +438,12 @@ function renderActive(ctx, workout) {
     const goal = volByWorkout.get(candidates[0].id) ?? 0;
     let max = 0;
     for (const v of volByWorkout.values()) if (v > max) max = v;
-    return { goal, max };
+
+    // TEMP DEBUG: list every same-category candidate with its computed volume.
+    const debug = candidates
+      .map((w) => `${w.name}=${Math.round(volByWorkout.get(w.id) ?? 0)}`)
+      .join(', ');
+    return { goal, max, debug };
   }
 
   async function maybeShowPRToast(set) {
