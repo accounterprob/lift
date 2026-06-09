@@ -235,12 +235,10 @@ function renderActive(ctx, workout) {
 
   let goalVolume = 0;  // most-recent same-category workout → the 100% mark
   let maxVolume = 0;   // best same-category workout ever → the end of the bar
-  let volDebug = '';   // TEMP
   async function refreshGoal() {
     const targets = await getVolumeTargets(workout.name, workout.id);
     goalVolume = targets.goal;
     maxVolume = targets.max;
-    volDebug = targets.debug ?? '';  // TEMP
     updateRunningStats();
   }
 
@@ -344,8 +342,15 @@ function renderActive(ctx, workout) {
         if (goalVolume > 0) {
           const pct = Math.round((totalVolume / goalVolume) * 100);
           label = `<strong>${formatVolume(totalVolume)}</strong> / ${formatVolume(goalVolume)} lbs · <span class="vol-pct">${pct}%</span>`;
-          if (maxVolume > goalVolume) {
+          if (totalVolume > maxVolume) {
+            // This live workout has passed the all-time record — new PR in progress.
+            label += ` · <span class="vol-best">🔥 new record</span>`;
+          } else if (maxVolume > goalVolume) {
+            // A past workout beat the most recent one — that's the stretch target.
             label += ` · <span class="vol-best">best ${formatVolume(maxVolume)}</span>`;
+          } else {
+            // Most-recent workout is itself the all-time best.
+            label += ` · <span class="vol-best">all-time best</span>`;
           }
         } else {
           label = `<strong>${formatVolume(totalVolume)} lbs</strong> · no previous ${esc(workout.name)} to compare`;
@@ -353,7 +358,6 @@ function renderActive(ctx, workout) {
         progressEl.innerHTML = `
           <div class="vol-bar">${zone}${segments}</div>
           <div class="vol-label">${label}</div>
-          <div class="vol-label" style="font-size:10px;opacity:0.7;word-break:break-word;">DEBUG name="${esc(workout.name)}" goal=${Math.round(goalVolume)} max=${Math.round(maxVolume)} · ${esc(volDebug)}</div>
         `;
         // Auto-shrink each segment's name until the full word fits.
         // Falls back to hiding the name (volume-only) if even at min size
@@ -438,12 +442,7 @@ function renderActive(ctx, workout) {
     const goal = volByWorkout.get(candidates[0].id) ?? 0;
     let max = 0;
     for (const v of volByWorkout.values()) if (v > max) max = v;
-
-    // TEMP DEBUG: list every same-category candidate with its computed volume.
-    const debug = candidates
-      .map((w) => `${w.name}=${Math.round(volByWorkout.get(w.id) ?? 0)}`)
-      .join(', ');
-    return { goal, max, debug };
+    return { goal, max };
   }
 
   async function maybeShowPRToast(set) {
