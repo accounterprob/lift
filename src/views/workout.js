@@ -395,19 +395,22 @@ function renderActive(ctx, workout) {
   }
 
   /**
-   * For same-category finished workouts, return both the most-recent total
-   * volume (`goal`, the 100% mark) and the best-ever total volume (`max`, the
-   * end of the bar). Categories match by exact name OR normalized rotation slot
-   * — so a "Back/Bi Day" can compare against a prior "Back Day", and vice versa.
+   * For same-category workouts, return both the most-recent total volume
+   * (`goal`, the 100% mark) and the best-ever total volume (`max`, the end of
+   * the bar). Categories match by exact name OR normalized rotation slot — so a
+   * "Back/Bi Day" can compare against a prior "Back Day", and vice versa.
+   * Doesn't require `endedAt` — that filter was excluding imported history with
+   * no end time (often the all-time record), so the bar never marked it. The
+   * active workout is excluded by id instead.
    */
   async function getVolumeTargets(name, excludeId) {
     if (!name) return { goal: 0, max: 0 };
     const norm = normalizeDayName(name);
     const all = await getAll('workouts');
     const candidates = all
-      .filter((w) => w.id !== excludeId && w.endedAt)
+      .filter((w) => w.id !== excludeId)
       .filter((w) => w.name === name || (norm && normalizeDayName(w.name) === norm))
-      .sort((a, b) => b.startedAt - a.startedAt);
+      .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
     if (candidates.length === 0) return { goal: 0, max: 0 };
     const ids = new Set(candidates.map((w) => w.id));
     const setsAll = await getAll('sets');
