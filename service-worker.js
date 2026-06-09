@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'lift-v50';
+const CACHE_VERSION = 'lift-v51';
 const ASSETS = [
   './',
   './index.html',

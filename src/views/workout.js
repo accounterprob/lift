@@ -414,13 +414,23 @@ function renderActive(ctx, workout) {
     if (candidates.length === 0) return { goal: 0, max: 0 };
     const ids = new Set(candidates.map((w) => w.id));
     const setsAll = await getAll('sets');
-    const volByWorkout = new Map();
+    const setsByWorkout = new Map();
     for (const s of setsAll) {
-      if (!ids.has(s.workoutId) || !s.completed) continue;
-      volByWorkout.set(
-        s.workoutId,
-        (volByWorkout.get(s.workoutId) ?? 0) + (s.weight || 0) * (s.reps || 0)
-      );
+      if (!ids.has(s.workoutId)) continue;
+      if (!setsByWorkout.has(s.workoutId)) setsByWorkout.set(s.workoutId, []);
+      setsByWorkout.get(s.workoutId).push(s);
+    }
+    const volByWorkout = new Map();
+    for (const [wid, wsets] of setsByWorkout) {
+      // In-app workouts mark sets completed; imported HEVY history doesn't. If a
+      // past workout has no completed sets at all, treat every logged set as
+      // done (it's a finished session) — otherwise its volume reads as 0 and the
+      // all-time record never shows. When some sets are completed, count only
+      // those, so leftover prefilled-but-unchecked sets don't inflate the total.
+      const hasCompleted = wsets.some((s) => s.completed);
+      const counted = hasCompleted ? wsets.filter((s) => s.completed) : wsets;
+      const vol = counted.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
+      volByWorkout.set(wid, vol);
     }
     const goal = volByWorkout.get(candidates[0].id) ?? 0;
     let max = 0;
