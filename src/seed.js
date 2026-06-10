@@ -10,31 +10,33 @@ import { uuid } from './utils.js';
  * Palette: Blue / Orange / Purple / Yellow / Pink / Brown / Green / Cyan / Red / Gray
  */
 const MUSCLE_COLORS = {
-  // Leg Day: Quads, Hamstrings, Glutes, Calves, Adductors
-  'Quads':       '#3b82f6', // blue
-  'Hamstrings':  '#f97316', // orange
-  'Glutes':      '#a855f7', // purple
-  'Calves':      '#eab308', // yellow
-  'Adductors':   '#ec4899', // pink
+  // Leg Day: Quadriceps, Hamstrings, Glutes, Calves, Adductors, Abductors
+  'Quadriceps':         '#3b82f6', // blue
+  'Hamstrings':         '#f97316', // orange
+  'Glutes':             '#a855f7', // purple
+  'Calves':             '#eab308', // yellow
+  'Adductors':          '#ec4899', // pink
+  'Abductors':          '#06b6d4', // cyan
 
-  // Chest Day: Chest, Triceps, Front Delts, Side Delts
-  'Chest':       '#3b82f6', // blue
-  'Triceps':     '#f97316', // orange
-  'Front Delts': '#a855f7', // purple
-  'Side Delts':  '#eab308', // yellow
+  // Chest Day: Pectorals, Triceps, Anterior Deltoid, Lateral Deltoid
+  'Pectorals':          '#3b82f6', // blue
+  'Triceps':            '#f97316', // orange
+  'Anterior Deltoid':   '#a855f7', // purple
+  'Lateral Deltoid':    '#eab308', // yellow
 
-  // Back Day: Lats, Mid Back, Biceps, Rear Delts, Traps
-  'Lats':        '#3b82f6', // blue
-  'Mid Back':    '#f97316', // orange
-  'Biceps':      '#ec4899', // pink (so Back Day with Lats/MB/Biceps/RD/Traps stays distinct)
-  'Rear Delts':  '#a855f7', // purple
-  'Traps':       '#eab308', // yellow
+  // Back Day: Lats, Upper Back, Biceps, Posterior Deltoid, Traps
+  'Lats':               '#3b82f6', // blue
+  'Upper Back':         '#f97316', // orange
+  'Biceps':             '#ec4899', // pink (keeps Back Day hues distinct)
+  'Posterior Deltoid':  '#a855f7', // purple
+  'Traps':              '#eab308', // yellow
 
   // Misc / cross-day
-  'Lower Back':  '#92400e', // brown
-  'Forearms':    '#22c55e', // green
-  'Abs':         '#92400e', // brown
-  'Other':       '#6b7280', // gray
+  'Lower Back':         '#92400e', // brown
+  'Forearms':           '#22c55e', // green
+  'Abs':                '#ef4444', // red
+  'Obliques':           '#14b8a6', // teal
+  'Other':              '#6b7280', // gray
 };
 
 export function colorForMuscle(muscle) {
@@ -142,69 +144,70 @@ const SEEDS = [
 
 /**
  * Returns the primary muscle group worked by an exercise, drilling down past
- * the broad category. e.g. "Lateral Raise" → "Side Delts", "Romanian Deadlift"
- * → "Hamstrings", "Leg Extension" → "Quads". Order of checks matters: more
- * specific patterns must come before generic ones (e.g. "Romanian Deadlift"
- * before generic "deadlift", "leg curl" before "curl").
+ * the broad category to formal-but-common muscle names. e.g. "Lateral Raise" →
+ * "Lateral Deltoid", "Romanian Deadlift" → "Hamstrings", "Leg Extension" →
+ * "Quadriceps", "Bench Press" → "Pectorals", rows → "Upper Back". Order of
+ * checks matters: more specific patterns must come before generic ones (e.g.
+ * "Romanian Deadlift" before generic "deadlift", "leg curl" before "curl",
+ * "upright row" before generic "row").
  */
 export function primaryMuscleFor(exercise) {
   const name = (exercise?.name || '').toLowerCase();
   if (!name) return exercise?.category || 'Other';
 
-  // Hamstring-specific exercises (must precede generic "deadlift" and "curl")
-  if (/romanian deadlift|stiff.?leg|good morning/.test(name)) return 'Hamstrings';
+  // Hamstring-specific (must precede generic "deadlift" and "curl")
+  if (/romanian deadlift|\brdl\b|stiff.?leg|good morning|nordic|hamstring/.test(name)) return 'Hamstrings';
   if (/leg curl/.test(name)) return 'Hamstrings';
 
-  // Quad-focused isolation
-  if (/leg extension/.test(name)) return 'Quads';
+  // Quadriceps isolation
+  if (/leg extension|sissy squat/.test(name)) return 'Quadriceps';
 
   // Calves
-  if (/calf/.test(name)) return 'Calves';
+  if (/calf|tib raise|tibialis/.test(name)) return 'Calves';
 
-  // Hip-focused
-  if (/hip adduction|adductor|inner thigh/.test(name)) return 'Adductors';
-  if (/hip thrust|glute|hip abduction|cable kickback|donkey kick/.test(name)) return 'Glutes';
+  // Hip-focused (abduction before adduction-adjacent glute work)
+  if (/hip adduction|adductor|inner thigh|copenhagen/.test(name)) return 'Adductors';
+  if (/hip abduction|abductor|outer thigh|clamshell/.test(name)) return 'Abductors';
+  if (/hip thrust|glute|cable kickback|donkey kick|rear kick|frog pump/.test(name)) return 'Glutes';
 
-  // Compound leg → quads primary
-  if (/squat|leg press|lunge|step.?up|split squat/.test(name)) return 'Quads';
+  // Compound leg → quadriceps primary
+  if (/squat|leg press|lunge|step.?up/.test(name)) return 'Quadriceps';
 
   // Lower back / posterior chain
-  if (/back extension|hyperextension/.test(name)) return 'Lower Back';
-  if (/deadlift/.test(name)) return 'Lower Back';
+  if (/back extension|hyperextension|superman/.test(name)) return 'Lower Back';
+  if (/deadlift|rack pull/.test(name)) return 'Lower Back';
 
-  // Shoulder subdivisions (before generic "press" and "raise")
-  if (/lateral raise|side delt/.test(name)) return 'Side Delts';
-  if (/rear delt|reverse fly|face pull|reverse pec deck/.test(name)) return 'Rear Delts';
-  if (/front raise|shoulder press|overhead press|arnold|military press/.test(name)) return 'Front Delts';
+  // Deltoid subdivisions (before generic "press", "raise", "fly", and "row")
+  if (/lateral raise|side raise|side delt|\blat raise\b|upright row/.test(name)) return 'Lateral Deltoid';
+  if (/rear delt|reverse fly|reverse flye|face pull|reverse pec deck/.test(name)) return 'Posterior Deltoid';
+  if (/front raise|shoulder press|overhead press|arnold|military press|landmine press|push press|viking press/.test(name)) return 'Anterior Deltoid';
 
   // Back details
-  if (/pulldown|pull.?up|chin.?up|pullover/.test(name)) return 'Lats';
+  if (/pulldown|pull.?down|pull.?up|chin.?up|pullover|straight.?arm/.test(name)) return 'Lats';
   if (/shrug/.test(name)) return 'Traps';
 
-  // Triceps (must precede chest "press" and biceps "curl")
-  if (/tricep|pushdown|skull ?crusher|close.?grip bench/.test(name)) return 'Triceps';
+  // Triceps (must precede chest "press"/"bench" and biceps "curl")
+  if (/tricep|pushdown|skull ?crusher|close.?grip bench|jm press|french press|bench dip/.test(name)) return 'Triceps';
 
-  // Biceps
-  if (/bicep|hammer|preacher|concentration curl|barbell curl|dumbbell curl|cable curl|incline (db|dumbbell) curl|single arm curl/.test(name)) return 'Biceps';
-  // Generic "curl" if it didn't match anything else above (no leg/hamstring/wrist curls remain)
-  if (/\bcurl\b/.test(name) && !/wrist curl/.test(name)) return 'Biceps';
+  // Forearms (before the generic "curl" → biceps catch-all)
+  if (/wrist curl|reverse curl|forearm|farmer|gripper|dead hang/.test(name)) return 'Forearms';
 
-  // Back rows
-  if (/\brow\b/.test(name)) return 'Mid Back';
+  // Biceps — any curl still unmatched (leg/nordic/wrist/reverse handled above)
+  if (/bicep|\bcurl\b/.test(name)) return 'Biceps';
 
-  // Chest
-  if (/bench press|chest press|chest fly|cable crossover|crossover|pec deck|butterfly|push.?up|dip \(chest\)|incline (db|dumbbell|barbell) press|decline (db|dumbbell|barbell) press/.test(name)) return 'Chest';
+  // Rows and other horizontal pulls → upper back (rhomboids / mid-traps)
+  if (/\brow\b|rear pull|high pull/.test(name)) return 'Upper Back';
 
-  // Core / abs
-  if (/crunch|sit.?up|plank|leg raise|knee raise|ab wheel|russian twist|hanging|woodchop|rotation/.test(name)) return 'Abs';
+  // Pectorals ("reverse fly" and "bench dip" already routed above)
+  if (/bench|chest|\bpec\b|pec deck|crossover|butterfly|push.?up|floor press|squeeze press|\bfly\b|\bflye\b/.test(name)) return 'Pectorals';
 
-  // Forearms
-  if (/wrist curl|forearm|farmer/.test(name)) return 'Forearms';
+  // Obliques before generic core so "side plank" / twists land here
+  if (/russian twist|woodchop|wood chop|side plank|side bend|oblique|pallof|rotation/.test(name)) return 'Obliques';
 
-  // Glute isolation that didn't match earlier (e.g. "Rear Kick")
-  if (/rear kick/.test(name)) return 'Glutes';
+  // Abs
+  if (/crunch|sit.?up|plank|leg raise|knee raise|ab wheel|ab roll|hanging|toes.?to.?bar|v.?up|dead bug|mountain climber/.test(name)) return 'Abs';
 
-  // Generic "dip" → triceps (chest-dip variant matched in chest regex above)
+  // Generic "dip" → triceps (chest-dip variants matched in pectorals regex)
   if (/\bdip\b/.test(name)) return 'Triceps';
 
   // Fallback to broad category
@@ -220,12 +223,13 @@ const CARDIO_RE = /\b(bike|biking|treadmill|run|running|cardio|step.?mill|ellipt
 
 // Maps the fine-grained muscle from `primaryMuscleFor` up to a broad category.
 const MUSCLE_TO_CATEGORY = {
-  Quads: 'Legs', Hamstrings: 'Legs', Adductors: 'Legs',
+  Quadriceps: 'Legs', Hamstrings: 'Legs', Adductors: 'Legs', Abductors: 'Legs',
   Glutes: 'Glutes', Calves: 'Calves',
-  Chest: 'Chest',
-  'Front Delts': 'Shoulders', 'Side Delts': 'Shoulders', 'Rear Delts': 'Shoulders',
-  Lats: 'Back', 'Mid Back': 'Back', Traps: 'Back', 'Lower Back': 'Back',
-  Biceps: 'Biceps', Triceps: 'Triceps', Forearms: 'Forearms', Abs: 'Core',
+  Pectorals: 'Chest',
+  'Anterior Deltoid': 'Shoulders', 'Lateral Deltoid': 'Shoulders', 'Posterior Deltoid': 'Shoulders',
+  Lats: 'Back', 'Upper Back': 'Back', Traps: 'Back', 'Lower Back': 'Back',
+  Biceps: 'Biceps', Triceps: 'Triceps', Forearms: 'Forearms',
+  Abs: 'Core', Obliques: 'Core',
 };
 
 /**

@@ -328,9 +328,16 @@ function renderActive(ctx, workout) {
     const bars = shares.map(({ muscle, record, cur, span }) => {
       const widthPct = (span / barMax) * 100;
       const fillPct = cur > 0 ? Math.min(100, (cur / span) * 100) : 0;
+      let stat;
+      if (record > 0) {
+        const pct = Math.round((cur / record) * 100);
+        stat = cur > record ? `${pct}% 🔥` : `${pct}%`;
+      } else {
+        stat = cur > 0 ? 'new 🔥' : 'new';
+      }
       const volText = record > 0
-        ? `${formatVolume(cur)} / ${formatVolume(record)}`
-        : formatVolume(cur);
+        ? `${formatVolume(cur)} / ${formatVolume(record)} · ${stat}`
+        : `${formatVolume(cur)} · ${stat}`;
       return `
         <div class="vol-muscle" style="width: ${widthPct.toFixed(2)}%; --mcolor: ${colorForMuscle(muscle)};" title="${esc(muscle)}: ${formatVolume(cur)} / record ${formatVolume(record)} lbs">
           <div class="vol-fill" style="width: ${fillPct.toFixed(2)}%;"></div>
@@ -342,17 +349,7 @@ function renderActive(ctx, workout) {
       `;
     }).join('');
 
-    const parts = shares.map(({ muscle, record, cur }) => {
-      let stat;
-      if (record > 0) {
-        const pct = Math.round((cur / record) * 100);
-        stat = cur > record ? `${pct}% 🔥` : `${pct}%`;
-      } else {
-        stat = cur > 0 ? 'new 🔥' : 'new';
-      }
-      return `<span style="color: ${colorForMuscle(muscle)}; font-weight: 600;">${esc(muscle)} ${stat}</span>`;
-    });
-    const label = `<strong>${formatVolume(totalVolume)} lbs</strong> · ${parts.join(' · ')}`;
+    const label = `<strong>${formatVolume(totalVolume)} lbs</strong> total`;
 
     progressEl.innerHTML = `
       <div class="vol-bars">${bars}</div>
