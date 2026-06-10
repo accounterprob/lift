@@ -428,41 +428,48 @@ button {
   border-radius: 8px;
   overflow: hidden;
 }
-/* Darker hatched stretch from the most-recent total to the all-time best, so
-   the boundary distinguishes "matched last workout" from "all-time record". */
-.vol-zone {
+/* One section per muscle: width ∝ that muscle's all-time best single-workout
+   volume. The faint tint marks the territory still to fill; the solid fill is
+   today's completed volume for that muscle. */
+.vol-muscle {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.vol-muscle + .vol-muscle { border-left: 2px solid var(--bg); }
+.vol-muscle::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--mcolor);
+  opacity: 0.16;
+}
+.vol-fill {
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    repeating-linear-gradient(
-      -45deg,
-      rgba(120, 120, 128, 0.45) 0,
-      rgba(120, 120, 128, 0.45) 2px,
-      transparent 2px,
-      transparent 7px
-    ),
-    rgba(120, 120, 128, 0.18);
+  left: 0;
+  background: var(--mcolor);
 }
-.vol-segment {
-  position: relative;
-  z-index: 1;
-  height: 100%;
+.vol-info {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
   padding: 0 4px;
-  color: #ffffff;
+  color: var(--text);
   font-variant-numeric: tabular-nums;
   overflow: hidden;
-  min-width: 0;
   line-height: 1.1;
+  pointer-events: none;
 }
-.vol-segment .seg-name {
+/* When the fill covers most of the section, white reads better than theme text. */
+.vol-info.on-fill { color: #ffffff; }
+.vol-muscle .seg-name {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: -0.1px;
@@ -472,7 +479,7 @@ button {
   /* No text-overflow: ellipsis — JS shrinks the font until the full name
      fits, or hides the name entirely if even 8px would still overflow. */
 }
-.vol-segment .seg-vol {
+.vol-muscle .seg-vol {
   font-size: 10px;
   font-weight: 600;
   opacity: 0.95;
@@ -488,8 +495,6 @@ button {
   font-variant-numeric: tabular-nums;
 }
 .vol-label strong { color: var(--text); font-weight: 700; }
-.vol-pct { color: var(--green); font-weight: 600; }
-.vol-best { color: var(--text-secondary); font-weight: 600; }
 
 .muscle-split {
   display: flex;

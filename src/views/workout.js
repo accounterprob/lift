@@ -225,20 +225,17 @@ function renderActive(ctx, workout) {
   updateTimer();
   timerInterval = setInterval(updateTimer, 1000);
 
-  // Save name on input; recompute the goal whenever it changes
+  // Save name on input
   const nameInput = ctx.container.querySelector('#wname');
   nameInput.addEventListener('input', debounce(async () => {
     workout.name = nameInput.value;
     await put('workouts', workout);
-    await refreshGoal();
   }, 300));
 
-  let goalVolume = 0;  // most-recent same-category workout → the 100% mark
-  let maxVolume = 0;   // best same-category workout ever → the end of the bar
-  async function refreshGoal() {
-    const targets = await getVolumeTargets(workout.name, workout.id);
-    goalVolume = targets.goal;
-    maxVolume = targets.max;
+  // All-time best single-workout volume per muscle, across the whole history.
+  let muscleRecords = new Map();
+  async function refreshRecords() {
+    muscleRecords = await getMuscleRecords(workout.id);
     updateRunningStats();
   }
 
@@ -284,91 +281,88 @@ function renderActive(ctx, workout) {
       })
     );
     renderSections();
-    await refreshGoal();
-    updateRunningStats();
+    await refreshRecords();
   }
 
   function updateRunningStats() {
     const exMap = new Map(allExercises.map((e) => [e.id, e]));
-    const byMuscle = new Map();
-    let totalVolume = 0;
+    // Muscles in this workout in order of first appearance (from every set,
+    // completed or not, so a section appears the moment an exercise is added),
+    // plus each muscle's completed volume so far.
+    const muscles = [];
+    const currentByMuscle = new Map();
     for (const s of sets) {
-      if (!s.completed) continue;
       const ex = exMap.get(s.exerciseId);
       if (!ex) continue;
+      const muscle = primaryMuscleFor(ex);
+      if (!muscles.includes(muscle)) muscles.push(muscle);
+      if (!s.completed) continue;
       const vol = (s.weight || 0) * (s.reps || 0);
       if (vol <= 0) continue;
-      totalVolume += vol;
-      const muscle = primaryMuscleFor(ex);
-      byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + vol);
+      currentByMuscle.set(muscle, (currentByMuscle.get(muscle) ?? 0) + vol);
     }
-    const sorted = [...byMuscle.entries()].sort((a, b) => b[1] - a[1]);
+    const totalVolume = [...currentByMuscle.values()].reduce((a, b) => a + b, 0);
 
-    // Progress bar with one colored segment per muscle. Each segment carries
-    // its own muscle name + volume INSIDE (visible only when the segment is
-    // wide enough; CSS hides overflow on narrow ones). The bar is normalized so
-    // its full width represents the best same-category workout ever (or today's
-    // total if it's a new all-time best). The stretch between the most-recent
-    // workout total (the 100% target) and the all-time best is drawn as a darker
-    // hatched zone, so the boundary marks "matched last time" vs "new record".
+    // One section per muscle. A section's share of the bar is proportional to
+    // the all-time best single-workout volume for that muscle (or today's
+    // volume once it exceeds the record). The colored fill inside each section
+    // is today's progress toward that muscle's record.
     const progressEl = ctx.container.querySelector('#workout-progress');
-    if (progressEl) {
-      // Show the bar on every workout that has sets, even before anything is
-      // completed or when there's no history to compare against yet.
-      if (sets.length === 0 && goalVolume === 0) {
-        progressEl.innerHTML = '';
-      } else {
-        const denom = Math.max(maxVolume, goalVolume, totalVolume, 1);
-        const pctOf = (v) => Math.min(100, (v / denom) * 100);
-        const segments = sorted.map(([muscle, vol]) => {
-          const widthPct = (vol / denom) * 100;
-          return `
-            <div class="vol-segment" style="width: ${widthPct.toFixed(2)}%; background: ${colorForMuscle(muscle)};" title="${esc(muscle)}: ${formatVolume(vol)} lbs">
-              <span class="seg-name">${esc(muscle)}</span>
-              <span class="seg-vol">${formatVolume(vol)}</span>
-            </div>
-          `;
-        }).join('');
-        // Hatched zone covering most-recent total → all-time best.
-        let zone = '';
-        if (maxVolume > goalVolume) {
-          const start = pctOf(goalVolume);
-          const width = pctOf(maxVolume) - start;
-          if (width > 0) {
-            zone = `<div class="vol-zone" style="left: ${start.toFixed(2)}%; width: ${width.toFixed(2)}%;" title="Last ${esc(workout.name)} → all-time best: ${formatVolume(goalVolume)} → ${formatVolume(maxVolume)} lbs"></div>`;
-          }
-        }
-        let label;
-        if (goalVolume > 0) {
-          const pct = Math.round((totalVolume / goalVolume) * 100);
-          label = `<strong>${formatVolume(totalVolume)}</strong> / ${formatVolume(goalVolume)} lbs · <span class="vol-pct">${pct}%</span>`;
-          if (totalVolume > maxVolume) {
-            // This live workout has passed the all-time record — new PR in progress.
-            label += ` · <span class="vol-best">🔥 new record</span>`;
-          } else if (maxVolume > goalVolume) {
-            // A past workout beat the most recent one — that's the stretch target.
-            label += ` · <span class="vol-best">best ${formatVolume(maxVolume)}</span>`;
-          } else {
-            // Most-recent workout is itself the all-time best.
-            label += ` · <span class="vol-best">all-time best</span>`;
-          }
-        } else {
-          label = `<strong>${formatVolume(totalVolume)} lbs</strong> · no previous ${esc(workout.name)} to compare`;
-        }
-        progressEl.innerHTML = `
-          <div class="vol-bar">${zone}${segments}</div>
-          <div class="vol-label">${label}</div>
-        `;
-        // Auto-shrink each segment's name until the full word fits.
-        // Falls back to hiding the name (volume-only) if even at min size
-        // the name would overflow.
-        requestAnimationFrame(() => {
-          for (const seg of progressEl.querySelectorAll('.vol-segment')) {
-            fitSegmentLabel(seg);
-          }
-        });
-      }
+    if (!progressEl) return;
+    if (muscles.length === 0) {
+      progressEl.innerHTML = '';
+      return;
     }
+    let shares = muscles.map((muscle) => {
+      const record = muscleRecords.get(muscle) ?? 0;
+      const cur = currentByMuscle.get(muscle) ?? 0;
+      return { muscle, record, cur, span: Math.max(record, cur) };
+    });
+    // Muscles with no record yet still get a visible slice of the bar.
+    const maxSpan = Math.max(...shares.map((x) => x.span));
+    const minSpan = maxSpan > 0 ? maxSpan * 0.12 : 1;
+    shares = shares.map((x) => ({ ...x, span: Math.max(x.span, minSpan) }));
+    const denom = shares.reduce((sum, x) => sum + x.span, 0);
+
+    const sections = shares.map(({ muscle, record, cur, span }) => {
+      const widthPct = (span / denom) * 100;
+      const fillPct = cur > 0 ? Math.min(100, (cur / span) * 100) : 0;
+      const volText = record > 0
+        ? `${formatVolume(cur)} / ${formatVolume(record)}`
+        : formatVolume(cur);
+      return `
+        <div class="vol-muscle" style="width: ${widthPct.toFixed(2)}%; --mcolor: ${colorForMuscle(muscle)};" title="${esc(muscle)}: ${formatVolume(cur)} / record ${formatVolume(record)} lbs">
+          <div class="vol-fill" style="width: ${fillPct.toFixed(2)}%;"></div>
+          <div class="vol-info${fillPct > 55 ? ' on-fill' : ''}">
+            <span class="seg-name">${esc(muscle)}</span>
+            <span class="seg-vol">${volText}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const parts = shares.map(({ muscle, record, cur }) => {
+      let stat;
+      if (record > 0) {
+        const pct = Math.round((cur / record) * 100);
+        stat = cur > record ? `${pct}% 🔥` : `${pct}%`;
+      } else {
+        stat = cur > 0 ? 'new 🔥' : 'new';
+      }
+      return `<span style="color: ${colorForMuscle(muscle)}; font-weight: 600;">${esc(muscle)} ${stat}</span>`;
+    });
+    const label = `<strong>${formatVolume(totalVolume)} lbs</strong> · ${parts.join(' · ')}`;
+
+    progressEl.innerHTML = `
+      <div class="vol-bar">${sections}</div>
+      <div class="vol-label">${label}</div>
+    `;
+    // Auto-shrink each section's name/volume until the full text fits.
+    requestAnimationFrame(() => {
+      for (const seg of progressEl.querySelectorAll('.vol-muscle')) {
+        fitSegmentLabel(seg);
+      }
+    });
   }
 
   function fitSegmentLabel(segEl) {
@@ -402,47 +396,43 @@ function renderActive(ctx, workout) {
   }
 
   /**
-   * For same-category workouts, return both the most-recent total volume
-   * (`goal`, the 100% mark) and the best-ever total volume (`max`, the end of
-   * the bar). Categories match by exact name OR normalized rotation slot — so a
-   * "Back/Bi Day" can compare against a prior "Back Day", and vice versa.
-   * Doesn't require `endedAt` — that filter was excluding imported history with
-   * no end time (often the all-time record), so the bar never marked it. The
-   * active workout is excluded by id instead.
+   * All-time best single-workout volume for each muscle, across the entire
+   * history regardless of day name, excluding the active workout. In-app
+   * workouts mark sets completed; imported HEVY history doesn't — if a past
+   * workout has no completed sets at all, every logged set counts as done,
+   * otherwise only the completed ones (so leftover prefilled-but-unchecked
+   * sets don't inflate totals). Returns Map muscle → volume.
    */
-  async function getVolumeTargets(name, excludeId) {
-    if (!name) return { goal: 0, max: 0 };
-    const norm = normalizeDayName(name);
-    const all = await getAll('workouts');
-    const candidates = all
-      .filter((w) => w.id !== excludeId)
-      .filter((w) => w.name === name || (norm && normalizeDayName(w.name) === norm))
-      .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
-    if (candidates.length === 0) return { goal: 0, max: 0 };
-    const ids = new Set(candidates.map((w) => w.id));
-    const setsAll = await getAll('sets');
+  async function getMuscleRecords(excludeId) {
+    const [setsAll, exercises] = await Promise.all([
+      getAll('sets'),
+      getAll('exercises'),
+    ]);
+    const exMap = new Map(exercises.map((e) => [e.id, e]));
     const setsByWorkout = new Map();
     for (const s of setsAll) {
-      if (!ids.has(s.workoutId)) continue;
+      if (s.workoutId === excludeId) continue;
       if (!setsByWorkout.has(s.workoutId)) setsByWorkout.set(s.workoutId, []);
       setsByWorkout.get(s.workoutId).push(s);
     }
-    const volByWorkout = new Map();
-    for (const [wid, wsets] of setsByWorkout) {
-      // In-app workouts mark sets completed; imported HEVY history doesn't. If a
-      // past workout has no completed sets at all, treat every logged set as
-      // done (it's a finished session) — otherwise its volume reads as 0 and the
-      // all-time record never shows. When some sets are completed, count only
-      // those, so leftover prefilled-but-unchecked sets don't inflate the total.
+    const records = new Map();
+    for (const wsets of setsByWorkout.values()) {
       const hasCompleted = wsets.some((s) => s.completed);
       const counted = hasCompleted ? wsets.filter((s) => s.completed) : wsets;
-      const vol = counted.reduce((sum, s) => sum + (s.weight || 0) * (s.reps || 0), 0);
-      volByWorkout.set(wid, vol);
+      const byMuscle = new Map();
+      for (const s of counted) {
+        const ex = exMap.get(s.exerciseId);
+        if (!ex) continue;
+        const vol = (s.weight || 0) * (s.reps || 0);
+        if (vol <= 0) continue;
+        const muscle = primaryMuscleFor(ex);
+        byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + vol);
+      }
+      for (const [muscle, vol] of byMuscle) {
+        if (vol > (records.get(muscle) ?? 0)) records.set(muscle, vol);
+      }
     }
-    const goal = volByWorkout.get(candidates[0].id) ?? 0;
-    let max = 0;
-    for (const v of volByWorkout.values()) if (v > max) max = v;
-    return { goal, max };
+    return records;
   }
 
   async function maybeShowPRToast(set) {
