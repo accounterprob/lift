@@ -14,7 +14,7 @@ import {
 import {
   uuid, esc, formatDuration, formatWeight, showSheet, emit, debounce, showToast,
 } from '../utils.js';
-import { CATEGORIES, EQUIPMENT, primaryMuscleFor, colorForMuscle } from '../seed.js';
+import { MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle } from '../seed.js';
 import { downloadBackup } from '../backup.js';
 import { openExerciseDetailSheet } from './exercises.js';
 
@@ -929,7 +929,8 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
       const chipRow = sheet.querySelector('#picker-chips');
 
       function renderChips() {
-        const cats = ['All', ...new Set(allExercises.map((e) => e.category))];
+        const muscles = sortMuscles(new Set(allExercises.map((e) => primaryMuscleFor(e))));
+        const cats = ['All', ...muscles];
         chipRow.innerHTML = cats
           .map((c) => {
             const isActive = (c === 'All' && !category) || c === category;
@@ -948,7 +949,7 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
 
       function renderList() {
         const filtered = allExercises
-          .filter((e) => !category || e.category === category)
+          .filter((e) => !category || primaryMuscleFor(e) === category)
           .filter((e) =>
             !search || e.name.toLowerCase().includes(search.toLowerCase())
           )
@@ -971,7 +972,7 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
                 <button class="list-row" data-id="${e.id}">
                   <div class="row-main">
                     <div class="row-title">${esc(e.name)}${e.isCustom ? ' <span class="badge">Custom</span>' : ''}${countLabel}</div>
-                    <div class="row-subtitle">${esc(e.equipment)} · ${esc(e.category)}</div>
+                    <div class="row-subtitle">${esc(e.equipment)} · ${esc(primaryMuscleFor(e))}</div>
                   </div>
                   <div class="row-trailing">${selected.has(e.id) ? checkmarkBlue() : ''}</div>
                 </button>
@@ -1039,11 +1040,11 @@ function openAddCustomExercise(onCreated) {
             <input id="ce-name" placeholder="e.g. Cable Lateral Raise" style="text-align: left;" />
           </div>
         </div>
-        <div class="section">Category</div>
+        <div class="section">Muscle</div>
         <div class="form-section">
           <div class="form-row">
-            <label for="ce-cat">Category</label>
-            <select id="ce-cat">${CATEGORIES.map((c) => `<option>${c}</option>`).join('')}</select>
+            <label for="ce-cat">Muscle</label>
+            <select id="ce-cat">${MUSCLES.map((c) => `<option>${c}</option>`).join('')}</select>
           </div>
         </div>
         <div class="section">Equipment</div>

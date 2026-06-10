@@ -5,6 +5,7 @@ import {
   esc, formatLbs, formatDateShort, emit, showSheet, trashIcon, errorState,
 } from '../utils.js';
 import { openAddCustomExercise } from './workout.js';
+import { primaryMuscleFor, sortMuscles } from '../seed.js';
 import { mountTimeSeriesChart } from '../charts.js';
 
 export function renderExercisesTab(ctx) {
@@ -44,7 +45,8 @@ async function renderList(ctx) {
   const searchInput = ctx.container.querySelector('#ex-search');
 
   function renderChips() {
-    const cats = ['All', ...new Set(allExercises.map((e) => e.category))];
+    const muscles = sortMuscles(new Set(allExercises.map((e) => primaryMuscleFor(e))));
+    const cats = ['All', ...muscles];
     chipsEl.innerHTML = cats
       .map((c) => {
         const active = (c === 'All' && !category) || c === category;
@@ -63,7 +65,7 @@ async function renderList(ctx) {
 
   function renderRows() {
     const filtered = allExercises
-      .filter((e) => !category || e.category === category)
+      .filter((e) => !category || primaryMuscleFor(e) === category)
       .filter((e) => !search || e.name.toLowerCase().includes(search.toLowerCase()));
 
     if (filtered.length === 0) {
@@ -76,7 +78,7 @@ async function renderList(ctx) {
         <button class="list-row" data-id="${e.id}">
           <div class="row-main">
             <div class="row-title">${esc(e.name)}${e.isCustom ? ' <span class="badge">Custom</span>' : ''}</div>
-            <div class="row-subtitle">${esc(e.equipment)} · ${esc(e.category)}</div>
+            <div class="row-subtitle">${esc(e.equipment)} · ${esc(primaryMuscleFor(e))}</div>
           </div>
           <div class="chevron">›</div>
         </button>
@@ -201,7 +203,7 @@ async function buildExerciseDetail(exerciseId) {
     <div class="section">Details</div>
     <div class="form-section">
       <div class="stat-row"><div class="stat-label">Equipment</div><div class="stat-value">${esc(exercise.equipment)}</div></div>
-      <div class="stat-row"><div class="stat-label">Category</div><div class="stat-value">${esc(exercise.category)}</div></div>
+      <div class="stat-row"><div class="stat-label">Muscle</div><div class="stat-value">${esc(primaryMuscleFor(exercise))}</div></div>
     </div>
 
     ${completed.length > 0 ? `

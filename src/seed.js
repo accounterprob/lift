@@ -48,6 +48,26 @@ export const CATEGORIES = [
   'Legs', 'Glutes', 'Calves', 'Core', 'Full Body',
 ];
 
+/**
+ * Canonical display order for the specific muscle groups — push, pull, legs,
+ * core. Used to order filter chips and the muscle dropdown uniformly app-wide.
+ */
+export const MUSCLES = [
+  'Pectorals', 'Anterior Deltoid', 'Lateral Deltoid', 'Posterior Deltoid',
+  'Triceps', 'Biceps', 'Forearms',
+  'Lats', 'Upper Back', 'Lower Back', 'Traps',
+  'Quadriceps', 'Hamstrings', 'Glutes', 'Adductors', 'Abductors', 'Calves',
+  'Abs', 'Obliques',
+];
+
+/** Sort muscle names by the canonical MUSCLES order; unknown names go last. */
+export function sortMuscles(names) {
+  const rank = new Map(MUSCLES.map((m, i) => [m, i]));
+  return [...names].sort(
+    (a, b) => (rank.get(a) ?? 999) - (rank.get(b) ?? 999) || a.localeCompare(b)
+  );
+}
+
 export const EQUIPMENT = [
   'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight',
   'Kettlebell', 'Bands', 'Other',
