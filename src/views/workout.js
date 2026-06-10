@@ -611,7 +611,7 @@ function renderExerciseSection(exercise, sets, prevSets = new Map()) {
   // Each slot can come from a different past workout (see prevSets above).
   let workingIndex = 0;
   let warmupIndex = 0;
-  const setBlocks = sets.map((s) => {
+  const setBlocks = sets.map((s, i) => {
     const type = s.setType || 'working';
     let display;
     let positionInType;
@@ -624,7 +624,7 @@ function renderExerciseSection(exercise, sets, prevSets = new Map()) {
       positionInType = workingIndex;
       display = String(workingIndex);
     }
-    const prev = findPrevSetByTypeAndPosition(type, positionInType, prevSets);
+    const prev = findPrevSetByTypeAndPosition(type, positionInType, prevSets, i + 1);
     return renderSetRow(s, display, prev);
   }).join('');
 
@@ -650,12 +650,18 @@ function renderExerciseSection(exercise, sets, prevSets = new Map()) {
 /**
  * Look up the previous set for a given slot. `prevMap` is keyed
  * `${type}#${position}` (1-indexed) and already encodes the per-slot fallback to
- * older workouts (see previousSetsByPositionForExercise). Returns null when no
- * prior workout ever had this slot — a genuinely new set.
+ * older workouts (see previousSetsByPositionForExercise). When no typed history
+ * has the slot and `overallPosition` (1-indexed row within the exercise) is
+ * given, falls back to the same raw position in typeless history — imported
+ * HEVY workouts whose warmups weren't flagged. Returns null only when the slot
+ * is genuinely new.
  */
-function findPrevSetByTypeAndPosition(type, positionInType, prevMap) {
+function findPrevSetByTypeAndPosition(type, positionInType, prevMap, overallPosition = null) {
   if (!prevMap || typeof prevMap.get !== 'function') return null;
-  return prevMap.get(`${type}#${positionInType}`) ?? null;
+  const typed = prevMap.get(`${type}#${positionInType}`);
+  if (typed) return typed;
+  if (overallPosition != null) return prevMap.get(`any#${overallPosition}`) ?? null;
+  return null;
 }
 
 function renderSetRow(set, displayLabel, prevSet) {
@@ -779,7 +785,10 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
     // set with its own previous weight/reps (and warmup/working type). So if
     // last time you did W1 95×12, W2 135×12, then 3 working sets at 155×10,
     // those 5 sets come pre-populated and you just tweak + check them off.
-    const prevSets = await previousWorkoutSetsForExercise(exerciseId, workout.id);
+    // Rows that were never actually performed (weight or reps still 0) are
+    // skipped, so they don't propagate from workout to workout.
+    const prevSets = (await previousWorkoutSetsForExercise(exerciseId, workout.id))
+      .filter((prev) => (prev.weight || 0) > 0 && (prev.reps || 0) > 0);
     if (prevSets.length > 0) {
       for (const prev of prevSets) {
         const set = {
@@ -848,7 +857,7 @@ async function addSet(workout, existingSets, exerciseId, prevSets = new Map()) {
   const vol = (s) => (s?.weight || 0) * (s?.reps || 0);
   const workingSets = setsForEx.filter((s) => (s.setType || 'working') !== 'warmup');
   const newPosition = workingSets.length + 1;
-  const prevForNew = findPrevSetByTypeAndPosition('working', newPosition, prevSets);
+  const prevForNew = findPrevSetByTypeAndPosition('working', newPosition, prevSets, setsForEx.length + 1);
 
   // Heaviest working set entered so far this workout (by volume).
   const bestSoFar = workingSets
@@ -887,7 +896,10 @@ async function addSet(workout, existingSets, exerciseId, prevSets = new Map()) {
 
 async function finishWorkout(workout, sets) {
   for (const s of sets) {
-    if (!s.completed && (s.weight || 0) === 0 && (s.reps || 0) === 0) {
+    // Drop unperformed rows: anything not checked off that's missing a weight
+    // or a rep count (e.g. a prefilled 155×0). They'd otherwise be recreated by
+    // prefill in every future workout and mask real history in the PREV column.
+    if (!s.completed && ((s.weight || 0) === 0 || (s.reps || 0) === 0)) {
       await del('sets', s.id);
     }
   }

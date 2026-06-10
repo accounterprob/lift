@@ -161,6 +161,16 @@ export async function previousWorkoutSetsForExercise(exerciseId, excludeWorkoutI
  * from the latest. Warmups fall back independently of working sets. Returns a
  * Map keyed `${type}#${position}` (position is 1-indexed). Slots that no prior
  * workout ever had simply won't be present — a genuinely new set → blank PREV.
+ *
+ * Only real, performed sets participate (weight > 0 and reps > 0): leftover
+ * prefilled rows like 155×0 would otherwise occupy a slot and mask genuine
+ * history in older workouts.
+ *
+ * Imported HEVY data and workouts that predate warmup flags have no setType on
+ * any set, so their warmups are indistinguishable from working sets. Those
+ * typeless workouts are additionally indexed by raw position (`any#n`) so a
+ * slot no typed workout has — e.g. today's W2 — can still fall back to "the
+ * n-th set you did back then".
  */
 export async function previousSetsByPositionForExercise(exerciseId, excludeWorkoutId = null) {
   const allSets = await getExerciseSets(exerciseId);
@@ -181,15 +191,22 @@ export async function previousSetsByPositionForExercise(exerciseId, excludeWorko
 
   const result = new Map();
   for (const w of ordered) {
-    const sets = byWorkout.get(w.id).sort((a, b) => a.order - b.order);
+    const sets = byWorkout.get(w.id)
+      .filter((s) => (s.weight || 0) > 0 && (s.reps || 0) > 0)
+      .sort((a, b) => a.order - b.order);
+    const isTypeless = sets.every((s) => s.setType == null);
     let working = 0;
     let warmup = 0;
-    for (const s of sets) {
+    sets.forEach((s, i) => {
       const type = s.setType || 'working';
       const pos = type === 'warmup' ? (warmup += 1) : (working += 1);
       const key = `${type}#${pos}`;
       if (!result.has(key)) result.set(key, s);  // newest workout wins per slot
-    }
+      if (isTypeless) {
+        const anyKey = `any#${i + 1}`;
+        if (!result.has(anyKey)) result.set(anyKey, s);
+      }
+    });
   }
   return result;
 }
