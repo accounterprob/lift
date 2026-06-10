@@ -303,10 +303,11 @@ function renderActive(ctx, workout) {
     }
     const totalVolume = [...currentByMuscle.values()].reduce((a, b) => a + b, 0);
 
-    // One section per muscle. A section's share of the bar is proportional to
-    // the all-time best single-workout volume for that muscle (or today's
-    // volume once it exceeds the record). The colored fill inside each section
-    // is today's progress toward that muscle's record.
+    // One bar per muscle, stacked vertically. A bar's length is proportional
+    // to the all-time best single-workout volume for that muscle (or today's
+    // volume once it exceeds the record), relative to the biggest record in
+    // this workout. The colored fill inside each bar is today's progress
+    // toward that muscle's record.
     const progressEl = ctx.container.querySelector('#workout-progress');
     if (!progressEl) return;
     if (muscles.length === 0) {
@@ -318,14 +319,14 @@ function renderActive(ctx, workout) {
       const cur = currentByMuscle.get(muscle) ?? 0;
       return { muscle, record, cur, span: Math.max(record, cur) };
     });
-    // Muscles with no record yet still get a visible slice of the bar.
+    // Muscles with no record yet still get a visible bar.
     const maxSpan = Math.max(...shares.map((x) => x.span));
     const minSpan = maxSpan > 0 ? maxSpan * 0.12 : 1;
     shares = shares.map((x) => ({ ...x, span: Math.max(x.span, minSpan) }));
-    const denom = shares.reduce((sum, x) => sum + x.span, 0);
+    const barMax = Math.max(...shares.map((x) => x.span));
 
-    const sections = shares.map(({ muscle, record, cur, span }) => {
-      const widthPct = (span / denom) * 100;
+    const bars = shares.map(({ muscle, record, cur, span }) => {
+      const widthPct = (span / barMax) * 100;
       const fillPct = cur > 0 ? Math.min(100, (cur / span) * 100) : 0;
       const volText = record > 0
         ? `${formatVolume(cur)} / ${formatVolume(record)}`
@@ -354,7 +355,7 @@ function renderActive(ctx, workout) {
     const label = `<strong>${formatVolume(totalVolume)} lbs</strong> · ${parts.join(' · ')}`;
 
     progressEl.innerHTML = `
-      <div class="vol-bar">${sections}</div>
+      <div class="vol-bars">${bars}</div>
       <div class="vol-label">${label}</div>
     `;
     // Auto-shrink each section's name/volume until the full text fits.

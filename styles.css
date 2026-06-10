@@ -420,24 +420,22 @@ button {
   padding: 4px 16px 12px;
 }
 .workout-progress:empty { display: none; }
-.vol-bar {
-  position: relative;
+.vol-bars {
   display: flex;
-  height: 42px;
-  background: var(--fill-2);
-  border-radius: 8px;
-  overflow: hidden;
+  flex-direction: column;
+  gap: 6px;
 }
-/* One section per muscle: width ∝ that muscle's all-time best single-workout
-   volume. The faint tint marks the territory still to fill; the solid fill is
-   today's completed volume for that muscle. */
+/* One bar per muscle, stacked vertically: length ∝ that muscle's all-time best
+   single-workout volume. The faint tint marks the territory still to fill; the
+   solid fill is today's completed volume for that muscle. */
 .vol-muscle {
   position: relative;
-  height: 100%;
+  height: 32px;
   min-width: 0;
   overflow: hidden;
+  border-radius: 8px;
+  background: var(--fill-2);
 }
-.vol-muscle + .vol-muscle { border-left: 2px solid var(--bg); }
 .vol-muscle::before {
   content: '';
   position: absolute;
