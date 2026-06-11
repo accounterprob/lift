@@ -693,6 +693,7 @@ function attachSwipeToDelete(wrap, onDelete) {
   let tracking = false;
   let horizontal = false;
   let isOpen = false;
+  let startedOnControl = false;
 
   // Distance past which a release auto-deletes (about half the row).
   const commitPoint = () => Math.max(140, rowWidth * 0.5);
@@ -733,14 +734,18 @@ function attachSwipeToDelete(wrap, onDelete) {
     setTimeout(onDelete, 150);
   }
 
+  // Start tracking anywhere on the row — including over the inputs and buttons —
+  // so the whole row is a swipe zone, not just the gaps between controls. We
+  // only take the gesture over once it's clearly horizontal, so a plain tap
+  // still focuses an input or fires a button.
   row.addEventListener('touchstart', (e) => {
-    if (e.target.matches('input, button')) return;  // let inputs/buttons own their gesture
     rowWidth = wrap.clientWidth || row.clientWidth;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     currentDX = isOpen ? -REVEAL_WIDTH : 0;
     tracking = true;
     horizontal = false;
+    startedOnControl = !!e.target.closest('input, button, select, textarea');
   }, { passive: true });
 
   row.addEventListener('touchmove', (e) => {
@@ -749,18 +754,25 @@ function attachSwipeToDelete(wrap, onDelete) {
     const dy = e.touches[0].clientY - startY;
     if (!horizontal) {
       if (Math.abs(dy) > Math.abs(dx) + 4) {
-        // Looks like a vertical scroll; bail
+        // Looks like a vertical scroll; bail and let the page scroll.
         tracking = false;
         return;
       }
-      if (Math.abs(dx) > 6) horizontal = true;
+      if (Math.abs(dx) > 8) {
+        horizontal = true;
+        // Hand the gesture off from any focused input so we don't drag a caret
+        // or select text while swiping.
+        if (startedOnControl && document.activeElement?.blur) document.activeElement.blur();
+      }
     }
     if (!horizontal) return;
+    // Now that we own a horizontal swipe, stop the input/page from reacting.
+    if (e.cancelable) e.preventDefault();
     const base = isOpen ? -REVEAL_WIDTH : 0;
     // Allow dragging all the way across the row, not just to the reveal width.
     currentDX = Math.min(0, Math.max(-rowWidth, base + dx));
     setOffset(currentDX, false);
-  }, { passive: true });
+  }, { passive: false });
 
   function endSwipe() {
     if (!tracking) return;
