@@ -674,8 +674,9 @@ function renderSetRow(set, displayLabel, prevSet) {
 }
 
 /**
- * Attaches iOS-style swipe-left-to-reveal-delete behavior to a set row.
- * onDelete is called when the user taps the revealed Delete button.
+ * Attaches iOS-style swipe-left-to-delete behavior to a set row. A short swipe
+ * snaps open to reveal the Delete button (tap to confirm); a full swipe past
+ * the commit threshold deletes immediately on release. onDelete runs the delete.
  * Only one row stays open at a time — any other open row auto-closes.
  */
 function attachSwipeToDelete(wrap, onDelete) {
@@ -683,9 +684,9 @@ function attachSwipeToDelete(wrap, onDelete) {
   const deleteBtn = wrap.querySelector('.set-swipe-delete');
   if (!row || !deleteBtn) return;
 
-  const REVEAL_WIDTH = 88;  // px the row slides left to fully expose Delete
-  const TRIGGER = 40;       // px past which we snap open instead of closed
+  const REVEAL_WIDTH = 88;  // px the row rests open at, exposing Delete
 
+  let rowWidth = 0;
   let startX = 0;
   let startY = 0;
   let currentDX = 0;
@@ -693,9 +694,16 @@ function attachSwipeToDelete(wrap, onDelete) {
   let horizontal = false;
   let isOpen = false;
 
+  // Distance past which a release auto-deletes (about half the row).
+  const commitPoint = () => Math.max(140, rowWidth * 0.5);
+
   function setOffset(px, animate) {
     row.style.transition = animate ? 'transform 0.18s ease' : 'none';
     row.style.transform = `translateX(${px}px)`;
+    // Grow the red panel to stay flush behind the row as it slides further
+    // than the resting reveal width.
+    deleteBtn.style.width = `${Math.max(REVEAL_WIDTH, -px)}px`;
+    wrap.classList.toggle('will-delete', px <= -commitPoint());
   }
   function close(animate = true) {
     isOpen = false;
@@ -708,19 +716,29 @@ function attachSwipeToDelete(wrap, onDelete) {
       if (el !== wrap) {
         const r = el.querySelector('.set-row');
         if (r) { r.style.transition = 'transform 0.18s ease'; r.style.transform = 'translateX(0)'; }
-        el.classList.remove('swiped-open');
+        const d = el.querySelector('.set-swipe-delete');
+        if (d) d.style.width = '';
+        el.classList.remove('swiped-open', 'will-delete');
       }
     });
     isOpen = true;
     setOffset(-REVEAL_WIDTH, animate);
     wrap.classList.add('swiped-open');
   }
+  function commitDelete() {
+    // Slide the row fully off-screen, then delete.
+    row.style.transition = 'transform 0.16s ease-out';
+    row.style.transform = `translateX(${-rowWidth}px)`;
+    deleteBtn.style.width = `${rowWidth}px`;
+    setTimeout(onDelete, 150);
+  }
 
   row.addEventListener('touchstart', (e) => {
     if (e.target.matches('input, button')) return;  // let inputs/buttons own their gesture
+    rowWidth = wrap.clientWidth || row.clientWidth;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
-    currentDX = 0;
+    currentDX = isOpen ? -REVEAL_WIDTH : 0;
     tracking = true;
     horizontal = false;
   }, { passive: true });
@@ -739,7 +757,8 @@ function attachSwipeToDelete(wrap, onDelete) {
     }
     if (!horizontal) return;
     const base = isOpen ? -REVEAL_WIDTH : 0;
-    currentDX = Math.min(0, Math.max(-REVEAL_WIDTH, base + dx));
+    // Allow dragging all the way across the row, not just to the reveal width.
+    currentDX = Math.min(0, Math.max(-rowWidth, base + dx));
     setOffset(currentDX, false);
   }, { passive: true });
 
@@ -747,7 +766,8 @@ function attachSwipeToDelete(wrap, onDelete) {
     if (!tracking) return;
     tracking = false;
     if (!horizontal) return;
-    if (currentDX < -TRIGGER) open();
+    if (currentDX <= -commitPoint()) commitDelete();
+    else if (currentDX < -REVEAL_WIDTH / 2) open();
     else close();
   }
   row.addEventListener('touchend', endSwipe);

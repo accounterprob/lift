@@ -619,13 +619,19 @@ button {
   width: 88px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;  /* label pinned right, stays visible on a full swipe */
+  padding-right: 26px;
+  box-sizing: border-box;
   background: var(--red);
   color: white;
   font-size: 15px;
   font-weight: 600;
   border: 0;
   letter-spacing: 0.2px;
+}
+/* Past the auto-delete threshold: darken so a full swipe clearly means delete. */
+.set-row-wrap.will-delete .set-swipe-delete {
+  background: color-mix(in srgb, var(--red) 80%, black);
 }
 
 .set-row {
