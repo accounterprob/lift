@@ -550,7 +550,31 @@ function renderActive(ctx, workout) {
       if (numBtn) {
         numBtn.addEventListener('click', async () => {
           const current = set.setType || 'working';
-          set.setType = current === 'warmup' ? 'working' : 'warmup';
+          const newType = current === 'warmup' ? 'working' : 'warmup';
+          set.setType = newType;
+          // Re-suggest this set's numbers from the matching slot's history (the
+          // same value PREV shows), so a set flipped to/from warmup adopts that
+          // slot's previous weight/reps instead of keeping the other type's.
+          // Skip if it's already completed (don't rewrite logged work).
+          if (!set.completed) {
+            const exSets = sets
+              .filter((s) => s.exerciseId === set.exerciseId)
+              .sort((a, b) => a.order - b.order);
+            let typePos = 0;
+            let overallPos = 0;
+            for (const s of exSets) {
+              overallPos += 1;
+              if ((s.setType || 'working') === newType) typePos += 1;
+              if (s.id === set.id) break;
+            }
+            const prev = findPrevSetByTypeAndPosition(
+              newType, typePos, prevByExercise.get(set.exerciseId), overallPos
+            );
+            if (prev && prev.weight > 0 && prev.reps > 0) {
+              set.weight = prev.weight;
+              set.reps = prev.reps;
+            }
+          }
           await put('sets', set);
           renderSections();  // re-render so set numbering updates correctly across the section
         });
