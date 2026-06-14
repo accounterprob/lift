@@ -421,9 +421,14 @@ button {
 }
 .workout-progress:empty { display: none; }
 
-/* How-to-log reminder under the movement name in the active workout. */
+/* Name + how-to-log reminder, stacked, under the movement name. */
+.exercise-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .logging-hint {
-  padding: 0 14px 8px;
   font-size: 12px;
   color: var(--text-secondary);
 }
@@ -452,16 +457,19 @@ button {
   margin: 4px 0 14px;
   padding: 16px 18px;
   min-height: 56px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
   border-radius: 12px;
   background: var(--fill-2);
   color: var(--text);
-  font-size: 40px;
+  font-size: 38px;
   font-weight: 300;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  overflow: hidden;
+  overflow-x: auto;
   white-space: nowrap;
-  text-overflow: ellipsis;
+  word-break: keep-all;
 }
 .calc-grid {
   display: grid;
@@ -478,10 +486,17 @@ button {
   font-size: 24px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.08s ease, color 0.08s ease, transform 0.08s ease;
 }
-.calc-key:active { filter: brightness(0.92); }
+/* Number keys: clear color change + slight depress on press. */
+.calc-key:active { background: var(--fill-1); transform: scale(0.96); }
 .calc-key.calc-fn { background: var(--fill-1); color: var(--accent); font-weight: 600; }
+.calc-key.calc-fn:active { background: var(--accent); color: #fff; }
 .calc-key.calc-op { background: var(--accent); color: #fff; font-weight: 600; }
+/* Operator pressed or currently selected: invert to white, like Apple. */
+.calc-key.calc-op:active,
+.calc-key.calc-op.selected { background: #fff; color: var(--accent); }
 .calc-key.calc-zero { grid-column: span 2; }
 .vol-bars {
   display: flex;

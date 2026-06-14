@@ -655,10 +655,12 @@ function renderExerciseSection(exercise, sets, prevSets = new Map()) {
   return `
     <div class="exercise-section">
       <div class="exercise-section-header">
-        <button class="name exercise-name-btn" data-exercise-id="${exercise?.id}">${esc(exercise?.name ?? 'Unknown exercise')} <span class="name-chevron">›</span></button>
+        <div class="exercise-title">
+          <button class="name exercise-name-btn" data-exercise-id="${exercise?.id}">${esc(exercise?.name ?? 'Unknown exercise')} <span class="name-chevron">›</span></button>
+          ${hint ? `<div class="logging-hint">${esc(hint)}</div>` : ''}
+        </div>
         <button class="menu exercise-menu" data-exercise-id="${exercise?.id}" aria-label="Remove">×</button>
       </div>
-      ${hint ? `<div class="logging-hint">ⓘ ${esc(hint)}</div>` : ''}
       <div class="set-table-header">
         <div class="col-set">SET</div>
         <div>PREV</div>
@@ -1183,56 +1185,82 @@ function openCalculator() {
     `,
     onMount(sheet, dismiss) {
       const displayEl = sheet.querySelector('#calc-display');
-      let display = '0';
-      let acc = null;
-      let pendingOp = null;
-      let waiting = false;  // next digit starts a fresh operand
+      let curr = '0';        // current operand being typed
+      let acc = null;        // running result
+      let pendingOp = null;  // operator symbol awaiting its right operand
+      let waiting = false;   // next digit starts a fresh operand
+      let error = false;
 
       const OPS = { '+': (a, b) => a + b, '−': (a, b) => a - b, '×': (a, b) => a * b, '÷': (a, b) => b === 0 ? NaN : a / b };
 
       const fmt = (n) => {
         if (!isFinite(n)) return 'Error';
-        // Trim float noise, keep it short.
         let s = parseFloat(n.toFixed(8)).toString();
         if (s.replace('-', '').replace('.', '').length > 12) s = n.toPrecision(10).replace(/\.?0+$/, '');
         return s;
       };
-      const render = () => { displayEl.textContent = display; };
+
+      // Show the full equation as it's typed: "45 × 3", "45 × " mid-entry, etc.
+      function render() {
+        if (error) { displayEl.textContent = 'Error'; }
+        else if (pendingOp) displayEl.textContent = `${fmt(acc)} ${pendingOp}${waiting ? '' : ' ' + curr}`;
+        else displayEl.textContent = curr;
+        // Highlight the active operator like Apple's calculator.
+        for (const k of sheet.querySelectorAll('.calc-op')) {
+          k.classList.toggle('selected', !error && k.dataset.key === pendingOp);
+        }
+      }
 
       function inputDigit(d) {
-        if (display === 'Error') { display = d; waiting = false; return render(); }
-        if (waiting) { display = d; waiting = false; }
-        else display = display === '0' ? d : display + d;
+        if (error) { error = false; acc = null; pendingOp = null; curr = d; waiting = false; return render(); }
+        if (waiting) { curr = d; waiting = false; }
+        else curr = curr === '0' ? d : curr + d;
         render();
       }
       function inputDot() {
-        if (waiting || display === 'Error') { display = '0.'; waiting = false; return render(); }
-        if (!display.includes('.')) display += '.';
+        if (error) { error = false; acc = null; pendingOp = null; curr = '0.'; waiting = false; return render(); }
+        if (waiting) { curr = '0.'; waiting = false; }
+        else if (!curr.includes('.')) curr += '.';
         render();
       }
-      function clearAll() { display = '0'; acc = null; pendingOp = null; waiting = false; render(); }
+      function clearAll() { curr = '0'; acc = null; pendingOp = null; waiting = false; error = false; render(); }
       function toggleSign() {
-        if (display === 'Error' || display === '0') return;
-        display = display.startsWith('-') ? display.slice(1) : '-' + display;
+        if (error) return;
+        curr = curr.startsWith('-') ? curr.slice(1) : (curr === '0' ? '0' : '-' + curr);
+        if (waiting) acc = parseFloat(curr);
         render();
       }
       function percent() {
-        if (display === 'Error') return;
-        display = fmt(parseFloat(display) / 100);
-        waiting = true; render();
+        if (error) return;
+        curr = fmt(parseFloat(curr) / 100);
+        if (waiting) acc = parseFloat(curr);
+        render();
       }
-      function applyOp(nextOp) {
-        const input = parseFloat(display);
+      function setResult(result) {
+        if (!isFinite(result)) { error = true; return render(); }
+        acc = result; curr = fmt(result); render();
+      }
+      function applyOp(sym) {
+        if (error) return;
+        const input = parseFloat(curr);
         if (pendingOp && !waiting) {
           const result = OPS[pendingOp](acc, input);
+          if (!isFinite(result)) { error = true; return render(); }
           acc = result;
-          display = fmt(result);
         } else {
           acc = input;
         }
-        render();
+        pendingOp = sym;
         waiting = true;
-        pendingOp = nextOp;  // null when '='
+        render();
+      }
+      function equals() {
+        if (error || !pendingOp) return render();
+        const right = waiting ? acc : parseFloat(curr);
+        const result = OPS[pendingOp](acc, right);
+        pendingOp = null;
+        waiting = true;
+        setResult(result);
       }
 
       for (const btn of sheet.querySelectorAll('.calc-key')) {
@@ -1244,7 +1272,7 @@ function openCalculator() {
           else if (action === 'sign') toggleSign();
           else if (action === 'percent') percent();
           else if (action === 'op') applyOp(key);
-          else if (action === 'equals') applyOp(null);
+          else if (action === 'equals') equals();
         });
       }
 
