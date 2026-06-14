@@ -485,6 +485,8 @@ button {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;  /* no double-tap-zoom delay → taps never get dropped */
+  user-select: none;
   transition: background-color 0.06s ease, color 0.06s ease, transform 0.06s ease;
 }
 .calc-key.calc-fn { background: var(--fill-1); color: var(--accent); font-weight: 600; }

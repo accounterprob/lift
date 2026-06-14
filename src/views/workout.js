@@ -1161,7 +1161,7 @@ function openAddCustomExercise(onCreated) {
 
 function openCalculator() {
   const KEYS = [
-    ['AC', 'clear', 'fn'], ['±', 'sign', 'fn'], ['%', 'percent', 'fn'], ['÷', 'op', 'op'],
+    ['AC', 'clear', 'fn'], ['±', 'sign', 'fn'], ['⌫', 'back', 'fn'], ['÷', 'op', 'op'],
     ['7', 'digit'], ['8', 'digit'], ['9', 'digit'], ['×', 'op', 'op'],
     ['4', 'digit'], ['5', 'digit'], ['6', 'digit'], ['−', 'op', 'op'],
     ['1', 'digit'], ['2', 'digit'], ['3', 'digit'], ['+', 'op', 'op'],
@@ -1238,9 +1238,17 @@ function openCalculator() {
         tokens[tokens.length - 1] = v.startsWith('-') ? v.slice(1) : (v === '0' ? '0' : '-' + v);
         render();
       }
-      function percent() {
-        if (error || isOp(last())) return;
-        tokens[tokens.length - 1] = fmt(parseFloat(last()) / 100);
+      function backspace() {
+        if (error) return clearAll();
+        justEval = false;
+        if (isOp(last())) { tokens.pop(); return render(); }
+        const trimmed = last().slice(0, -1);
+        if (trimmed === '' || trimmed === '-') {
+          if (tokens.length > 1) tokens.pop();  // drop the number, keep the operator before it
+          else tokens = ['0'];
+        } else {
+          tokens[tokens.length - 1] = trimmed;
+        }
         render();
       }
       function equals() {
@@ -1258,22 +1266,35 @@ function openCalculator() {
         render();
       }
 
+      function activate(btn) {
+        const { action, key } = btn.dataset;
+        if (action === 'digit') inputDigit(key);
+        else if (action === 'dot') inputDot();
+        else if (action === 'clear') clearAll();
+        else if (action === 'sign') toggleSign();
+        else if (action === 'back') backspace();
+        else if (action === 'op') inputOp(key);
+        else if (action === 'equals') equals();
+      }
+
+      // Act on pointerup, not click: click drops fast/rapid taps on mobile
+      // (double-tap-zoom heuristics), which made keys feel stuck. Touch pointers
+      // get implicit capture, so pointerup lands on the key that got pointerdown.
+      let downBtn = null;
       for (const btn of sheet.querySelectorAll('.calc-key')) {
-        // Drive the pressed color ourselves — :active is unreliable in iOS PWAs.
-        btn.addEventListener('pointerdown', () => btn.classList.add('pressed'));
-        for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) {
-          btn.addEventListener(ev, () => btn.classList.remove('pressed'));
-        }
-        btn.addEventListener('click', () => {
-          const { action, key } = btn.dataset;
-          if (action === 'digit') inputDigit(key);
-          else if (action === 'dot') inputDot();
-          else if (action === 'clear') clearAll();
-          else if (action === 'sign') toggleSign();
-          else if (action === 'percent') percent();
-          else if (action === 'op') inputOp(key);
-          else if (action === 'equals') equals();
+        btn.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          downBtn = btn;
+          btn.classList.add('pressed');
         });
+        btn.addEventListener('pointerup', (e) => {
+          e.preventDefault();
+          btn.classList.remove('pressed');
+          if (downBtn === btn) activate(btn);
+          downBtn = null;
+        });
+        btn.addEventListener('pointercancel', () => { btn.classList.remove('pressed'); downBtn = null; });
+        btn.addEventListener('pointerleave', () => btn.classList.remove('pressed'));
       }
 
       sheet.querySelector('#calc-done').addEventListener('click', () => dismiss());
