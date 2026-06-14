@@ -1185,13 +1185,8 @@ function openCalculator() {
     `,
     onMount(sheet, dismiss) {
       const displayEl = sheet.querySelector('#calc-display');
-      let curr = '0';        // current operand being typed
-      let acc = null;        // running result
-      let pendingOp = null;  // operator symbol awaiting its right operand
-      let waiting = false;   // next digit starts a fresh operand
-      let error = false;
-
       const OPS = { '+': (a, b) => a + b, '−': (a, b) => a - b, '×': (a, b) => a * b, '÷': (a, b) => b === 0 ? NaN : a / b };
+      const isOp = (t) => t === '+' || t === '−' || t === '×' || t === '÷';
 
       const fmt = (n) => {
         if (!isFinite(n)) return 'Error';
@@ -1200,70 +1195,75 @@ function openCalculator() {
         return s;
       };
 
-      // Show the full equation as it's typed: "45 × 3", "45 × " mid-entry, etc.
+      // The whole equation is kept as a token list so it stays visible exactly
+      // as typed (e.g. "45 × 3 + 2"), instead of collapsing to intermediates.
+      let tokens = ['0'];
+      let justEval = false;  // a result is showing; next digit starts fresh
+      let error = false;
+      const last = () => tokens[tokens.length - 1];
+
       function render() {
-        if (error) { displayEl.textContent = 'Error'; }
-        else if (pendingOp) displayEl.textContent = `${fmt(acc)} ${pendingOp}${waiting ? '' : ' ' + curr}`;
-        else displayEl.textContent = curr;
-        // Highlight the active operator like Apple's calculator.
+        displayEl.textContent = error ? 'Error' : tokens.join(' ');
+        const pending = !error && isOp(last()) ? last() : null;
         for (const k of sheet.querySelectorAll('.calc-op')) {
-          k.classList.toggle('selected', !error && k.dataset.key === pendingOp);
+          k.classList.toggle('selected', k.dataset.key === pending);
         }
       }
 
       function inputDigit(d) {
-        if (error) { error = false; acc = null; pendingOp = null; curr = d; waiting = false; return render(); }
-        if (waiting) { curr = d; waiting = false; }
-        else curr = curr === '0' ? d : curr + d;
+        if (error) { tokens = ['0']; error = false; }
+        if (justEval) { tokens = [d]; justEval = false; return render(); }
+        if (isOp(last())) tokens.push(d);
+        else tokens[tokens.length - 1] = last() === '0' ? d : last() + d;
         render();
       }
       function inputDot() {
-        if (error) { error = false; acc = null; pendingOp = null; curr = '0.'; waiting = false; return render(); }
-        if (waiting) { curr = '0.'; waiting = false; }
-        else if (!curr.includes('.')) curr += '.';
+        if (error) { tokens = ['0']; error = false; }
+        if (justEval) { tokens = ['0.']; justEval = false; return render(); }
+        if (isOp(last())) tokens.push('0.');
+        else if (!last().includes('.')) tokens[tokens.length - 1] = last() + '.';
         render();
       }
-      function clearAll() { curr = '0'; acc = null; pendingOp = null; waiting = false; error = false; render(); }
-      function toggleSign() {
+      function inputOp(sym) {
         if (error) return;
-        curr = curr.startsWith('-') ? curr.slice(1) : (curr === '0' ? '0' : '-' + curr);
-        if (waiting) acc = parseFloat(curr);
+        justEval = false;
+        if (isOp(last())) tokens[tokens.length - 1] = sym;  // swap operator
+        else tokens.push(sym);
+        render();
+      }
+      function clearAll() { tokens = ['0']; justEval = false; error = false; render(); }
+      function toggleSign() {
+        if (error || isOp(last())) return;
+        const v = last();
+        tokens[tokens.length - 1] = v.startsWith('-') ? v.slice(1) : (v === '0' ? '0' : '-' + v);
         render();
       }
       function percent() {
-        if (error) return;
-        curr = fmt(parseFloat(curr) / 100);
-        if (waiting) acc = parseFloat(curr);
-        render();
-      }
-      function setResult(result) {
-        if (!isFinite(result)) { error = true; return render(); }
-        acc = result; curr = fmt(result); render();
-      }
-      function applyOp(sym) {
-        if (error) return;
-        const input = parseFloat(curr);
-        if (pendingOp && !waiting) {
-          const result = OPS[pendingOp](acc, input);
-          if (!isFinite(result)) { error = true; return render(); }
-          acc = result;
-        } else {
-          acc = input;
-        }
-        pendingOp = sym;
-        waiting = true;
+        if (error || isOp(last())) return;
+        tokens[tokens.length - 1] = fmt(parseFloat(last()) / 100);
         render();
       }
       function equals() {
-        if (error || !pendingOp) return render();
-        const right = waiting ? acc : parseFloat(curr);
-        const result = OPS[pendingOp](acc, right);
-        pendingOp = null;
-        waiting = true;
-        setResult(result);
+        if (error) return;
+        const t = tokens.slice();
+        if (isOp(t[t.length - 1])) t.pop();  // ignore a dangling operator
+        if (t.length === 0) return;
+        let result = parseFloat(t[0]);
+        for (let i = 1; i < t.length; i += 2) {
+          result = OPS[t[i]](result, parseFloat(t[i + 1]));
+          if (!isFinite(result)) { error = true; return render(); }
+        }
+        tokens = [fmt(result)];
+        justEval = true;
+        render();
       }
 
       for (const btn of sheet.querySelectorAll('.calc-key')) {
+        // Drive the pressed color ourselves — :active is unreliable in iOS PWAs.
+        btn.addEventListener('pointerdown', () => btn.classList.add('pressed'));
+        for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) {
+          btn.addEventListener(ev, () => btn.classList.remove('pressed'));
+        }
         btn.addEventListener('click', () => {
           const { action, key } = btn.dataset;
           if (action === 'digit') inputDigit(key);
@@ -1271,7 +1271,7 @@ function openCalculator() {
           else if (action === 'clear') clearAll();
           else if (action === 'sign') toggleSign();
           else if (action === 'percent') percent();
-          else if (action === 'op') applyOp(key);
+          else if (action === 'op') inputOp(key);
           else if (action === 'equals') equals();
         });
       }

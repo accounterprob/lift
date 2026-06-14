@@ -456,20 +456,18 @@ button {
 .calc-display {
   margin: 4px 0 14px;
   padding: 16px 18px;
-  min-height: 56px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
+  min-height: 60px;
   border-radius: 12px;
   background: var(--fill-2);
   color: var(--text);
-  font-size: 38px;
+  font-size: 34px;
+  line-height: 1.2;
   font-weight: 300;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  overflow-x: auto;
+  /* Right-aligned + clipped keeps the most-recently typed end in view. */
+  overflow: hidden;
   white-space: nowrap;
-  word-break: keep-all;
 }
 .calc-grid {
   display: grid;
@@ -487,17 +485,20 @@ button {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.08s ease, color 0.08s ease, transform 0.08s ease;
+  transition: background-color 0.06s ease, color 0.06s ease, transform 0.06s ease;
 }
-/* Number keys: clear color change + slight depress on press. */
-.calc-key:active { background: var(--fill-1); transform: scale(0.96); }
 .calc-key.calc-fn { background: var(--fill-1); color: var(--accent); font-weight: 600; }
-.calc-key.calc-fn:active { background: var(--accent); color: #fff; }
 .calc-key.calc-op { background: var(--accent); color: #fff; font-weight: 600; }
-/* Operator pressed or currently selected: invert to white, like Apple. */
-.calc-key.calc-op:active,
-.calc-key.calc-op.selected { background: #fff; color: var(--accent); }
 .calc-key.calc-zero { grid-column: span 2; }
+
+/* Press feedback is driven by a .pressed class (pointerdown) since :active is
+   unreliable in iOS standalone PWAs. Number keys brighten + depress; function
+   keys fill with accent; operators invert to white. The selected operator
+   stays inverted until the equation continues. */
+.calc-key.pressed { background: var(--fill-1); transform: scale(0.95); }
+.calc-key.calc-fn.pressed { background: var(--accent); color: #fff; }
+.calc-key.calc-op.pressed,
+.calc-key.calc-op.selected { background: #fff; color: var(--accent); transform: none; }
 .vol-bars {
   display: flex;
   flex-direction: column;
