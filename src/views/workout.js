@@ -1179,12 +1179,16 @@ function openCalculator() {
         <button class="btn-text primary" id="calc-done">Done</button>
       </div>
       <div class="sheet-content">
-        <div class="calc-display" id="calc-display">0</div>
+        <div class="calc-screen">
+          <div class="calc-expr" id="calc-expr"></div>
+          <div class="calc-result" id="calc-result">0</div>
+        </div>
         <div class="calc-grid">${buttons}</div>
       </div>
     `,
     onMount(sheet, dismiss) {
-      const displayEl = sheet.querySelector('#calc-display');
+      const exprEl = sheet.querySelector('#calc-expr');
+      const resultEl = sheet.querySelector('#calc-result');
       const OPS = { '+': (a, b) => a + b, '−': (a, b) => a - b, '×': (a, b) => a * b, '÷': (a, b) => b === 0 ? NaN : a / b };
       const isOp = (t) => t === '+' || t === '−' || t === '×' || t === '÷';
 
@@ -1200,10 +1204,12 @@ function openCalculator() {
       let tokens = ['0'];
       let justEval = false;  // a result is showing; next digit starts fresh
       let error = false;
+      let prevEq = '';       // the just-evaluated equation, shown above the result
       const last = () => tokens[tokens.length - 1];
 
       function render() {
-        displayEl.textContent = error ? 'Error' : tokens.join(' ');
+        exprEl.textContent = error ? '' : prevEq;
+        resultEl.textContent = error ? 'Error' : tokens.join(' ');
         const pending = !error && isOp(last()) ? last() : null;
         for (const k of sheet.querySelectorAll('.calc-op')) {
           k.classList.toggle('selected', k.dataset.key === pending);
@@ -1255,12 +1261,13 @@ function openCalculator() {
         if (error) return;
         const t = tokens.slice();
         if (isOp(t[t.length - 1])) t.pop();  // ignore a dangling operator
-        if (t.length === 0) return;
+        if (t.length < 3) return;            // nothing to evaluate yet
         let result = parseFloat(t[0]);
         for (let i = 1; i < t.length; i += 2) {
           result = OPS[t[i]](result, parseFloat(t[i + 1]));
           if (!isFinite(result)) { error = true; return render(); }
         }
+        prevEq = `${t.join(' ')} =`;  // keep the equation visible above the result
         tokens = [fmt(result)];
         justEval = true;
         render();
@@ -1268,6 +1275,8 @@ function openCalculator() {
 
       function activate(btn) {
         const { action, key } = btn.dataset;
+        // Any fresh input clears the previous equation shown above the result.
+        if (action !== 'equals') prevEq = '';
         if (action === 'digit') inputDigit(key);
         else if (action === 'dot') inputDot();
         else if (action === 'clear') clearAll();
