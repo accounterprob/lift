@@ -420,6 +420,69 @@ button {
   padding: 4px 16px 12px;
 }
 .workout-progress:empty { display: none; }
+
+/* How-to-log reminder under the movement name in the active workout. */
+.logging-hint {
+  padding: 0 14px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Floating calculator button, anchored above the bottom tab bar. */
+.calc-fab {
+  position: fixed;
+  right: 18px;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  z-index: 50;
+}
+.calc-fab:active { transform: scale(0.94); }
+
+/* Calculator sheet */
+.calc-display {
+  margin: 4px 0 14px;
+  padding: 16px 18px;
+  min-height: 56px;
+  border-radius: 12px;
+  background: var(--fill-2);
+  color: var(--text);
+  font-size: 40px;
+  font-weight: 300;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.calc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.calc-key {
+  height: 64px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--card-2);
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.calc-key:active { filter: brightness(0.92); }
+.calc-key.calc-fn { background: var(--fill-1); color: var(--accent); font-weight: 600; }
+.calc-key.calc-op { background: var(--accent); color: #fff; font-weight: 600; }
+.calc-key.calc-zero { grid-column: span 2; }
 .vol-bars {
   display: flex;
   flex-direction: column;

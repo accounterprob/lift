@@ -14,7 +14,7 @@ import {
 import {
   uuid, esc, formatDuration, formatWeight, showSheet, emit, debounce, showToast,
 } from '../utils.js';
-import { MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle } from '../seed.js';
+import { MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle, loggingHintFor } from '../seed.js';
 import { downloadBackup } from '../backup.js';
 import { openExerciseDetailSheet } from './exercises.js';
 
@@ -216,7 +216,18 @@ function renderActive(ctx, workout) {
         <button id="discard-btn" class="btn-secondary" style="color: var(--red);">Discard Workout</button>
       </div>
     </div>
+    <button id="calc-fab" class="calc-fab" aria-label="Calculator">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="2" width="16" height="20" rx="2"/>
+        <line x1="8" y1="6" x2="16" y2="6"/>
+        <line x1="8" y1="11" x2="8" y2="11"/><line x1="12" y1="11" x2="12" y2="11"/><line x1="16" y1="11" x2="16" y2="11"/>
+        <line x1="8" y1="15" x2="8" y2="15"/><line x1="12" y1="15" x2="12" y2="15"/><line x1="16" y1="15" x2="16" y2="18"/>
+        <line x1="8" y1="18" x2="12" y2="18"/>
+      </svg>
+    </button>
   `;
+
+  ctx.container.querySelector('#calc-fab').addEventListener('click', openCalculator);
 
   // Live timer in the nav bar
   const updateTimer = () => {
@@ -640,12 +651,14 @@ function renderExerciseSection(exercise, sets, prevSets = new Map()) {
     return renderSetRow(s, display, prev);
   }).join('');
 
+  const hint = exercise ? loggingHintFor(exercise) : '';
   return `
     <div class="exercise-section">
       <div class="exercise-section-header">
         <button class="name exercise-name-btn" data-exercise-id="${exercise?.id}">${esc(exercise?.name ?? 'Unknown exercise')} <span class="name-chevron">›</span></button>
         <button class="menu exercise-menu" data-exercise-id="${exercise?.id}" aria-label="Remove">×</button>
       </div>
+      ${hint ? `<div class="logging-hint">ⓘ ${esc(hint)}</div>` : ''}
       <div class="set-table-header">
         <div class="col-set">SET</div>
         <div>PREV</div>
@@ -1138,6 +1151,104 @@ function openAddCustomExercise(onCreated) {
       });
 
       setTimeout(() => nameInput.focus(), 50);
+    },
+  });
+}
+
+// ----------------- Quick calculator -----------------
+
+function openCalculator() {
+  const KEYS = [
+    ['AC', 'clear', 'fn'], ['±', 'sign', 'fn'], ['%', 'percent', 'fn'], ['÷', 'op', 'op'],
+    ['7', 'digit'], ['8', 'digit'], ['9', 'digit'], ['×', 'op', 'op'],
+    ['4', 'digit'], ['5', 'digit'], ['6', 'digit'], ['−', 'op', 'op'],
+    ['1', 'digit'], ['2', 'digit'], ['3', 'digit'], ['+', 'op', 'op'],
+    ['0', 'digit', 'zero'], ['.', 'dot'], ['=', 'equals', 'op'],
+  ];
+  const buttons = KEYS.map(([label, action, cls]) =>
+    `<button class="calc-key${cls ? ` calc-${cls}` : ''}" data-action="${action}" data-key="${esc(label)}">${esc(label)}</button>`
+  ).join('');
+
+  showSheet({
+    html: `
+      <div class="sheet-header">
+        <span style="width: 60px;"></span>
+        <div class="title">Calculator</div>
+        <button class="btn-text primary" id="calc-done">Done</button>
+      </div>
+      <div class="sheet-content">
+        <div class="calc-display" id="calc-display">0</div>
+        <div class="calc-grid">${buttons}</div>
+      </div>
+    `,
+    onMount(sheet, dismiss) {
+      const displayEl = sheet.querySelector('#calc-display');
+      let display = '0';
+      let acc = null;
+      let pendingOp = null;
+      let waiting = false;  // next digit starts a fresh operand
+
+      const OPS = { '+': (a, b) => a + b, '−': (a, b) => a - b, '×': (a, b) => a * b, '÷': (a, b) => b === 0 ? NaN : a / b };
+
+      const fmt = (n) => {
+        if (!isFinite(n)) return 'Error';
+        // Trim float noise, keep it short.
+        let s = parseFloat(n.toFixed(8)).toString();
+        if (s.replace('-', '').replace('.', '').length > 12) s = n.toPrecision(10).replace(/\.?0+$/, '');
+        return s;
+      };
+      const render = () => { displayEl.textContent = display; };
+
+      function inputDigit(d) {
+        if (display === 'Error') { display = d; waiting = false; return render(); }
+        if (waiting) { display = d; waiting = false; }
+        else display = display === '0' ? d : display + d;
+        render();
+      }
+      function inputDot() {
+        if (waiting || display === 'Error') { display = '0.'; waiting = false; return render(); }
+        if (!display.includes('.')) display += '.';
+        render();
+      }
+      function clearAll() { display = '0'; acc = null; pendingOp = null; waiting = false; render(); }
+      function toggleSign() {
+        if (display === 'Error' || display === '0') return;
+        display = display.startsWith('-') ? display.slice(1) : '-' + display;
+        render();
+      }
+      function percent() {
+        if (display === 'Error') return;
+        display = fmt(parseFloat(display) / 100);
+        waiting = true; render();
+      }
+      function applyOp(nextOp) {
+        const input = parseFloat(display);
+        if (pendingOp && !waiting) {
+          const result = OPS[pendingOp](acc, input);
+          acc = result;
+          display = fmt(result);
+        } else {
+          acc = input;
+        }
+        render();
+        waiting = true;
+        pendingOp = nextOp;  // null when '='
+      }
+
+      for (const btn of sheet.querySelectorAll('.calc-key')) {
+        btn.addEventListener('click', () => {
+          const { action, key } = btn.dataset;
+          if (action === 'digit') inputDigit(key);
+          else if (action === 'dot') inputDot();
+          else if (action === 'clear') clearAll();
+          else if (action === 'sign') toggleSign();
+          else if (action === 'percent') percent();
+          else if (action === 'op') applyOp(key);
+          else if (action === 'equals') applyOp(null);
+        });
+      }
+
+      sheet.querySelector('#calc-done').addEventListener('click', () => dismiss());
     },
   });
 }
