@@ -520,12 +520,29 @@ function renderActive(ctx, workout) {
       delete s.preBumpWeight;
       delete s.preBumpReps;
     }
+    // The previous-workout value (what PREV shows) for a set's slot — the target
+    // an auto-bump should revert to. Null when the set has no history.
+    function prevTargetFor(s) {
+      const exSets = sets
+        .filter((x) => x.exerciseId === s.exerciseId)
+        .sort((a, b) => a.order - b.order);
+      const type = s.setType || 'working';
+      let typePos = 0;
+      let overallPos = 0;
+      for (const x of exSets) {
+        overallPos += 1;
+        if ((x.setType || 'working') === type) typePos += 1;
+        if (x.id === s.id) break;
+      }
+      const prev = findPrevSetByTypeAndPosition(type, typePos, prevByExercise.get(s.exerciseId), overallPos);
+      return prev && prev.weight > 0 && prev.reps > 0 ? { weight: prev.weight, reps: prev.reps } : null;
+    }
     // Re-evaluate the bumps a trigger set causes: undo its old ones, then re-apply
     // from its current value (if still completed). Reflects changes in the
     // succeeding rows' inputs in place so a field being typed in keeps focus.
     async function resyncBumps(trigger) {
       await revertBumpsFrom(trigger.id, sets);
-      if (trigger.completed) await bumpSucceedingSets(trigger, sets);
+      if (trigger.completed) await bumpSucceedingSets(trigger, sets, prevTargetFor);
       for (const s of sets) {
         if (s.exerciseId !== trigger.exerciseId) continue;
         const row = sectionsEl.querySelector(`.set-row[data-set-id="${s.id}"]`);
@@ -579,7 +596,7 @@ function renderActive(ctx, workout) {
         completeBtn.innerHTML = checkIcon(set.completed);
         updateRunningStats();
         if (!wasCompleted && set.completed) {
-          const bumped = await bumpSucceedingSets(set, sets);
+          const bumped = await bumpSucceedingSets(set, sets, prevTargetFor);
           if (bumped) renderSections();
           await maybeShowPRToast(set);
         } else if (wasCompleted && !set.completed) {
@@ -921,7 +938,7 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
  * remembers its pre-bump weight/reps and which set bumped it, so the change can
  * be undone (see revertBumpsFrom). Returns true if any set was changed.
  */
-async function bumpSucceedingSets(completedSet, allSets) {
+async function bumpSucceedingSets(completedSet, allSets, prevTargetFor) {
   const completedVol = (completedSet.weight || 0) * (completedSet.reps || 0);
   if (completedVol <= 0) return false;
   let changed = false;
@@ -931,9 +948,13 @@ async function bumpSucceedingSets(completedSet, allSets) {
     if ((s.order ?? 0) <= (completedSet.order ?? 0)) continue;
     if (s.completed) continue;
     if ((s.weight || 0) * (s.reps || 0) < completedVol) {
-      if (s.bumpedBy == null) {           // remember the original only on the first bump
-        s.preBumpWeight = s.weight;
-        s.preBumpReps = s.reps;
+      if (s.bumpedBy == null) {
+        // Revert target is the previous-workout value for this slot (what PREV
+        // shows) so unchecking restores the original, not an interim bump.
+        // Fall back to the current value when there's no history.
+        const orig = prevTargetFor?.(s);
+        s.preBumpWeight = orig ? orig.weight : s.weight;
+        s.preBumpReps = orig ? orig.reps : s.reps;
       }
       s.bumpedBy = completedSet.id;
       s.weight = completedSet.weight;
