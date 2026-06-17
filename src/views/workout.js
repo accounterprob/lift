@@ -513,6 +513,30 @@ function renderActive(ctx, workout) {
       })
       .join('');
 
+    // A set is "owned" once the user types in it or completes it — clear any
+    // auto-bump bookkeeping so it won't be reverted out from under them.
+    function clearBumpMarker(s) {
+      delete s.bumpedBy;
+      delete s.preBumpWeight;
+      delete s.preBumpReps;
+    }
+    // Re-evaluate the bumps a trigger set causes: undo its old ones, then re-apply
+    // from its current value (if still completed). Reflects changes in the
+    // succeeding rows' inputs in place so a field being typed in keeps focus.
+    async function resyncBumps(trigger) {
+      await revertBumpsFrom(trigger.id, sets);
+      if (trigger.completed) await bumpSucceedingSets(trigger, sets);
+      for (const s of sets) {
+        if (s.exerciseId !== trigger.exerciseId) continue;
+        const row = sectionsEl.querySelector(`.set-row[data-set-id="${s.id}"]`);
+        if (!row) continue;
+        const w = row.querySelector('.weight-input');
+        const r = row.querySelector('.reps-input');
+        if (w && document.activeElement !== w) w.value = s.weight > 0 ? String(s.weight) : '';
+        if (r && document.activeElement !== r) r.value = s.reps > 0 ? String(s.reps) : '';
+      }
+    }
+
     // Wire up per-set events
     for (const wrap of sectionsEl.querySelectorAll('.set-row-wrap')) {
       const setRow = wrap.querySelector('.set-row');
@@ -532,19 +556,24 @@ function renderActive(ctx, workout) {
 
       weightInput.addEventListener('input', debounce(async () => {
         set.weight = parseFloat(weightInput.value) || 0;
+        clearBumpMarker(set);          // user now owns this value
         await put('sets', set);
+        await resyncBumps(set);        // revert old bumps, re-apply from the new value
         if (set.completed) updateRunningStats();
       }, 200));
 
       repsInput.addEventListener('input', debounce(async () => {
         set.reps = parseInt(repsInput.value, 10) || 0;
+        clearBumpMarker(set);
         await put('sets', set);
+        await resyncBumps(set);
         if (set.completed) updateRunningStats();
       }, 200));
 
       completeBtn.addEventListener('click', async () => {
         const wasCompleted = set.completed;
         set.completed = !set.completed;
+        if (set.completed) clearBumpMarker(set);  // a logged set owns its value
         await put('sets', set);
         setRow.classList.toggle('completed', set.completed);
         completeBtn.innerHTML = checkIcon(set.completed);
@@ -553,6 +582,10 @@ function renderActive(ctx, workout) {
           const bumped = await bumpSucceedingSets(set, sets);
           if (bumped) renderSections();
           await maybeShowPRToast(set);
+        } else if (wasCompleted && !set.completed) {
+          // Unchecked: put back any sets this one bumped up.
+          const reverted = await revertBumpsFrom(set.id, sets);
+          if (reverted) renderSections();
         }
       });
 
@@ -880,30 +913,57 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
 }
 
 /**
- * When a set is marked complete, pull any later sets of the same exercise (and
- * same type) that are lighter up to match the just-completed set. Later sets
- * that already meet or exceed the completed volume are left alone, so they keep
- * the previous-workout target they were prefilled with. Already-logged
- * (completed) later sets are never rewritten.
- * Returns true if any set was changed.
+ * When a set is marked complete, pull any later sets of the same exercise that
+ * are lighter up to match the just-completed set — across set types, so a
+ * heavier warmup can lift a lighter following set too. Later sets that already
+ * meet or exceed the completed volume keep their previous-workout target, and
+ * already-logged (completed) later sets are never rewritten. Each bumped set
+ * remembers its pre-bump weight/reps and which set bumped it, so the change can
+ * be undone (see revertBumpsFrom). Returns true if any set was changed.
  */
 async function bumpSucceedingSets(completedSet, allSets) {
   const completedVol = (completedSet.weight || 0) * (completedSet.reps || 0);
   if (completedVol <= 0) return false;
-  const type = completedSet.setType || 'working';
   let changed = false;
   for (const s of allSets) {
     if (s.exerciseId !== completedSet.exerciseId) continue;
     if (s.id === completedSet.id) continue;
     if ((s.order ?? 0) <= (completedSet.order ?? 0)) continue;
     if (s.completed) continue;
-    if ((s.setType || 'working') !== type) continue;
     if ((s.weight || 0) * (s.reps || 0) < completedVol) {
+      if (s.bumpedBy == null) {           // remember the original only on the first bump
+        s.preBumpWeight = s.weight;
+        s.preBumpReps = s.reps;
+      }
+      s.bumpedBy = completedSet.id;
       s.weight = completedSet.weight;
       s.reps = completedSet.reps;
       await put('sets', s);
       changed = true;
     }
+  }
+  return changed;
+}
+
+/**
+ * Undo the auto-bumps caused by a given trigger set (when it's unchecked or its
+ * weight/reps change). Restores each still-unedited, uncompleted set to its
+ * remembered pre-bump weight/reps and clears the bookkeeping. Returns true if
+ * any set was changed.
+ */
+async function revertBumpsFrom(triggerId, allSets) {
+  let changed = false;
+  for (const s of allSets) {
+    if (s.bumpedBy !== triggerId) continue;
+    if (!s.completed) {
+      if (s.preBumpWeight != null) s.weight = s.preBumpWeight;
+      if (s.preBumpReps != null) s.reps = s.preBumpReps;
+    }
+    delete s.bumpedBy;
+    delete s.preBumpWeight;
+    delete s.preBumpReps;
+    await put('sets', s);
+    changed = true;
   }
   return changed;
 }
