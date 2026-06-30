@@ -94,20 +94,14 @@ export function showToast(message, durationMs = 1800, opts = {}) {
   toast.className = 'toast';
   toast.textContent = message;
   if (opts.persistUntilClick) {
-    // Stays until tapped — no auto-dismiss, no close button. A transparent
-    // full-screen layer behind it swallows the tap so you can't accidentally
-    // hit something in the app while dismissing the toast.
-    const shield = document.createElement('div');
-    shield.className = 'toast-shield';
-    const dismiss = () => { shield.remove(); toast.remove(); };
-    shield.addEventListener('click', dismiss);
+    // Stays until tapped — no auto-dismiss, no close button. The toast itself
+    // catches the tap (so it doesn't click through to whatever's right under
+    // it), while the rest of the screen stays scrollable and interactive.
     toast.classList.add('toast-clickable');
-    toast.addEventListener('click', (e) => { e.stopPropagation(); dismiss(); });
-    document.body.appendChild(shield);
-    document.body.appendChild(toast);
-    return;
+    toast.addEventListener('click', () => toast.remove());
+  } else {
+    setTimeout(() => toast.remove(), durationMs);
   }
-  setTimeout(() => toast.remove(), durationMs);
   document.body.appendChild(toast);
 }
 

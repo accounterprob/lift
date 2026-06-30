@@ -1148,17 +1148,11 @@ button {
   line-height: 1.4;
   max-width: min(90%, 360px);
 }
-/* A toast that stays until tapped (e.g. PR records). */
+/* A toast that stays until tapped (e.g. PR records). Captures its own tap so
+   it doesn't click through, but leaves the rest of the screen interactive. */
 .toast-clickable {
   pointer-events: auto;
   cursor: pointer;
-}
-/* Transparent layer that catches the dismiss tap so it can't reach the app. */
-.toast-shield {
-  position: fixed;
-  inset: 0;
-  z-index: 199;  /* under the toast (200), over everything else */
-  background: transparent;
 }
 
 @media (prefers-color-scheme: dark) {
