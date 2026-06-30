@@ -1135,13 +1135,18 @@ button {
   transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.85);
   color: white;
-  padding: 10px 18px;
-  border-radius: 999px;
+  padding: 12px 20px;
+  border-radius: 18px;
   font-size: 14px;
   font-weight: 500;
   z-index: 200;
   animation: fade-in 0.2s ease;
   pointer-events: none;
+  /* Multi-line PR toasts: keep line breaks, center, and stay readable. */
+  white-space: pre-line;
+  text-align: center;
+  line-height: 1.4;
+  max-width: min(90%, 360px);
 }
 
 @media (prefers-color-scheme: dark) {

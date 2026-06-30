@@ -472,15 +472,20 @@ function renderActive(ctx, workout) {
 
     // Heaviest weight ever lifted on this movement.
     const maxWeight = prior.reduce((m, s) => Math.max(m, s.weight), 0);
-    if (set.weight > maxWeight) prs.push(`Heaviest ${formatWeight(set.weight)} lbs`);
+    if (set.weight > maxWeight) {
+      prs.push(`Heaviest weight ever: ${formatWeight(set.weight)} lbs`);
+    }
 
     // Biggest single-set volume (weight × reps).
     const setVol = set.weight * set.reps;
     const bestVol = prior.reduce((m, s) => Math.max(m, s.weight * s.reps), 0);
-    if (setVol > bestVol) prs.push(`${formatVolume(setVol)} lbs in a set`);
+    if (setVol > bestVol) {
+      prs.push(`Most volume in a set: ${formatWeight(set.weight)}×${set.reps} = ${formatVolume(setVol)} lbs`);
+    }
 
     if (prs.length > 0) {
-      showToast(`🏆 ${exercise.name} PR · ${prs.join(' · ')}`, 4500);
+      const kind = prs.length > 1 ? 'New records' : 'New record';
+      showToast(`🏆 ${exercise.name} — ${kind}!\n${prs.join('\n')}`, 4500);
     }
   }
 
