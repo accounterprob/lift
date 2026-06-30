@@ -87,14 +87,20 @@ export function todayWorkoutName() {
   return `${new Date().toLocaleDateString(undefined, { weekday: 'long' })} Workout`;
 }
 
-export function showToast(message, durationMs = 1800) {
+export function showToast(message, durationMs = 1800, opts = {}) {
   const existing = document.querySelector('.toast');
   if (existing) existing.remove();
   const toast = document.createElement('div');
   toast.className = 'toast';
   toast.textContent = message;
+  if (opts.persistUntilClick) {
+    // Stays until the user taps anywhere on it — no auto-dismiss, no close button.
+    toast.classList.add('toast-clickable');
+    toast.addEventListener('click', () => toast.remove());
+  } else {
+    setTimeout(() => toast.remove(), durationMs);
+  }
   document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), durationMs);
 }
 
 export const events = new EventTarget();

@@ -485,7 +485,7 @@ function renderActive(ctx, workout) {
 
     if (prs.length > 0) {
       const kind = prs.length > 1 ? 'New records' : 'New record';
-      showToast(`🏆 ${exercise.name} — ${kind}!\n${prs.join('\n')}`, 4500);
+      showToast(`🏆 ${exercise.name} — ${kind}!\n${prs.join('\n')}`, 0, { persistUntilClick: true });
     }
   }
 

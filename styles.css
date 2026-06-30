@@ -1148,6 +1148,11 @@ button {
   line-height: 1.4;
   max-width: min(90%, 360px);
 }
+/* A toast that stays until tapped (e.g. PR records). */
+.toast-clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
 
 @media (prefers-color-scheme: dark) {
   .toast { background: rgba(255, 255, 255, 0.92); color: black; }
