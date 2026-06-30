@@ -468,26 +468,11 @@ function renderActive(ctx, workout) {
     );
     if (prior.length === 0) return;  // First time doing this exercise — don't claim a PR
 
-    const e1rm = (w, r) => w * (1 + r / 30);  // Epley estimated 1-rep max
     const prs = [];
 
     // Heaviest weight ever lifted on this movement.
     const maxWeight = prior.reduce((m, s) => Math.max(m, s.weight), 0);
     if (set.weight > maxWeight) prs.push(`Heaviest ${formatWeight(set.weight)} lbs`);
-
-    // Best estimated 1RM — catches a strong high-rep set even when it isn't the
-    // heaviest weight or the most reps at that weight.
-    const bestE1rm = prior.reduce((m, s) => Math.max(m, e1rm(s.weight, s.reps)), 0);
-    const myE1rm = e1rm(set.weight, set.reps);
-    if (myE1rm > bestE1rm + 0.001) prs.push(`Est. 1RM ${formatWeight(Math.round(myE1rm))} lbs`);
-
-    // Most reps ever at this weight or heavier.
-    const repsAtOrAbove = prior
-      .filter((s) => s.weight >= set.weight)
-      .reduce((m, s) => Math.max(m, s.reps), 0);
-    if (set.reps > repsAtOrAbove && set.weight > 0) {
-      prs.push(`${set.reps} reps @ ${formatWeight(set.weight)} lbs`);
-    }
 
     // Biggest single-set volume (weight × reps).
     const setVol = set.weight * set.reps;
