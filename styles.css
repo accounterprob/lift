@@ -421,18 +421,6 @@ button {
 }
 .workout-progress:empty { display: none; }
 
-/* Name + how-to-log reminder, stacked, under the movement name. */
-.exercise-title {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.logging-hint {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
 /* Floating calculator button, anchored above the bottom tab bar. */
 .calc-fab {
   position: fixed;

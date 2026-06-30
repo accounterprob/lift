@@ -14,7 +14,7 @@ import {
 import {
   uuid, esc, formatDuration, formatWeight, showSheet, emit, debounce, showToast,
 } from '../utils.js';
-import { MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle, loggingHintFor } from '../seed.js';
+import { MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle } from '../seed.js';
 import { downloadBackup } from '../backup.js';
 import { openExerciseDetailSheet } from './exercises.js';
 
@@ -452,12 +452,19 @@ function renderActive(ctx, workout) {
     const exercise = allExercises.find((e) => e.id === set.exerciseId);
     if (!exercise) return;
 
-    const all = await getExerciseSets(set.exerciseId);
-    const prior = all.filter((s) =>
+    // Imported HEVY history isn't flagged completed, so a workout with no
+    // completed sets at all is treated as fully performed (otherwise its sets
+    // are invisible to PR detection). In-app workouts count only completed sets,
+    // so prefilled-but-undone sets don't masquerade as history.
+    const allSets = await getAll('sets');
+    const completedWorkouts = new Set();
+    for (const s of allSets) if (s.completed) completedWorkouts.add(s.workoutId);
+    const prior = allSets.filter((s) =>
+      s.exerciseId === set.exerciseId &&
       s.id !== set.id &&
-      s.completed &&
       (s.setType || 'working') !== 'warmup' &&
-      s.weight > 0 && s.reps > 0
+      s.weight > 0 && s.reps > 0 &&
+      (s.completed || !completedWorkouts.has(s.workoutId))
     );
     if (prior.length === 0) return;  // First time doing this exercise — don't claim a PR
 
@@ -701,14 +708,10 @@ function renderExerciseSection(exercise, sets, prevSets = new Map()) {
     return renderSetRow(s, display, prev);
   }).join('');
 
-  const hint = exercise ? loggingHintFor(exercise) : '';
   return `
     <div class="exercise-section">
       <div class="exercise-section-header">
-        <div class="exercise-title">
-          <button class="name exercise-name-btn" data-exercise-id="${exercise?.id}">${esc(exercise?.name ?? 'Unknown exercise')} <span class="name-chevron">›</span></button>
-          ${hint ? `<div class="logging-hint">${esc(hint)}</div>` : ''}
-        </div>
+        <button class="name exercise-name-btn" data-exercise-id="${exercise?.id}">${esc(exercise?.name ?? 'Unknown exercise')} <span class="name-chevron">›</span></button>
         <button class="menu exercise-menu" data-exercise-id="${exercise?.id}" aria-label="Remove">×</button>
       </div>
       <div class="set-table-header">

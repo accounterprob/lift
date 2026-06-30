@@ -234,49 +234,6 @@ export function primaryMuscleFor(exercise) {
   return exercise.category || 'Other';
 }
 
-/**
- * Short reminder for how to enter the weight, shown under the movement name in
- * the active workout. Resolves from the exercise name first (iso-lateral /
- * plate-loaded and Smith machines are special cases) then the equipment field.
- * Returns '' when there's nothing useful to say.
- */
-export function loggingHintFor(exercise) {
-  const name = (exercise?.name || '').toLowerCase();
-  const equip = (exercise?.equipment || '').toLowerCase();
-
-  // Plate-loaded / iso-lateral machines are loaded per side.
-  if (/iso.?lateral|iso.?lat|plate.?loaded|hammer strength/.test(name)) {
-    return 'Log the weight on ONE side';
-  }
-  // Smith machine: the carriage counterbalances the bar — log what you add.
-  if (/smith/.test(name)) {
-    return 'Log the weight you add (carriage is counterbalanced)';
-  }
-
-  if (/dumbbell|\bdb\b/.test(name) || equip === 'dumbbell') {
-    return 'Log the weight of ONE dumbbell';
-  }
-  if (/kettlebell|\bkb\b/.test(name) || equip === 'kettlebell') {
-    return 'Log the weight of ONE kettlebell';
-  }
-  if (/barbell|\bbar\b|trap bar|\bez\b/.test(name) || equip === 'barbell') {
-    return 'Log total weight on the bar (incl. the bar)';
-  }
-  if (equip === 'machine' || /machine|pec deck|leg press|smith|hack squat/.test(name)) {
-    return 'Log the weight on the stack/sled';
-  }
-  if (equip === 'cable' || /cable|pulldown|pushdown|crossover/.test(name)) {
-    return 'Log the weight on the stack';
-  }
-  if (equip === 'bands' || /\bband\b|resistance band/.test(name)) {
-    return 'Log the band resistance';
-  }
-  if (equip === 'bodyweight' || /push.?up|pull.?up|chin.?up|\bdip\b|plank/.test(name)) {
-    return 'Log added weight (0 if just bodyweight)';
-  }
-  return '';
-}
-
 // Clear-cut cardio movements that may have been filed under the retired
 // "Other" or "Cardio" categories. Matched against an exercise name to flag it
 // for removal. Deliberately conservative — borderline conditioning work (sled,
