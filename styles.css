@@ -1153,6 +1153,13 @@ button {
   pointer-events: auto;
   cursor: pointer;
 }
+/* Transparent layer that catches the dismiss tap so it can't reach the app. */
+.toast-shield {
+  position: fixed;
+  inset: 0;
+  z-index: 199;  /* under the toast (200), over everything else */
+  background: transparent;
+}
 
 @media (prefers-color-scheme: dark) {
   .toast { background: rgba(255, 255, 255, 0.92); color: black; }
