@@ -198,14 +198,20 @@ export async function previousSetsByPositionForExercise(exerciseId, excludeWorko
     let working = 0;
     let warmup = 0;
     sets.forEach((s, i) => {
+      if (isTypeless) {
+        // Imported/legacy workouts have no warmup/working distinction, so their
+        // sets must NOT claim typed slots (a warmup-weight set would wrongly
+        // become working#1 and mask the real value once the current workout has
+        // warmups). Index them only by absolute position; findPrevSetByType-
+        // AndPosition falls back to any#overall when no typed history has a slot.
+        const anyKey = `any#${i + 1}`;
+        if (!result.has(anyKey)) result.set(anyKey, s);
+        return;
+      }
       const type = s.setType || 'working';
       const pos = type === 'warmup' ? (warmup += 1) : (working += 1);
       const key = `${type}#${pos}`;
       if (!result.has(key)) result.set(key, s);  // newest workout wins per slot
-      if (isTypeless) {
-        const anyKey = `any#${i + 1}`;
-        if (!result.has(anyKey)) result.set(anyKey, s);
-      }
     });
   }
   return result;
