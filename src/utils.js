@@ -122,8 +122,14 @@ export function showSheet({ html, onMount }) {
   // height. Capping the height below the status bar / Dynamic Island keeps
   // the header (Cancel / Add / Done) tappable. iOS PWA standalone doesn't
   // fire window.resize on keyboard show — visualViewport does.
+  // Mount INSIDE #app: its transform creates a stacking context, so a
+  // body-level backdrop could never sit under the tab bar's z-index (the whole
+  // app — tabs included — painted below the dim). Inside #app, the tab bar
+  // (z 110) genuinely floats above the backdrop (z 100), and the transform
+  // makes #app the containing block for this fixed element, so backdrop
+  // coordinates line up exactly with the tab bar's layout.
   // Must be in the DOM before syncHeight measures against it.
-  document.body.appendChild(backdrop);
+  (document.getElementById('app') ?? document.body).appendChild(backdrop);
 
   function syncHeight() {
     // The tab bar stays visible above the backdrop and the sheet rests on its

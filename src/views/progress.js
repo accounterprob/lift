@@ -1,9 +1,9 @@
 import {
-  getFinishedWorkouts, getAll, get, getWorkoutSets, deleteWorkoutAndSets,
+  getFinishedWorkouts, getAll, get, getWorkoutSets, deleteWorkoutAndSets, put,
 } from '../db.js';
 import {
   esc, formatVolume, formatDateShort, formatDateLong, formatDurationShort,
-  formatLbs, emit, shareIcon, trashIcon, errorState, showSheet,
+  formatLbs, emit, shareIcon, trashIcon, errorState, showSheet, debounce,
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
@@ -327,7 +327,13 @@ async function buildWorkoutDetail(workoutId) {
             return `
               <div class="stat-row">
                 <div class="stat-label">Set ${label}</div>
-                <div class="stat-value">${formatLbs(s.weight)} × ${s.reps}</div>
+                <div class="stat-value hist-edit">
+                  <input class="hist-input" type="number" inputmode="decimal" step="0.5"
+                         data-set-id="${s.id}" data-field="weight" value="${s.weight > 0 ? s.weight : ''}" placeholder="0" />
+                  <span>lbs ×</span>
+                  <input class="hist-input" type="number" inputmode="numeric" step="1"
+                         data-set-id="${s.id}" data-field="reps" value="${s.reps > 0 ? s.reps : ''}" placeholder="0" />
+                </div>
               </div>
             `;
           }).join('')}
@@ -336,11 +342,32 @@ async function buildWorkoutDetail(workoutId) {
     }).join('')}
   `;
 
-  return { workout, html };
+  return { workout, html, sets: allSets };
+}
+
+/**
+ * Makes every set's weight/reps in a workout detail editable in place —
+ * fixes like a swapped 10 lbs × 205 save straight to the set record, so all
+ * derived stats (records, PRs, charts) pick them up on next render.
+ */
+function wireSetEditors(rootEl, sets) {
+  for (const input of rootEl.querySelectorAll('input.hist-input[data-set-id]')) {
+    input.addEventListener('input', debounce(async () => {
+      const set = sets.find((s) => s.id === input.dataset.setId);
+      if (!set) return;
+      if (input.dataset.field === 'weight') set.weight = parseFloat(input.value) || 0;
+      else set.reps = parseInt(input.value, 10) || 0;
+      await put('sets', set);
+    }, 250));
+  }
 }
 
 async function renderWorkoutDetail(ctx, workoutId) {
-  ctx.setBack(() => renderHistoryList(ctx));
+  // Edits made here change volumes/PRs, so reload the snapshot on the way back.
+  ctx.setBack(async () => {
+    snapshot = await loadSnapshot();
+    renderHistoryList(ctx);
+  });
   ctx.setAction({
     html: trashIcon(),
     onClick: async () => {
@@ -359,6 +386,7 @@ async function renderWorkoutDetail(ctx, workoutId) {
   ctx.setTitle(detail.workout.name);
   ctx.container.innerHTML = detail.html;
   wireExerciseLinks(ctx);
+  wireSetEditors(ctx.container, detail.sets);
 }
 
 /**
@@ -383,6 +411,7 @@ export async function openWorkoutDetailSheet(workoutId) {
       for (const el of sheet.querySelectorAll('[data-exercise-id]')) {
         el.addEventListener('click', () => openExerciseDetailSheet(el.dataset.exerciseId));
       }
+      wireSetEditors(sheet, detail.sets);
     },
   });
 }

@@ -973,6 +973,24 @@ button {
 /* Recent-set rows are buttons that link to their workout. */
 button.stat-row { width: 100%; text-align: left; }
 
+/* Editable weight/reps in a past workout's set list. */
+.hist-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hist-input {
+  width: 60px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--fill-2);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .stat-row .stat-label { color: var(--text); }
 .stat-row .stat-value { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
