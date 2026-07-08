@@ -122,39 +122,26 @@ export function showSheet({ html, onMount }) {
   // height. Capping the height below the status bar / Dynamic Island keeps
   // the header (Cancel / Add / Done) tappable. iOS PWA standalone doesn't
   // fire window.resize on keyboard show — visualViewport does.
-  // Mount INSIDE #app: its transform creates a stacking context, so a
-  // body-level backdrop could never sit under the tab bar's z-index (the whole
-  // app — tabs included — painted below the dim). Inside #app, the tab bar
-  // (z 110) genuinely floats above the backdrop (z 100), and the transform
-  // makes #app the containing block for this fixed element, so backdrop
-  // coordinates line up exactly with the tab bar's layout.
-  // Must be in the DOM before syncHeight measures against it.
-  (document.getElementById('app') ?? document.body).appendChild(backdrop);
+  // Sheets are full-page modals: the backdrop dims everything, tab bar
+  // included, and the sheet fills the viewport below the status bar — the
+  // same feel as navigating into a detail page.
+  document.body.appendChild(backdrop);
 
   function syncHeight() {
-    // The tab bar stays visible above the backdrop and the sheet rests on its
-    // top edge. Measure the bar's REAL on-screen top (own padding, safe-area,
-    // iOS viewport overshoot included) rather than trusting --tab-height —
-    // hardcoded offsets leave an undimmed strip on standalone iOS.
-    const tabTop = document.getElementById('tab-bar')?.getBoundingClientRect().top;
-    const tabInset = tabTop != null ? Math.max(0, backdrop.offsetHeight - tabTop) : 0;
-    backdrop.style.paddingBottom = `${tabInset}px`;
     const vv = window.visualViewport;
     if (!vv) {
-      sheet.style.maxHeight = `${window.innerHeight - topInset - 10 - tabInset}px`;
+      sheet.style.maxHeight = `${window.innerHeight - topInset - 10}px`;
       return;
     }
     const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
-    // The keyboard swallows the tab-bar zone before overlapping the sheet, so
-    // the sheet only needs padding for the remainder.
-    const keyboardInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop - tabInset);
+    const keyboardInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop);
     if (keyboardInset > 0) {
       // box-sizing is border-box, so max-height includes the bottom padding.
       sheet.style.paddingBottom = `${keyboardInset}px`;
-      sheet.style.maxHeight = `${vv.height - topInset - 10 - tabInset + keyboardInset}px`;
+      sheet.style.maxHeight = `${vv.height - topInset - 10 + keyboardInset}px`;
     } else {
       sheet.style.paddingBottom = '';
-      sheet.style.maxHeight = `${vv.height - topInset - 10 - tabInset}px`;
+      sheet.style.maxHeight = `${vv.height - topInset - 10}px`;
     }
   }
   syncHeight();
