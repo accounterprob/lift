@@ -6,7 +6,7 @@ import {
 } from '../utils.js';
 import { openExerciseForm } from './workout.js';
 import { openWorkoutDetailSheet } from './progress.js';
-import { primaryMuscleFor, sortMuscles } from '../seed.js';
+import { primaryMuscleFor, sortMuscles, displayName } from '../seed.js';
 import { mountTimeSeriesChart } from '../charts.js';
 
 export function renderExercisesTab(ctx) {
@@ -113,7 +113,7 @@ async function renderDetail(ctx, exerciseId) {
     return;
   }
 
-  ctx.setTitle(detail.exercise.name);
+  ctx.setTitle(displayName(detail.exercise));
   ctx.setAction(detail.exercise.isCustom
     ? {
         html: trashIcon(),
@@ -159,7 +159,7 @@ export async function openExerciseDetailSheet(exerciseId) {
     html: `
       <div class="sheet-header">
         <button class="btn-text" id="exd-close">Done</button>
-        <div class="title">${esc(detail.exercise.name)}</div>
+        <div class="title">${esc(displayName(detail.exercise))}</div>
         <span style="width: 60px;"></span>
       </div>
       <div class="sheet-content">${detail.html}</div>

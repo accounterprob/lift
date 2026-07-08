@@ -68,6 +68,19 @@ export const EQUIPMENT = [
   'Kettlebell', 'Bands', 'Other',
 ];
 
+/**
+ * Exercise name with its equipment appended — "Preacher Curl (Barbell)" —
+ * derived from the equipment field rather than duplicated in the name, so
+ * editing the equipment updates it everywhere. Used wherever the name stands
+ * alone (section headers, titles, toasts); list rows that already show the
+ * equipment in a subtitle use the bare name.
+ */
+export function displayName(exercise) {
+  const eq = exercise?.equipment;
+  const name = exercise?.name ?? '';
+  return eq && eq !== 'Other' ? `${name} (${eq})` : name;
+}
+
 const SEEDS = [
   // Chest
   ['Bench Press (Barbell)', 'Chest', 'Barbell'],

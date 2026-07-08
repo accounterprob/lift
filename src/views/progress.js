@@ -8,6 +8,7 @@ import {
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
 import { openExerciseDetailSheet } from './exercises.js';
+import { displayName } from '../seed.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
 // from IndexedDB on every navigation.
@@ -57,7 +58,7 @@ async function loadSnapshot() {
     for (const s of completed) {
       const ex = exMap.get(s.exerciseId);
       if (!ex) continue;
-      const ec = exerciseCounts.get(s.exerciseId) || { id: s.exerciseId, name: ex.name, count: 0 };
+      const ec = exerciseCounts.get(s.exerciseId) || { id: s.exerciseId, name: displayName(ex), count: 0 };
       ec.count += 1;
       exerciseCounts.set(s.exerciseId, ec);
 
@@ -65,7 +66,7 @@ async function loadSnapshot() {
         const cur = bestByExercise.get(s.exerciseId);
         if (!cur || s.weight > cur.weight || (s.weight === cur.weight && s.reps > cur.reps)) {
           bestByExercise.set(s.exerciseId, {
-            id: s.exerciseId, weight: s.weight, reps: s.reps, date: w.startedAt, name: ex.name,
+            id: s.exerciseId, weight: s.weight, reps: s.reps, date: w.startedAt, name: displayName(ex),
           });
         }
       }
@@ -315,7 +316,7 @@ async function buildWorkoutDetail(workoutId) {
       let workingIdx = 0;
       let warmupIdx = 0;
       const heading = ex
-        ? `<button class="section section-link" data-exercise-id="${esc(eid)}">${esc(ex.name)}<span class="name-chevron">›</span></button>`
+        ? `<button class="section section-link" data-exercise-id="${esc(eid)}">${esc(displayName(ex))}<span class="name-chevron">›</span></button>`
         : `<div class="section">Unknown exercise</div>`;
       return `
         ${heading}

@@ -12,7 +12,7 @@ import {
 import {
   uuid, esc, formatDuration, formatWeight, showSheet, emit, debounce, showToast,
 } from '../utils.js';
-import { MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle } from '../seed.js';
+import { MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle, displayName } from '../seed.js';
 import { downloadBackup } from '../backup.js';
 import { openExerciseDetailSheet } from './exercises.js';
 
@@ -478,7 +478,7 @@ function renderActive(ctx, workout) {
 
     if (prs.length > 0) {
       const kind = prs.length > 1 ? 'New records' : 'New record';
-      showToast(`🏆 ${exercise.name} — ${kind}!\n${prs.join('\n')}`, 0, { persistUntilClick: true });
+      showToast(`🏆 ${displayName(exercise)} — ${kind}!\n${prs.join('\n')}`, 0, { persistUntilClick: true });
     }
   }
 
@@ -709,7 +709,7 @@ function renderExerciseSection(exercise, sets, prevSets = new Map()) {
   return `
     <div class="exercise-section">
       <div class="exercise-section-header">
-        <button class="name exercise-name-btn" data-exercise-id="${exercise?.id}">${esc(exercise?.name ?? 'Unknown exercise')} <span class="name-chevron">›</span></button>
+        <button class="name exercise-name-btn" data-exercise-id="${exercise?.id}">${esc(exercise ? displayName(exercise) : 'Unknown exercise')} <span class="name-chevron">›</span></button>
         <button class="menu exercise-menu" data-exercise-id="${exercise?.id}" aria-label="Remove">×</button>
       </div>
       <div class="set-table-header">

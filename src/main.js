@@ -1,4 +1,4 @@
-import { openDB, purgeCardioData, reorganizeOtherExercises } from './db.js';
+import { openDB, purgeCardioData, reorganizeOtherExercises, stripEquipmentFromNames } from './db.js';
 import { seedIfNeeded, categoryFor } from './seed.js';
 import { on, showToast, esc } from './utils.js';
 import { setCurrentTab } from './state.js';
@@ -116,7 +116,11 @@ function renderTab(tab) {
 }
 
 document.querySelectorAll('.tab').forEach((btn) => {
-  btn.addEventListener('click', () => renderTab(btn.dataset.tab));
+  btn.addEventListener('click', () => {
+    // Close any open sheets so they don't strand over the new tab.
+    document.querySelectorAll('.sheet-backdrop').forEach((el) => el.dismissSheet?.());
+    renderTab(btn.dataset.tab);
+  });
 });
 
 navBack.addEventListener('click', () => {
@@ -149,6 +153,8 @@ async function init() {
       if (reorg.deleted > 0) parts.push(`removed ${reorg.deleted} cardio`);
       showToast(`Cleaned up “Other”: ${parts.join(', ')}.`);
     }
+    const stripped = await stripEquipmentFromNames();
+    if (stripped > 0) console.info(`Stripped equipment from ${stripped} exercise name(s).`);
     renderTab('workout');
   } catch (err) {
     console.error('Init failed:', err);

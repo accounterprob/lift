@@ -123,21 +123,26 @@ export function showSheet({ html, onMount }) {
   // the header (Cancel / Add / Done) tappable. iOS PWA standalone doesn't
   // fire window.resize on keyboard show — visualViewport does.
   function syncHeight() {
+    // Sheets sit above the tab bar (which stays visible), so all height math
+    // subtracts its height from the space available to the sheet.
+    const tabInset = document.getElementById('tab-bar')?.offsetHeight ?? 0;
     const vv = window.visualViewport;
     if (!vv) {
-      sheet.style.maxHeight = `${window.innerHeight - topInset - 10}px`;
+      sheet.style.maxHeight = `${window.innerHeight - topInset - 10 - tabInset}px`;
       return;
     }
     const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
-    const keyboardInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop);
+    // The keyboard first swallows the tab bar's height before overlapping the
+    // sheet itself, so the sheet only needs padding for the remainder.
+    const keyboardInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop - tabInset);
     backdrop.style.paddingBottom = '0px';
     if (keyboardInset > 0) {
       // box-sizing is border-box, so max-height includes the bottom padding.
       sheet.style.paddingBottom = `${keyboardInset}px`;
-      sheet.style.maxHeight = `${vv.height - topInset - 10 + keyboardInset}px`;
+      sheet.style.maxHeight = `${vv.height - topInset - 10 - tabInset + keyboardInset}px`;
     } else {
       sheet.style.paddingBottom = '';
-      sheet.style.maxHeight = `${vv.height - topInset - 10}px`;
+      sheet.style.maxHeight = `${vv.height - topInset - 10 - tabInset}px`;
     }
   }
   syncHeight();
@@ -150,6 +155,8 @@ export function showSheet({ html, onMount }) {
     vv?.removeEventListener('resize', syncHeight);
     vv?.removeEventListener('scroll', syncHeight);
   }
+  // Let the tab bar (main.js) close any open sheets when switching tabs.
+  backdrop.dismissSheet = dismiss;
 
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop) dismiss();

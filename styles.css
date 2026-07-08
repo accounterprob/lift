@@ -843,7 +843,8 @@ button {
 /* ---------- Sheet / modal ---------- */
 .sheet-backdrop {
   position: fixed;
-  inset: 0;
+  /* Stop above the tab bar so the three tabs stay visible and tappable. */
+  inset: 0 0 calc(var(--tab-height) + env(safe-area-inset-bottom, 0px)) 0;
   background: rgba(0, 0, 0, 0.4);
   z-index: 100;
   display: flex;

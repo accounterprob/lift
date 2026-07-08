@@ -206,6 +206,37 @@ export function buildPrevSlotMaps(allSets, allWorkouts, excludeWorkoutId = null)
 }
 
 /**
+ * One-time cleanup: exercise names like "Preacher Curl (Barbell)" or
+ * "Seated Row Machine" duplicate the equipment field. Strip the trailing
+ * equipment marker from the name and sync the equipment field from it (the
+ * name's marker is the more specific source, e.g. HEVY imports). Only plain
+ * equipment words are stripped — meaningful variants like "(Smith Machine)",
+ * "(Sumo)", "(Seated)", or "Dip (Chest)" stay in the name. Idempotent.
+ * The UI derives the "(Barbell)" suffix from the equipment field instead.
+ */
+const EQUIPMENT_WORDS = {
+  barbell: 'Barbell', dumbbell: 'Dumbbell', machine: 'Machine', cable: 'Cable',
+  bodyweight: 'Bodyweight', kettlebell: 'Kettlebell', band: 'Bands', bands: 'Bands',
+};
+const EQUIP_SUFFIX = /\s*\((barbell|dumbbell|machine|cable|bodyweight|kettlebell|bands?)\)$|\s+(Machine|Barbell|Dumbbell|Cable|Kettlebell)$/i;
+
+export async function stripEquipmentFromNames() {
+  const exercises = await getAll('exercises');
+  const toUpdate = [];
+  for (const e of exercises) {
+    const m = (e.name || '').match(EQUIP_SUFFIX);
+    if (!m) continue;
+    const stripped = e.name.slice(0, m.index).trim();
+    if (!stripped) continue;         // never blank a name (e.g. an exercise just called "Machine")
+    if (/smith$/i.test(stripped)) continue;  // "Smith Machine" is a variant, not redundancy
+    const word = (m[1] || m[2]).toLowerCase();
+    toUpdate.push({ ...e, name: stripped, equipment: EQUIPMENT_WORDS[word] || e.equipment });
+  }
+  if (toUpdate.length > 0) await putMany('exercises', toUpdate);
+  return toUpdate.length;
+}
+
+/**
  * Removes built-in exercises that have never been used (no associated sets).
  * Custom user-created exercises are always preserved, even if unused.
  */
