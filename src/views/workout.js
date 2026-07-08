@@ -17,7 +17,7 @@ import {
   exerciseRowMain, setCountLabel,
 } from '../seed.js';
 import { downloadBackup } from '../backup.js';
-import { openExerciseDetailSheet } from './exercises.js';
+import { renderExerciseDetailPage } from './exercises.js';
 
 export function renderWorkoutTab(ctx) {
   let mounted = true;
@@ -671,10 +671,13 @@ function renderActive(ctx, workout) {
       });
     }
 
-    // Tap the exercise name → open its history/stats/chart in a sheet.
+    // Tap the exercise name → navigate to its full history/stats/chart page
+    // (same page as the Exercises tab), back button returns to the workout.
     for (const nameBtn of sectionsEl.querySelectorAll('.exercise-name-btn')) {
       nameBtn.addEventListener('click', () => {
-        openExerciseDetailSheet(nameBtn.dataset.exerciseId);
+        // Stop the duration timer so it doesn't keep overwriting the nav title.
+        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        renderExerciseDetailPage(ctx, nameBtn.dataset.exerciseId, () => ctx.refresh());
       });
     }
   }

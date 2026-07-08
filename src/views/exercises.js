@@ -106,8 +106,18 @@ async function renderList(ctx) {
   renderRows();
 }
 
-async function renderDetail(ctx, exerciseId) {
-  ctx.setBack(() => renderList(ctx));
+function renderDetail(ctx, exerciseId) {
+  return renderExerciseDetailPage(ctx, exerciseId, () => renderList(ctx));
+}
+
+/**
+ * Full-page exercise detail (history/stats/chart) rendered into the current
+ * tab's view, with the nav back button wired to `onBack` — used by the
+ * Exercises tab list and by tapping a movement's name in the active workout,
+ * so both navigations look and behave identically (tab bar stays visible).
+ */
+export async function renderExerciseDetailPage(ctx, exerciseId, onBack) {
+  ctx.setBack(onBack);
 
   const detail = await buildExerciseDetail(exerciseId);
   if (!detail) {
@@ -132,8 +142,9 @@ async function renderDetail(ctx, exerciseId) {
     : null);
 
   ctx.container.innerHTML = detail.html;
+  ctx.container.scrollTop = 0;
   ctx.container.querySelector('#exd-edit')?.addEventListener('click', () => {
-    openExerciseForm(detail.exercise, () => renderDetail(ctx, exerciseId));
+    openExerciseForm(detail.exercise, () => renderExerciseDetailPage(ctx, exerciseId, onBack));
   });
   wireRecentSetLinks(ctx.container);
   const mount = ctx.container.querySelector('.exercise-chart-mount');
