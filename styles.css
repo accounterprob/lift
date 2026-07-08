@@ -965,6 +965,8 @@ button {
 }
 
 .stat-row:last-child { border-bottom: 0; }
+/* Recent-set rows are buttons that link to their workout. */
+button.stat-row { width: 100%; text-align: left; }
 
 .stat-row .stat-label { color: var(--text); }
 .stat-row .stat-value { color: var(--text-secondary); font-variant-numeric: tabular-nums; }

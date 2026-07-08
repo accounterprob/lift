@@ -5,6 +5,7 @@ import {
   esc, formatLbs, formatDateShort, emit, showSheet, trashIcon, errorState,
 } from '../utils.js';
 import { openExerciseForm } from './workout.js';
+import { openWorkoutDetailSheet } from './progress.js';
 import { primaryMuscleFor, sortMuscles } from '../seed.js';
 import { mountTimeSeriesChart } from '../charts.js';
 
@@ -132,9 +133,17 @@ async function renderDetail(ctx, exerciseId) {
   ctx.container.querySelector('#exd-edit')?.addEventListener('click', () => {
     openExerciseForm(detail.exercise, () => renderDetail(ctx, exerciseId));
   });
+  wireRecentSetLinks(ctx.container);
   const mount = ctx.container.querySelector('.exercise-chart-mount');
   if (mount && detail.chartData.length > 0) {
     mountTimeSeriesChart(mount, detail.chartData, { unit: 'lbs' });
+  }
+}
+
+/** Each Recent Sets row opens the workout that set came from, in a sheet. */
+function wireRecentSetLinks(rootEl) {
+  for (const el of rootEl.querySelectorAll('.recent-set[data-workout-id]')) {
+    el.addEventListener('click', () => openWorkoutDetailSheet(el.dataset.workoutId));
   }
 }
 
@@ -166,6 +175,7 @@ export async function openExerciseDetailSheet(exerciseId) {
           openExerciseDetailSheet(exerciseId);
         });
       });
+      wireRecentSetLinks(sheet);
       const mount = sheet.querySelector('.exercise-chart-mount');
       if (mount && detail.chartData.length > 0) {
         mountTimeSeriesChart(mount, detail.chartData, { unit: 'lbs' });
@@ -234,13 +244,13 @@ async function buildExerciseDetail(exerciseId) {
     ` : ''}
 
     ${completed.length > 0 ? `
-      <div class="section">Recent Sets</div>
+      <div class="section">Recent Sets · tap to view that workout</div>
       <div class="form-section">
         ${completed.slice(-30).reverse().map((s) => `
-          <div class="stat-row">
+          <button class="stat-row recent-set" data-workout-id="${esc(s.workoutId)}">
             <div class="stat-label" style="font-size: 13px; color: var(--text-secondary);">${formatDateShort(s.workout.startedAt)}</div>
-            <div class="stat-value" style="color: var(--text);">${formatLbs(s.weight)} × ${s.reps}</div>
-          </div>
+            <div class="stat-value" style="color: var(--text);">${formatLbs(s.weight)} × ${s.reps} <span class="name-chevron">›</span></div>
+          </button>
         `).join('')}
       </div>
     ` : `

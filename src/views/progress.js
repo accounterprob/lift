@@ -1,9 +1,9 @@
 import {
-  getFinishedWorkouts, getAll, getWorkoutSets, deleteWorkoutAndSets,
+  getFinishedWorkouts, getAll, get, getWorkoutSets, deleteWorkoutAndSets,
 } from '../db.js';
 import {
   esc, formatVolume, formatDateShort, formatDateLong, formatDurationShort,
-  formatLbs, emit, shareIcon, trashIcon, errorState,
+  formatLbs, emit, shareIcon, trashIcon, errorState, showSheet,
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
@@ -270,30 +270,18 @@ function renderHistoryRow(workout, sets, exMap) {
   `;
 }
 
-async function renderWorkoutDetail(ctx, workoutId) {
-  ctx.setBack(() => renderHistoryList(ctx));
-  ctx.setAction({
-    html: trashIcon(),
-    onClick: async () => {
-      if (!confirm('Delete this workout?')) return;
-      await deleteWorkoutAndSets(workoutId);
-      emit('data:changed');
-    },
-  });
-
-  const [workouts, allExercises, allSets] = await Promise.all([
-    getFinishedWorkouts(),
+/**
+ * Summary + per-exercise set list for a finished workout. Shared by the
+ * history detail page and the workout sheet opened from "Recent Sets".
+ * Returns null if the workout doesn't exist.
+ */
+async function buildWorkoutDetail(workoutId) {
+  const [workout, allExercises, allSets] = await Promise.all([
+    get('workouts', workoutId),
     getAll('exercises'),
     getWorkoutSets(workoutId),
   ]);
-
-  const workout = workouts.find((w) => w.id === workoutId);
-  if (!workout) {
-    ctx.container.innerHTML = errorState({ message: 'Workout not found.' });
-    return;
-  }
-
-  ctx.setTitle(workout.name);
+  if (!workout) return null;
 
   const exMap = new Map(allExercises.map((e) => [e.id, e]));
   const setsByExercise = new Map();
@@ -312,7 +300,7 @@ async function renderWorkoutDetail(ctx, workoutId) {
   const completedCount = allSets.filter((s) => s.completed).length;
   const duration = (workout.endedAt - workout.startedAt) / 1000;
 
-  ctx.container.innerHTML = `
+  const html = `
     <div class="section">Summary</div>
     <div class="form-section">
       <div class="stat-row"><div class="stat-label">Date</div><div class="stat-value">${formatDateLong(workout.startedAt)}</div></div>
@@ -338,7 +326,7 @@ async function renderWorkoutDetail(ctx, workoutId) {
             return `
               <div class="stat-row">
                 <div class="stat-label">Set ${label}</div>
-                <div class="stat-value">${formatLbs(s.weight)} × ${s.reps}${s.completed ? ' ✓' : ''}</div>
+                <div class="stat-value">${formatLbs(s.weight)} × ${s.reps}</div>
               </div>
             `;
           }).join('')}
@@ -347,5 +335,53 @@ async function renderWorkoutDetail(ctx, workoutId) {
     }).join('')}
   `;
 
+  return { workout, html };
+}
+
+async function renderWorkoutDetail(ctx, workoutId) {
+  ctx.setBack(() => renderHistoryList(ctx));
+  ctx.setAction({
+    html: trashIcon(),
+    onClick: async () => {
+      if (!confirm('Delete this workout?')) return;
+      await deleteWorkoutAndSets(workoutId);
+      emit('data:changed');
+    },
+  });
+
+  const detail = await buildWorkoutDetail(workoutId);
+  if (!detail) {
+    ctx.container.innerHTML = errorState({ message: 'Workout not found.' });
+    return;
+  }
+
+  ctx.setTitle(detail.workout.name);
+  ctx.container.innerHTML = detail.html;
   wireExerciseLinks(ctx);
+}
+
+/**
+ * Opens a finished workout's summary + sets in a bottom sheet — used by the
+ * exercise detail's "Recent Sets" so tapping a set jumps to the workout it
+ * came from without leaving the current view (or an active workout).
+ */
+export async function openWorkoutDetailSheet(workoutId) {
+  const detail = await buildWorkoutDetail(workoutId);
+  if (!detail) return;
+  const dismiss = showSheet({
+    html: `
+      <div class="sheet-header">
+        <button class="btn-text" id="wd-close">Done</button>
+        <div class="title">${esc(detail.workout.name)}</div>
+        <span style="width: 60px;"></span>
+      </div>
+      <div class="sheet-content">${detail.html}</div>
+    `,
+    onMount(sheet) {
+      sheet.querySelector('#wd-close').addEventListener('click', () => dismiss());
+      for (const el of sheet.querySelectorAll('[data-exercise-id]')) {
+        el.addEventListener('click', () => openExerciseDetailSheet(el.dataset.exerciseId));
+      }
+    },
+  });
 }
