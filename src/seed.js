@@ -84,15 +84,17 @@ export function displayName(exercise) {
 /**
  * Canonical exercise row body used everywhere an exercise is listed — active
  * workout headers, the Add Exercises picker, the Exercises tab, Most-Trained:
- * name on top, equipment and muscle on their own lines below. Pair with
+ * name on top, "Equipment · Muscle" on one line below. Pair with
  * `setCountLabel(count)` in the row's trailing slot.
  */
 export function exerciseRowMain(exercise) {
+  const meta = exercise
+    ? [exercise.equipment, primaryMuscleFor(exercise)].filter(Boolean).join(' · ')
+    : '';
   return `
     <div class="row-main">
       <div class="row-title">${esc(exercise?.name ?? 'Unknown exercise')}</div>
-      ${exercise?.equipment ? `<div class="row-subtitle">${esc(exercise.equipment)}</div>` : ''}
-      ${exercise ? `<div class="row-subtitle">${esc(primaryMuscleFor(exercise))}</div>` : ''}
+      ${meta ? `<div class="row-subtitle">${esc(meta)}</div>` : ''}
     </div>
   `;
 }
