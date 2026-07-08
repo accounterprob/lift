@@ -122,20 +122,26 @@ export function showSheet({ html, onMount }) {
   // height. Capping the height below the status bar / Dynamic Island keeps
   // the header (Cancel / Add / Done) tappable. iOS PWA standalone doesn't
   // fire window.resize on keyboard show — visualViewport does.
+  // Must be in the DOM before syncHeight measures against it.
+  document.body.appendChild(backdrop);
+
   function syncHeight() {
-    // Sheets sit above the tab bar (which stays visible), so all height math
-    // subtracts its height from the space available to the sheet.
-    const tabInset = document.getElementById('tab-bar')?.offsetHeight ?? 0;
+    // The tab bar stays visible above the backdrop and the sheet rests on its
+    // top edge. Measure the bar's REAL on-screen top (own padding, safe-area,
+    // iOS viewport overshoot included) rather than trusting --tab-height —
+    // hardcoded offsets leave an undimmed strip on standalone iOS.
+    const tabTop = document.getElementById('tab-bar')?.getBoundingClientRect().top;
+    const tabInset = tabTop != null ? Math.max(0, backdrop.offsetHeight - tabTop) : 0;
+    backdrop.style.paddingBottom = `${tabInset}px`;
     const vv = window.visualViewport;
     if (!vv) {
       sheet.style.maxHeight = `${window.innerHeight - topInset - 10 - tabInset}px`;
       return;
     }
     const layoutHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
-    // The keyboard first swallows the tab bar's height before overlapping the
-    // sheet itself, so the sheet only needs padding for the remainder.
+    // The keyboard swallows the tab-bar zone before overlapping the sheet, so
+    // the sheet only needs padding for the remainder.
     const keyboardInset = Math.max(0, layoutHeight - vv.height - vv.offsetTop - tabInset);
-    backdrop.style.paddingBottom = '0px';
     if (keyboardInset > 0) {
       // box-sizing is border-box, so max-height includes the bottom padding.
       sheet.style.paddingBottom = `${keyboardInset}px`;
@@ -162,7 +168,6 @@ export function showSheet({ html, onMount }) {
     if (e.target === backdrop) dismiss();
   });
 
-  document.body.appendChild(backdrop);
   onMount?.(sheet, dismiss);
   return dismiss;
 }
