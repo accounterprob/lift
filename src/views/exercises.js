@@ -6,7 +6,7 @@ import {
 } from '../utils.js';
 import { openExerciseForm } from './workout.js';
 import { openWorkoutDetailSheet } from './progress.js';
-import { primaryMuscleFor, sortMuscles, displayName } from '../seed.js';
+import { primaryMuscleFor, sortMuscles, displayName, exerciseRowMain, setCountLabel } from '../seed.js';
 import { mountTimeSeriesChart } from '../charts.js';
 
 export function renderExercisesTab(ctx) {
@@ -27,8 +27,12 @@ async function renderList(ctx) {
     },
   });
 
-  const allExercises = (await getAll('exercises'))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const [rawExercises, allSets] = await Promise.all([getAll('exercises'), getAll('sets')]);
+  const allExercises = rawExercises.sort((a, b) => a.name.localeCompare(b.name));
+  const setCounts = new Map();
+  for (const s of allSets) {
+    setCounts.set(s.exerciseId, (setCounts.get(s.exerciseId) ?? 0) + 1);
+  }
 
   let search = '';
   let category = null;
@@ -77,10 +81,8 @@ async function renderList(ctx) {
     listEl.innerHTML = filtered
       .map((e) => `
         <button class="list-row" data-id="${e.id}">
-          <div class="row-main">
-            <div class="row-title">${esc(e.name)}</div>
-            <div class="row-subtitle">${esc(e.equipment)} · ${esc(primaryMuscleFor(e))}</div>
-          </div>
+          ${exerciseRowMain(e)}
+          <div class="row-trailing trailing-stack">${setCountLabel(setCounts.get(e.id) ?? 0)}</div>
           <div class="chevron">›</div>
         </button>
       `)

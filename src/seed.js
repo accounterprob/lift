@@ -1,5 +1,5 @@
 import { getAll, putMany } from './db.js';
-import { uuid } from './utils.js';
+import { uuid, esc } from './utils.js';
 
 /**
  * Stable color palette per muscle group. Chosen so that any single workout's
@@ -79,6 +79,28 @@ export function displayName(exercise) {
   const eq = exercise?.equipment;
   const name = exercise?.name ?? '';
   return eq && eq !== 'Other' ? `${name} (${eq})` : name;
+}
+
+/**
+ * Canonical exercise row body used everywhere an exercise is listed — active
+ * workout headers, the Add Exercises picker, the Exercises tab, Most-Trained:
+ * name on top, equipment and muscle on their own lines below. Pair with
+ * `setCountLabel(count)` in the row's trailing slot.
+ */
+export function exerciseRowMain(exercise) {
+  return `
+    <div class="row-main">
+      <div class="row-title">${esc(exercise?.name ?? 'Unknown exercise')}</div>
+      ${exercise?.equipment ? `<div class="row-subtitle">${esc(exercise.equipment)}</div>` : ''}
+      ${exercise ? `<div class="row-subtitle">${esc(primaryMuscleFor(exercise))}</div>` : ''}
+    </div>
+  `;
+}
+
+/** "12 sets" badge for the trailing slot of an exercise row; '' when zero. */
+export function setCountLabel(count) {
+  if (!count) return '';
+  return `<div class="exercise-count">${count} ${count === 1 ? 'set' : 'sets'}</div>`;
 }
 
 const SEEDS = [

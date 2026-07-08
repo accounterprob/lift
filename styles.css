@@ -260,27 +260,40 @@ button {
   color: var(--red);
 }
 
-.list-row .row-main {
+/* Row building blocks — shared by list rows AND the active-workout exercise
+   headers so every exercise presents identically (name / equipment / muscle
+   with the set count trailing). */
+.row-main {
   flex: 1;
   min-width: 0;
 }
 
-.list-row .row-title {
+.row-title {
   font-size: 16px;
   color: var(--text);
 }
 
-.list-row .row-subtitle {
+.row-subtitle {
   font-size: 13px;
   color: var(--text-secondary);
   margin-top: 2px;
 }
 
-.list-row .row-trailing {
+.row-trailing {
   color: var(--text-secondary);
   font-size: 16px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* Trailing slot that stacks a set-count badge over a checkmark/chevron. */
+.trailing-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .list-row .chevron {
@@ -646,27 +659,17 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   padding: 14px 16px;
   border-bottom: 0.5px solid var(--separator);
 }
 
-.exercise-section-header .name {
-  font-size: 17px;
-  font-weight: 600;
-  background: none;
-  border: 0;
-  padding: 0;
-  color: var(--text);
+.exercise-section-header .exercise-name-btn {
+  flex: 1;
+  min-width: 0;
   text-align: left;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
-.exercise-section-header .name-chevron {
-  color: var(--text-tertiary);
-  font-size: 18px;
-  font-weight: 400;
-}
+.exercise-section-header .row-title { font-weight: 600; }
 
 .exercise-section-header .menu {
   color: var(--text-tertiary);

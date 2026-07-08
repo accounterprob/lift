@@ -8,7 +8,7 @@ import {
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
 import { openExerciseDetailSheet } from './exercises.js';
-import { displayName } from '../seed.js';
+import { displayName, exerciseRowMain, setCountLabel } from '../seed.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
 // from IndexedDB on every navigation.
@@ -58,7 +58,7 @@ async function loadSnapshot() {
     for (const s of completed) {
       const ex = exMap.get(s.exerciseId);
       if (!ex) continue;
-      const ec = exerciseCounts.get(s.exerciseId) || { id: s.exerciseId, name: displayName(ex), count: 0 };
+      const ec = exerciseCounts.get(s.exerciseId) || { id: s.exerciseId, exercise: ex, count: 0 };
       ec.count += 1;
       exerciseCounts.set(s.exerciseId, ec);
 
@@ -165,10 +165,8 @@ function renderMostTrained(ctx) {
     <div class="list" style="margin-top: 16px;">
       ${topExercises.map((e) => `
         <button class="list-row" data-exercise-id="${esc(e.id)}">
-          <div class="row-main">
-            <div class="row-title">${esc(e.name)}</div>
-          </div>
-          <div class="row-trailing">${e.count} set${e.count === 1 ? '' : 's'}</div>
+          ${exerciseRowMain(e.exercise)}
+          <div class="row-trailing trailing-stack">${setCountLabel(e.count)}</div>
           <div class="chevron">›</div>
         </button>
       `).join('')}

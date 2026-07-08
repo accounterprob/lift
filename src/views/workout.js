@@ -12,7 +12,10 @@ import {
 import {
   uuid, esc, formatDuration, formatWeight, showSheet, emit, debounce, showToast,
 } from '../utils.js';
-import { MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle, displayName } from '../seed.js';
+import {
+  MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle, displayName,
+  exerciseRowMain, setCountLabel,
+} from '../seed.js';
 import { downloadBackup } from '../backup.js';
 import { openExerciseDetailSheet } from './exercises.js';
 
@@ -197,6 +200,7 @@ function renderActive(ctx, workout) {
   let allExercises = [];
   let sets = [];
   let prevByExercise = new Map();
+  let setCountByExercise = new Map();
   let timerInterval = null;
 
   ctx.container.innerHTML = `
@@ -245,13 +249,9 @@ function renderActive(ctx, workout) {
   let muscleRecords = new Map();
 
   // Buttons
-  ctx.container.querySelector('#add-exercise-btn').addEventListener('click', async () => {
-    const allSets = await getAll('sets');
-    const counts = new Map();
-    for (const s of allSets) {
-      counts.set(s.exerciseId, (counts.get(s.exerciseId) ?? 0) + 1);
-    }
-    openExercisePicker(allExercises, counts, async (selectedIds) => {
+  ctx.container.querySelector('#add-exercise-btn').addEventListener('click', () => {
+    // Counts were built by the last reload(), which runs after every change.
+    openExercisePicker(allExercises, setCountByExercise, async (selectedIds) => {
       await addExercisesToWorkout(workout, sets, selectedIds);
       await reload();
     });
@@ -288,6 +288,10 @@ function renderActive(ctx, workout) {
       .sort((a, b) => a.order - b.order);
     prevByExercise = buildPrevSlotMaps(allSets, allWorkouts, workout.id);
     muscleRecords = computeMuscleRecords(allSets, exercises, workout.id);
+    setCountByExercise = new Map();
+    for (const s of allSets) {
+      setCountByExercise.set(s.exerciseId, (setCountByExercise.get(s.exerciseId) ?? 0) + 1);
+    }
     renderSections();
     updateRunningStats();
   }
@@ -514,7 +518,7 @@ function renderActive(ctx, workout) {
         const ex = exMap.get(eid);
         const exSets = setsByExercise.get(eid);
         const prev = prevByExercise.get(eid) ?? new Map();
-        return renderExerciseSection(ex, exSets, prev);
+        return renderExerciseSection(ex, exSets, prev, setCountByExercise.get(eid) ?? 0);
       })
       .join('');
 
@@ -682,7 +686,7 @@ function renderActive(ctx, workout) {
   };
 }
 
-function renderExerciseSection(exercise, sets, prevSets = new Map()) {
+function renderExerciseSection(exercise, sets, prevSets = new Map(), totalSetCount = 0) {
   // Warmups get their own counter (W1, W2, W3); working sets get 1, 2, 3.
   // PREV matches by type AND position-within-type so W1 lines up with last
   // workout's W1, working-set 2 lines up with last workout's working-set 2, etc.
@@ -709,7 +713,8 @@ function renderExerciseSection(exercise, sets, prevSets = new Map()) {
   return `
     <div class="exercise-section">
       <div class="exercise-section-header">
-        <button class="name exercise-name-btn" data-exercise-id="${exercise?.id}">${esc(exercise ? displayName(exercise) : 'Unknown exercise')} <span class="name-chevron">›</span></button>
+        <button class="exercise-name-btn" data-exercise-id="${exercise?.id}">${exerciseRowMain(exercise)}</button>
+        <div class="row-trailing trailing-stack">${setCountLabel(totalSetCount)}</div>
         <button class="menu exercise-menu" data-exercise-id="${exercise?.id}" aria-label="Remove">×</button>
       </div>
       <div class="set-table-header">
@@ -1103,21 +1108,15 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
 
         listEl.innerHTML = filtered.length === 0
           ? `<div class="list-row"><div class="row-main" style="color:var(--text-secondary)">No matches</div></div>`
-          : filtered.map((e) => {
-              const count = setCountByExercise.get(e.id) ?? 0;
-              const countLabel = count > 0
-                ? ` <span class="exercise-count">${count} ${count === 1 ? 'set' : 'sets'}</span>`
-                : '';
-              return `
+          : filtered.map((e) => `
                 <button class="list-row" data-id="${e.id}">
-                  <div class="row-main">
-                    <div class="row-title">${esc(e.name)}${countLabel}</div>
-                    <div class="row-subtitle">${esc(e.equipment)} · ${esc(primaryMuscleFor(e))}</div>
+                  ${exerciseRowMain(e)}
+                  <div class="row-trailing trailing-stack">
+                    ${setCountLabel(setCountByExercise.get(e.id) ?? 0)}
+                    ${selected.has(e.id) ? checkmarkBlue() : ''}
                   </div>
-                  <div class="row-trailing">${selected.has(e.id) ? checkmarkBlue() : ''}</div>
                 </button>
-              `;
-            }).join('');
+              `).join('');
 
         for (const row of listEl.querySelectorAll('.list-row[data-id]')) {
           row.addEventListener('click', () => {
