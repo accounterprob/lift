@@ -7,12 +7,6 @@ export const uuid = () =>
         return v.toString(16);
       });
 
-export function epley1RM(weight, reps) {
-  if (!reps || !weight) return 0;
-  if (reps === 1) return weight;
-  return weight * (1 + reps / 30);
-}
-
 export function formatWeight(w) {
   if (w == null) return '0';
   if (Math.abs(w - Math.round(w)) < 0.001) return String(Math.round(w));
@@ -60,11 +54,6 @@ export function formatDateLong(d) {
   });
 }
 
-export function formatTime(d) {
-  const date = d instanceof Date ? d : new Date(d);
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
-
 export function debounce(fn, delay = 200) {
   let timer = null;
   return (...args) => {
@@ -81,10 +70,6 @@ export function esc(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-export function todayWorkoutName() {
-  return `${new Date().toLocaleDateString(undefined, { weekday: 'long' })} Workout`;
 }
 
 export function showToast(message, durationMs = 1800, opts = {}) {
@@ -183,11 +168,6 @@ function readSafeAreaTop() {
   const px = probe.offsetHeight || 0;
   probe.remove();
   return px;
-}
-
-/** Confirm dialog backed by window.confirm — simple but works on iOS. */
-export function confirmAction(message) {
-  return window.confirm(message);
 }
 
 // ----- Shared inline icons + error markup (used across views) -----

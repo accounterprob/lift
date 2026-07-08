@@ -43,11 +43,6 @@ export function colorForMuscle(muscle) {
   return MUSCLE_COLORS[muscle] ?? '#6b7280';
 }
 
-export const CATEGORIES = [
-  'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Forearms',
-  'Legs', 'Glutes', 'Calves', 'Core', 'Full Body',
-];
-
 /**
  * Canonical display order for the specific muscle groups — push, pull, legs,
  * core. Used to order filter chips and the muscle dropdown uniformly app-wide.
@@ -172,6 +167,9 @@ const SEEDS = [
  * "upright row" before generic "row").
  */
 export function primaryMuscleFor(exercise) {
+  // An explicitly chosen muscle (set when creating/editing an exercise) always
+  // wins over name-pattern classification, so user corrections stick app-wide.
+  if (exercise?.muscle) return exercise.muscle;
   const name = (exercise?.name || '').toLowerCase();
   if (!name) return exercise?.category || 'Other';
 
@@ -255,7 +253,7 @@ const MUSCLE_TO_CATEGORY = {
 /**
  * Best-fit category for an exercise name, used to re-home movements out of the
  * retired "Other" category. Returns 'Cardio' to signal the movement is cardio
- * and should be removed; otherwise one of the real `CATEGORIES`, falling back
+ * and should be removed; otherwise a broad category, falling back
  * to 'Full Body' when the name matches no known pattern.
  */
 export function categoryFor(name) {

@@ -44,15 +44,6 @@ export async function downloadBackup() {
   return { filename, bytes: blob.size, snapshot };
 }
 
-/**
- * Fire-and-forget backup that swallows errors and doesn't surface UI.
- * Used by the per-set auto-backup hook so completing a set is invisible
- * to the user but the JSON snapshot still lands in iCloud Drive.
- */
-export function autoBackupSilent() {
-  downloadBackup().catch((err) => console.warn('Auto-backup failed:', err));
-}
-
 export async function restoreFromFile(file) {
   const text = await file.text();
   const snapshot = JSON.parse(text);

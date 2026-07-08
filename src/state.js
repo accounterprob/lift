@@ -5,10 +5,6 @@ import { emit } from './utils.js';
 
 let _currentTab = 'workout';
 
-export function getCurrentTab() {
-  return _currentTab;
-}
-
 export function setCurrentTab(tab) {
   if (_currentTab === tab) return;
   _currentTab = tab;

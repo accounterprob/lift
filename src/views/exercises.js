@@ -1,10 +1,10 @@
 import {
-  getAll, getExerciseSets, del,
+  getAll, get, getExerciseSets, del,
 } from '../db.js';
 import {
   esc, formatLbs, formatDateShort, emit, showSheet, trashIcon, errorState,
 } from '../utils.js';
-import { openAddCustomExercise } from './workout.js';
+import { openExerciseForm } from './workout.js';
 import { primaryMuscleFor, sortMuscles } from '../seed.js';
 import { mountTimeSeriesChart } from '../charts.js';
 
@@ -22,7 +22,7 @@ async function renderList(ctx) {
   ctx.setAction({
     html: '<span style="font-size: 24px;">+</span>',
     onClick: () => {
-      openAddCustomExercise(() => emit('data:changed'));
+      openExerciseForm(null);  // create mode emits data:changed itself
     },
   });
 
@@ -77,7 +77,7 @@ async function renderList(ctx) {
       .map((e) => `
         <button class="list-row" data-id="${e.id}">
           <div class="row-main">
-            <div class="row-title">${esc(e.name)}${e.isCustom ? ' <span class="badge">Custom</span>' : ''}</div>
+            <div class="row-title">${esc(e.name)}</div>
             <div class="row-subtitle">${esc(e.equipment)} · ${esc(primaryMuscleFor(e))}</div>
           </div>
           <div class="chevron">›</div>
@@ -129,6 +129,9 @@ async function renderDetail(ctx, exerciseId) {
     : null);
 
   ctx.container.innerHTML = detail.html;
+  ctx.container.querySelector('#exd-edit')?.addEventListener('click', () => {
+    openExerciseForm(detail.exercise, () => renderDetail(ctx, exerciseId));
+  });
   const mount = ctx.container.querySelector('.exercise-chart-mount');
   if (mount && detail.chartData.length > 0) {
     mountTimeSeriesChart(mount, detail.chartData, { unit: 'lbs' });
@@ -154,6 +157,15 @@ export async function openExerciseDetailSheet(exerciseId) {
     `,
     onMount(sheet) {
       sheet.querySelector('#exd-close').addEventListener('click', () => dismiss());
+      sheet.querySelector('#exd-edit')?.addEventListener('click', () => {
+        openExerciseForm(detail.exercise, () => {
+          // Refresh the active workout behind the sheet, then reopen the sheet
+          // with the updated name/details.
+          dismiss();
+          emit('data:changed');
+          openExerciseDetailSheet(exerciseId);
+        });
+      });
       const mount = sheet.querySelector('.exercise-chart-mount');
       if (mount && detail.chartData.length > 0) {
         mountTimeSeriesChart(mount, detail.chartData, { unit: 'lbs' });
@@ -164,13 +176,11 @@ export async function openExerciseDetailSheet(exerciseId) {
 
 /** Computes stats + chart data + HTML body for an exercise. Returns null if not found. */
 async function buildExerciseDetail(exerciseId) {
-  const [allExercises, exerciseSets, allWorkouts] = await Promise.all([
-    getAll('exercises'),
+  const [exercise, exerciseSets, allWorkouts] = await Promise.all([
+    get('exercises', exerciseId),
     getExerciseSets(exerciseId),
     getAll('workouts'),
   ]);
-
-  const exercise = allExercises.find((e) => e.id === exerciseId);
   if (!exercise) return null;
 
   const workoutMap = new Map(allWorkouts.map((w) => [w.id, w]));
@@ -204,6 +214,9 @@ async function buildExerciseDetail(exerciseId) {
     <div class="form-section">
       <div class="stat-row"><div class="stat-label">Equipment</div><div class="stat-value">${esc(exercise.equipment)}</div></div>
       <div class="stat-row"><div class="stat-label">Muscle</div><div class="stat-value">${esc(primaryMuscleFor(exercise))}</div></div>
+      <button class="list-row button" id="exd-edit">
+        <div class="row-main"><div class="row-title" style="color: var(--accent);">Edit Name, Muscle & Equipment</div></div>
+      </button>
     </div>
 
     ${completed.length > 0 ? `

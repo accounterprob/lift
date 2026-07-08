@@ -1,15 +1,13 @@
 import {
   getActiveWorkout,
-  getWorkoutSets,
-  getExerciseSets,
   getAll,
   getFinishedWorkouts,
   put,
+  putMany,
   del,
   deleteWorkoutAndSets,
-  lastCompletedSetForExercise,
   previousWorkoutSetsForExercise,
-  previousSetsByPositionForExercise,
+  buildPrevSlotMaps,
 } from '../db.js';
 import {
   uuid, esc, formatDuration, formatWeight, showSheet, emit, debounce, showToast,
@@ -245,10 +243,6 @@ function renderActive(ctx, workout) {
 
   // All-time best single-workout volume per muscle, across the whole history.
   let muscleRecords = new Map();
-  async function refreshRecords() {
-    muscleRecords = await getMuscleRecords(workout.id);
-    updateRunningStats();
-  }
 
   // Buttons
   ctx.container.querySelector('#add-exercise-btn').addEventListener('click', async () => {
@@ -282,17 +276,20 @@ function renderActive(ctx, workout) {
   });
 
   async function reload() {
-    sets = await getWorkoutSets(workout.id);
-    allExercises = await getAll('exercises');
-    const exerciseIds = [...new Set(sets.map((s) => s.exerciseId))];
-    prevByExercise = new Map();
-    await Promise.all(
-      exerciseIds.map(async (eid) => {
-        prevByExercise.set(eid, await previousSetsByPositionForExercise(eid, workout.id));
-      })
-    );
+    // One read of each store per reload; everything below computes in memory.
+    const [allSets, allWorkouts, exercises] = await Promise.all([
+      getAll('sets'),
+      getAll('workouts'),
+      getAll('exercises'),
+    ]);
+    allExercises = exercises;
+    sets = allSets
+      .filter((s) => s.workoutId === workout.id)
+      .sort((a, b) => a.order - b.order);
+    prevByExercise = buildPrevSlotMaps(allSets, allWorkouts, workout.id);
+    muscleRecords = computeMuscleRecords(allSets, exercises, workout.id);
     renderSections();
-    await refreshRecords();
+    updateRunningStats();
   }
 
   function updateRunningStats() {
@@ -412,11 +409,7 @@ function renderActive(ctx, workout) {
    * otherwise only the completed ones (so leftover prefilled-but-unchecked
    * sets don't inflate totals). Returns Map muscle → volume.
    */
-  async function getMuscleRecords(excludeId) {
-    const [setsAll, exercises] = await Promise.all([
-      getAll('sets'),
-      getAll('exercises'),
-    ]);
+  function computeMuscleRecords(setsAll, exercises, excludeId) {
     const exMap = new Map(exercises.map((e) => [e.id, e]));
     const setsByWorkout = new Map();
     for (const s of setsAll) {
@@ -735,7 +728,7 @@ function renderExerciseSection(exercise, sets, prevSets = new Map()) {
 /**
  * Look up the previous set for a given slot. `prevMap` is keyed
  * `${type}#${position}` (1-indexed) and already encodes the per-slot fallback to
- * older workouts (see previousSetsByPositionForExercise). When no typed history
+ * older workouts (see buildPrevSlotMaps). When no typed history
  * has the slot and `overallPosition` (1-indexed row within the exercise) is
  * given, falls back to the same raw position in typeless history — imported
  * HEVY workouts whose warmups weren't flagged. Returns null only when the slot
@@ -906,34 +899,21 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
     // skipped, so they don't propagate from workout to workout.
     const prevSets = (await previousWorkoutSetsForExercise(exerciseId, workout.id))
       .filter((prev) => (prev.weight || 0) > 0 && (prev.reps || 0) > 0);
-    if (prevSets.length > 0) {
-      for (const prev of prevSets) {
-        const set = {
-          id: uuid(),
-          workoutId: workout.id,
-          exerciseId,
-          weight: prev.weight ?? 0,
-          reps: prev.reps ?? 0,
-          setType: prev.setType || 'working',
-          completed: false,
-          order: order++,
-          createdAt: Date.now(),
-        };
-        await put('sets', set);
-      }
-    } else {
-      const set = {
-        id: uuid(),
-        workoutId: workout.id,
-        exerciseId,
-        weight: 0,
-        reps: 0,
-        completed: false,
-        order: order++,
-        createdAt: Date.now(),
-      };
-      await put('sets', set);
-    }
+    const template = prevSets.length > 0
+      ? prevSets
+      : [{ weight: 0, reps: 0, setType: 'working' }];
+    const newSets = template.map((prev) => ({
+      id: uuid(),
+      workoutId: workout.id,
+      exerciseId,
+      weight: prev.weight ?? 0,
+      reps: prev.reps ?? 0,
+      setType: prev.setType || 'working',
+      completed: false,
+      order: order++,
+      createdAt: Date.now(),
+    }));
+    await putMany('sets', newSets);
   }
 }
 
@@ -1131,7 +1111,7 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
               return `
                 <button class="list-row" data-id="${e.id}">
                   <div class="row-main">
-                    <div class="row-title">${esc(e.name)}${e.isCustom ? ' <span class="badge">Custom</span>' : ''}${countLabel}</div>
+                    <div class="row-title">${esc(e.name)}${countLabel}</div>
                     <div class="row-subtitle">${esc(e.equipment)} · ${esc(primaryMuscleFor(e))}</div>
                   </div>
                   <div class="row-trailing">${selected.has(e.id) ? checkmarkBlue() : ''}</div>
@@ -1163,7 +1143,7 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
       });
 
       customBtn.addEventListener('click', () => {
-        openAddCustomExercise(async (newExercise) => {
+        openExerciseForm(null, async (newExercise) => {
           allExercises.push(newExercise);
           selected.add(newExercise.id);
           renderChips();
@@ -1183,35 +1163,54 @@ function checkmarkBlue() {
   return `<svg viewBox="0 0 24 24" width="22" height="22" fill="var(--green)"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>`;
 }
 
-// ----------------- Add custom exercise sheet -----------------
+// ----------------- Create / edit exercise sheet -----------------
 
-function openAddCustomExercise(onCreated) {
+/**
+ * One sheet for both creating and editing an exercise — same fields, layout,
+ * and save path. Pass `existing` to edit: fields come prefilled and Save
+ * updates the same record, so every view and every historical set (which
+ * reference the exercise by id) reflect the change immediately. The chosen
+ * muscle is stored as an explicit override that primaryMuscleFor honors
+ * app-wide. Create mode emits data:changed; edit mode leaves refresh to the
+ * caller via onSaved so it can keep its own view in place.
+ */
+function openExerciseForm(existing, onSaved) {
+  const isEdit = !!existing;
+  // Current values may fall outside the canonical lists (imported data, legacy
+  // categories) — surface them as an extra option so the select shows reality.
+  const currentMuscle = isEdit ? primaryMuscleFor(existing) : null;
+  const muscleOptions = !currentMuscle || MUSCLES.includes(currentMuscle)
+    ? MUSCLES : [currentMuscle, ...MUSCLES];
+  const currentEquip = existing?.equipment;
+  const equipOptions = !currentEquip || EQUIPMENT.includes(currentEquip)
+    ? EQUIPMENT : [currentEquip, ...EQUIPMENT];
+
   const dismiss = showSheet({
     html: `
       <div class="sheet-header">
         <button class="btn-text" id="ce-cancel">Cancel</button>
-        <div class="title">New Exercise</div>
-        <button class="btn-text primary" id="ce-save" disabled>Save</button>
+        <div class="title">${isEdit ? 'Edit Exercise' : 'New Exercise'}</div>
+        <button class="btn-text primary" id="ce-save" ${isEdit ? '' : 'disabled'}>Save</button>
       </div>
       <div class="sheet-content">
         <div class="section">Name</div>
         <div class="form-section">
           <div class="form-row">
-            <input id="ce-name" placeholder="e.g. Cable Lateral Raise" style="text-align: left;" />
+            <input id="ce-name" placeholder="e.g. Cable Lateral Raise" style="text-align: left;" value="${esc(existing?.name ?? '')}" />
           </div>
         </div>
         <div class="section">Muscle</div>
         <div class="form-section">
           <div class="form-row">
             <label for="ce-cat">Muscle</label>
-            <select id="ce-cat">${MUSCLES.map((c) => `<option>${c}</option>`).join('')}</select>
+            <select id="ce-cat">${muscleOptions.map((c) => `<option${c === currentMuscle ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
           </div>
         </div>
         <div class="section">Equipment</div>
         <div class="form-section">
           <div class="form-row">
             <label for="ce-eq">Equipment</label>
-            <select id="ce-eq">${EQUIPMENT.map((e) => `<option>${e}</option>`).join('')}</select>
+            <select id="ce-eq">${equipOptions.map((e) => `<option${e === currentEquip ? ' selected' : ''}>${esc(e)}</option>`).join('')}</select>
           </div>
         </div>
       </div>
@@ -1226,22 +1225,29 @@ function openAddCustomExercise(onCreated) {
 
       sheet.querySelector('#ce-cancel').addEventListener('click', () => dismiss());
       saveBtn.addEventListener('click', async () => {
-        const newExercise = {
-          id: uuid(),
-          name: nameInput.value.trim(),
-          category: sheet.querySelector('#ce-cat').value,
-          equipment: sheet.querySelector('#ce-eq').value,
-          notes: '',
-          isCustom: true,
-          createdAt: Date.now(),
-        };
-        await put('exercises', newExercise);
+        const name = nameInput.value.trim();
+        if (!name) return;
+        const muscle = sheet.querySelector('#ce-cat').value;
+        const equipment = sheet.querySelector('#ce-eq').value;
+        const exercise = isEdit
+          ? { ...existing, name, muscle, equipment }
+          : {
+              id: uuid(),
+              name,
+              muscle,
+              category: muscle,
+              equipment,
+              notes: '',
+              isCustom: true,
+              createdAt: Date.now(),
+            };
+        await put('exercises', exercise);
         dismiss();
-        onCreated?.(newExercise);
-        emit('data:changed');
+        onSaved?.(exercise);
+        if (!isEdit) emit('data:changed');
       });
 
-      setTimeout(() => nameInput.focus(), 50);
+      if (!isEdit) setTimeout(() => nameInput.focus(), 50);
     },
   });
 }
@@ -1400,4 +1406,4 @@ function openCalculator() {
   });
 }
 
-export { openAddCustomExercise };
+export { openExerciseForm };

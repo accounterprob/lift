@@ -73,10 +73,6 @@ export async function del(store, id) {
   return promisify((await txStore(store, 'readwrite')).delete(id));
 }
 
-export async function clearStore(store) {
-  return promisify((await txStore(store, 'readwrite')).clear());
-}
-
 export async function getByIndex(store, indexName, value) {
   const s = await txStore(store);
   return promisify(s.index(indexName).getAll(value));
@@ -118,14 +114,6 @@ export async function getExerciseSets(exerciseId) {
   return await getByIndex('sets', 'exerciseId', exerciseId);
 }
 
-export async function lastCompletedSetForExercise(exerciseId, excludeWorkoutId = null) {
-  const sets = await getExerciseSets(exerciseId);
-  const candidates = sets
-    .filter((s) => s.completed && (!excludeWorkoutId || s.workoutId !== excludeWorkoutId))
-    .sort((a, b) => b.createdAt - a.createdAt);
-  return candidates[0] ?? null;
-}
-
 /**
  * Sets from the most recent prior workout that contains this exercise,
  * ordered by `order` ASC. Used to show "Previous" hints in the active workout.
@@ -154,13 +142,14 @@ export async function previousWorkoutSetsForExercise(exerciseId, excludeWorkoutI
 }
 
 /**
- * For every set "slot" (type + position-within-type) this exercise has ever
+ * For every set "slot" (type + position-within-type) each exercise has ever
  * had, find the matching set from the most recent prior workout that actually
  * contains that slot. Walks workouts newest→oldest, so e.g. set 5 falls back to
  * an older workout when the last one only had 4 sets, while sets 1–4 still come
  * from the latest. Warmups fall back independently of working sets. Returns a
- * Map keyed `${type}#${position}` (position is 1-indexed). Slots that no prior
- * workout ever had simply won't be present — a genuinely new set → blank PREV.
+ * Map of exerciseId → slot Map keyed `${type}#${position}` (1-indexed). Slots
+ * no prior workout ever had simply won't be present — a genuinely new set →
+ * blank PREV.
  *
  * Only real, performed sets participate (weight > 0 and reps > 0): leftover
  * prefilled rows like 155×0 would otherwise occupy a slot and mask genuine
@@ -168,53 +157,52 @@ export async function previousWorkoutSetsForExercise(exerciseId, excludeWorkoutI
  *
  * Imported HEVY data and workouts that predate warmup flags have no setType on
  * any set, so their warmups are indistinguishable from working sets. Those
- * typeless workouts are additionally indexed by raw position (`any#n`) so a
- * slot no typed workout has — e.g. today's W2 — can still fall back to "the
- * n-th set you did back then".
+ * typeless workouts must NOT claim typed slots (a warmup-weight set would
+ * wrongly become working#1 once the current workout has warmups); they're
+ * indexed only by absolute position (`any#n`), which lookups fall back to when
+ * no typed history has a slot.
+ *
+ * Pure function over pre-loaded data so one getAll('sets')/getAll('workouts')
+ * serves every exercise in the workout.
  */
-export async function previousSetsByPositionForExercise(exerciseId, excludeWorkoutId = null) {
-  const allSets = await getExerciseSets(exerciseId);
-  const byWorkout = new Map();
+export function buildPrevSlotMaps(allSets, allWorkouts, excludeWorkoutId = null) {
+  const startedAt = new Map(allWorkouts.map((w) => [w.id, w.startedAt ?? 0]));
+  // exerciseId → workoutId → sets
+  const byExercise = new Map();
   for (const s of allSets) {
-    if (excludeWorkoutId && s.workoutId === excludeWorkoutId) continue;
-    if (!byWorkout.has(s.workoutId)) byWorkout.set(s.workoutId, []);
-    byWorkout.get(s.workoutId).push(s);
+    if (s.workoutId === excludeWorkoutId || !startedAt.has(s.workoutId)) continue;
+    if ((s.weight || 0) <= 0 || (s.reps || 0) <= 0) continue;
+    let byW = byExercise.get(s.exerciseId);
+    if (!byW) byExercise.set(s.exerciseId, (byW = new Map()));
+    let arr = byW.get(s.workoutId);
+    if (!arr) byW.set(s.workoutId, (arr = []));
+    arr.push(s);
   }
-  if (byWorkout.size === 0) return new Map();
 
-  const workouts = await Promise.all(
-    Array.from(byWorkout.keys()).map((id) => get('workouts', id))
-  );
-  const ordered = workouts
-    .filter(Boolean)
-    .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
-
-  const result = new Map();
-  for (const w of ordered) {
-    const sets = byWorkout.get(w.id)
-      .filter((s) => (s.weight || 0) > 0 && (s.reps || 0) > 0)
-      .sort((a, b) => a.order - b.order);
-    const isTypeless = sets.every((s) => s.setType == null);
-    let working = 0;
-    let warmup = 0;
-    sets.forEach((s, i) => {
-      if (isTypeless) {
-        // Imported/legacy workouts have no warmup/working distinction, so their
-        // sets must NOT claim typed slots (a warmup-weight set would wrongly
-        // become working#1 and mask the real value once the current workout has
-        // warmups). Index them only by absolute position; findPrevSetByType-
-        // AndPosition falls back to any#overall when no typed history has a slot.
-        const anyKey = `any#${i + 1}`;
-        if (!result.has(anyKey)) result.set(anyKey, s);
-        return;
-      }
-      const type = s.setType || 'working';
-      const pos = type === 'warmup' ? (warmup += 1) : (working += 1);
-      const key = `${type}#${pos}`;
-      if (!result.has(key)) result.set(key, s);  // newest workout wins per slot
-    });
+  const maps = new Map();
+  for (const [exerciseId, byW] of byExercise) {
+    const orderedWids = [...byW.keys()].sort((a, b) => startedAt.get(b) - startedAt.get(a));
+    const result = new Map();
+    for (const wid of orderedWids) {
+      const sets = byW.get(wid).sort((a, b) => a.order - b.order);
+      const isTypeless = sets.every((s) => s.setType == null);
+      let working = 0;
+      let warmup = 0;
+      sets.forEach((s, i) => {
+        if (isTypeless) {
+          const anyKey = `any#${i + 1}`;
+          if (!result.has(anyKey)) result.set(anyKey, s);
+          return;
+        }
+        const type = s.setType || 'working';
+        const pos = type === 'warmup' ? (warmup += 1) : (working += 1);
+        const key = `${type}#${pos}`;
+        if (!result.has(key)) result.set(key, s);  // newest workout wins per slot
+      });
+    }
+    maps.set(exerciseId, result);
   }
-  return result;
+  return maps;
 }
 
 /**
