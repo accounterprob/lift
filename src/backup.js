@@ -1,4 +1,4 @@
-import { getAll, putMany, clearAll, deleteUnusedExercises } from './db.js';
+import { getAll, putMany, clearAll } from './db.js';
 import { showSheet, showToast, emit } from './utils.js';
 
 export async function buildSnapshot() {
@@ -93,16 +93,6 @@ export function openBackupSheet() {
           <b>Replaces</b> all current workouts and exercises with the contents of the chosen JSON file.
         </div>
 
-        <div class="section">Library cleanup</div>
-        <div class="form-section">
-          <button class="list-row button" id="bk-cleanup">
-            <div class="row-main"><div class="row-title" style="color: var(--accent);">Remove Unused Exercises</div></div>
-          </button>
-        </div>
-        <div class="section-footer">
-          Deletes built-in exercises you've never logged a set for. Your imported HEVY data and any custom exercises are kept. Safe to re-run any time.
-        </div>
-
         <input type="file" id="bk-file" accept=".json,application/json" style="display: none;" />
       </div>
     `,
@@ -135,17 +125,6 @@ export function openBackupSheet() {
           emit('data:changed');
         } catch (err) {
           showToast(`Restore failed: ${err.message}`);
-        }
-      });
-
-      sheet.querySelector('#bk-cleanup').addEventListener('click', async () => {
-        if (!confirm('Remove built-in exercises you have not logged any sets for? Your data and custom exercises stay.')) return;
-        try {
-          const { deleted, kept } = await deleteUnusedExercises();
-          showToast(`Removed ${deleted} unused · ${kept} kept`);
-          emit('data:changed');
-        } catch (err) {
-          showToast(`Cleanup failed: ${err.message}`);
         }
       });
     },

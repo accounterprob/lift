@@ -64,8 +64,7 @@ export function sortMuscles(names) {
 }
 
 export const EQUIPMENT = [
-  'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight',
-  'Kettlebell', 'Bands', 'Other',
+  'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Other',
 ];
 
 /**

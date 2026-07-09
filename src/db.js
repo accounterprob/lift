@@ -311,26 +311,6 @@ export async function stripEquipmentFromNames() {
   return toUpdate.length;
 }
 
-/**
- * Removes built-in exercises that have never been used (no associated sets).
- * Custom user-created exercises are always preserved, even if unused.
- */
-export async function deleteUnusedExercises() {
-  const [exercises, sets] = await Promise.all([
-    getAll('exercises'),
-    getAll('sets'),
-  ]);
-  const usedIds = new Set(sets.map((s) => s.exerciseId));
-
-  const toDelete = exercises.filter((e) => !usedIds.has(e.id) && !e.isCustom);
-  for (const e of toDelete) {
-    await del('exercises', e.id);
-  }
-  return {
-    deleted: toDelete.length,
-    kept: exercises.length - toDelete.length,
-  };
-}
 
 /**
  * One-time cleanup for the retired "Cardio" category: deletes every exercise
