@@ -54,7 +54,26 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+        navigator.serviceWorker.register('./service-worker.js').then((reg) => {
+          // iOS PWAs are lazy about update checks — force one on every launch
+          // and whenever the app returns to the foreground.
+          const check = () => reg.update().catch(() => {});
+          check();
+          window.addEventListener('pageshow', check);
+          document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') check();
+          });
+        }).catch(() => {});
+
+        // The worker skipWaiting()s and claim()s, so a new version takes over
+        // the running page as soon as it installs. Reload once at that moment
+        // so fresh assets show immediately — no more force-quit dance.
+        // (Skipped on first-ever install, when there was no prior controller.)
+        let hadController = !!navigator.serviceWorker.controller;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (hadController) location.reload();
+          hadController = true;
+        });
       });
     }
   </script>
