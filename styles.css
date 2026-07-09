@@ -1012,6 +1012,28 @@ button.stat-row { width: 100%; text-align: left; }
 .chart-point { fill: var(--accent); }
 .chart-bar { fill: var(--accent); opacity: 0.85; }
 
+/* Scrubbing: drag along the chart to read date + value at that point. */
+.chart-container svg { touch-action: none; }  /* the drag scrubs, not scrolls */
+.chart-scrub-readout {
+  min-height: 20px;
+  padding: 2px 0 2px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.chart-scrub-line {
+  stroke: var(--text-tertiary);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.chart-scrub-dot {
+  fill: var(--accent);
+  stroke: var(--card);
+  stroke-width: 2;
+}
+
 .chart-daterange {
   display: flex;
   justify-content: space-between;
