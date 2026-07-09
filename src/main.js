@@ -1,4 +1,7 @@
-import { openDB, purgeCardioData, reorganizeOtherExercises, stripEquipmentFromNames } from './db.js';
+import {
+  openDB, purgeCardioData, reorganizeOtherExercises, stripEquipmentFromNames,
+  mergeButterflyIntoChestFly,
+} from './db.js';
 import { seedIfNeeded, categoryFor } from './seed.js';
 import { on, showToast, esc } from './utils.js';
 import { setCurrentTab } from './state.js';
@@ -155,6 +158,8 @@ async function init() {
     }
     const stripped = await stripEquipmentFromNames();
     if (stripped > 0) console.info(`Stripped equipment from ${stripped} exercise name(s).`);
+    const merged = await mergeButterflyIntoChestFly();
+    if (merged > 0) showToast(`Merged Butterfly into Chest Fly (${merged} sets moved).`);
     renderTab('workout');
   } catch (err) {
     console.error('Init failed:', err);

@@ -249,6 +249,52 @@ const EQUIPMENT_WORDS = {
 };
 const EQUIP_SUFFIX = /\s*\((barbell|dumbbell|machine|cable|bodyweight|kettlebell|bands?)\)$|\s+(Machine|Barbell|Dumbbell|Cable|Kettlebell)$/i;
 
+/**
+ * Remap every set from one exercise onto another and delete the source —
+ * atomically, so a crash can't leave half the history moved. Returns the
+ * number of sets moved. All derived views (PREV, records, charts, stats)
+ * recompute from set data at render time, so the merge is fully retroactive.
+ */
+export async function mergeExercises(sourceId, targetId) {
+  const db = await openDB();
+  const sets = await getByIndex('sets', 'exerciseId', sourceId);
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['sets', 'exercises'], 'readwrite');
+    const setStore = tx.objectStore('sets');
+    for (const s of sets) setStore.put({ ...s, exerciseId: targetId });
+    tx.objectStore('exercises').delete(sourceId);
+    tx.oncomplete = () => resolve(sets.length);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+/**
+ * One-time cleanup: "Butterfly (Pec Deck)" logged the same movement as
+ * "Chest Fly (Machine)". Move all Butterfly sets onto the machine Chest Fly
+ * and remove Butterfly. ("Reverse Pec Deck" doesn't match — different
+ * movement.) Idempotent: once no Butterfly exercise exists it's a no-op.
+ */
+export async function mergeButterflyIntoChestFly() {
+  const exercises = await getAll('exercises');
+  const sources = exercises.filter((e) => /butterfly/i.test(e.name || ''));
+  if (sources.length === 0) return 0;
+  const flys = exercises.filter(
+    (e) => /chest fly/i.test(e.name || '') && !sources.some((s) => s.id === e.id)
+  );
+  const target = flys.find((e) => (e.equipment || '') === 'Machine') || flys[0];
+  let moved = 0;
+  for (const source of sources) {
+    if (target) {
+      moved += await mergeExercises(source.id, target.id);
+    } else {
+      // No Chest Fly to merge into — Butterfly simply becomes it.
+      await put('exercises', { ...source, name: 'Chest Fly', equipment: 'Machine' });
+    }
+  }
+  return moved;
+}
+
 export async function stripEquipmentFromNames() {
   const exercises = await getAll('exercises');
   const toUpdate = [];
