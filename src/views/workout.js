@@ -5,16 +5,18 @@ import {
   put,
   putMany,
   del,
+  delMany,
   deleteWorkoutAndSets,
   previousWorkoutSetsForExercise,
   buildPrevSlotMaps,
+  performedSets,
 } from '../db.js';
 import {
-  uuid, esc, formatDuration, formatWeight, showSheet, emit, debounce, showToast,
+  uuid, esc, formatDuration, formatWeight, formatVolume, showSheet, emit, debounce, showToast,
 } from '../utils.js';
 import {
-  MUSCLES, sortMuscles, EQUIPMENT, primaryMuscleFor, colorForMuscle, displayName,
-  exerciseRowMain, setCountLabel,
+  MUSCLES, EQUIPMENT, primaryMuscleFor, colorForMuscle, displayName,
+  exerciseRowMain, setCountLabel, muscleChipsHtml,
 } from '../seed.js';
 import { downloadBackup } from '../backup.js';
 import { renderExerciseDetailPage } from './exercises.js';
@@ -407,33 +409,26 @@ function renderActive(ctx, workout) {
 
   /**
    * All-time best single-workout volume for each muscle, across the entire
-   * history regardless of day name, excluding the active workout. In-app
-   * workouts mark sets completed; imported HEVY history doesn't — if a past
-   * workout has no completed sets at all, every logged set counts as done,
-   * otherwise only the completed ones (so leftover prefilled-but-unchecked
-   * sets don't inflate totals). Returns Map muscle → volume.
+   * history regardless of day name, excluding the active workout. Which sets
+   * count is decided by performedSets (the shared in-app vs imported rule).
+   * Returns Map muscle → volume.
    */
   function computeMuscleRecords(setsAll, exercises, excludeId) {
     const exMap = new Map(exercises.map((e) => [e.id, e]));
-    const setsByWorkout = new Map();
-    for (const s of setsAll) {
-      if (s.workoutId === excludeId) continue;
-      if (!setsByWorkout.has(s.workoutId)) setsByWorkout.set(s.workoutId, []);
-      setsByWorkout.get(s.workoutId).push(s);
-    }
     const records = new Map();
-    for (const wsets of setsByWorkout.values()) {
-      const hasCompleted = wsets.some((s) => s.completed);
-      const counted = hasCompleted ? wsets.filter((s) => s.completed) : wsets;
-      const byMuscle = new Map();
-      for (const s of counted) {
-        const ex = exMap.get(s.exerciseId);
-        if (!ex) continue;
-        const vol = (s.weight || 0) * (s.reps || 0);
-        if (vol <= 0) continue;
-        const muscle = primaryMuscleFor(ex);
-        byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + vol);
-      }
+    const byWorkoutMuscle = new Map();  // workoutId → Map(muscle → volume)
+    for (const s of performedSets(setsAll)) {
+      if (s.workoutId === excludeId) continue;
+      const ex = exMap.get(s.exerciseId);
+      if (!ex) continue;
+      const vol = (s.weight || 0) * (s.reps || 0);
+      if (vol <= 0) continue;
+      const muscle = primaryMuscleFor(ex);
+      let byMuscle = byWorkoutMuscle.get(s.workoutId);
+      if (!byMuscle) byWorkoutMuscle.set(s.workoutId, (byMuscle = new Map()));
+      byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + vol);
+    }
+    for (const byMuscle of byWorkoutMuscle.values()) {
       for (const [muscle, vol] of byMuscle) {
         if (vol > (records.get(muscle) ?? 0)) records.set(muscle, vol);
       }
@@ -449,19 +444,12 @@ function renderActive(ctx, workout) {
     const exercise = allExercises.find((e) => e.id === set.exerciseId);
     if (!exercise) return;
 
-    // Imported HEVY history isn't flagged completed, so a workout with no
-    // completed sets at all is treated as fully performed (otherwise its sets
-    // are invisible to PR detection). In-app workouts count only completed sets,
-    // so prefilled-but-undone sets don't masquerade as history.
     const allSets = await getAll('sets');
-    const completedWorkouts = new Set();
-    for (const s of allSets) if (s.completed) completedWorkouts.add(s.workoutId);
-    const prior = allSets.filter((s) =>
+    const prior = performedSets(allSets).filter((s) =>
       s.exerciseId === set.exerciseId &&
       s.id !== set.id &&
       (s.setType || 'working') !== 'warmup' &&
-      s.weight > 0 && s.reps > 0 &&
-      (s.completed || !completedWorkouts.has(s.workoutId))
+      s.weight > 0 && s.reps > 0
     );
     if (prior.length === 0) return;  // First time doing this exercise — don't claim a PR
 
@@ -484,11 +472,6 @@ function renderActive(ctx, workout) {
       const kind = prs.length > 1 ? 'New records' : 'New record';
       showToast(`🏆 ${displayName(exercise)} — ${kind}!\n${prs.join('\n')}`, 0, { persistUntilClick: true });
     }
-  }
-
-  function formatVolume(v) {
-    if (v >= 10000) return `${(v / 1000).toFixed(1)}k`;
-    return Math.round(v).toLocaleString();
   }
 
   function renderSections() {
@@ -664,9 +647,7 @@ function renderActive(ctx, workout) {
       menuBtn.addEventListener('click', async () => {
         const eid = menuBtn.dataset.exerciseId;
         if (!confirm('Remove this exercise from the workout?')) return;
-        for (const s of sets.filter((s) => s.exerciseId === eid)) {
-          await del('sets', s.id);
-        }
+        await delMany('sets', sets.filter((s) => s.exerciseId === eid).map((s) => s.id));
         await reload();
       });
     }
@@ -1031,14 +1012,12 @@ async function addSet(workout, existingSets, exerciseId, prevSets = new Map()) {
 }
 
 async function finishWorkout(workout, sets) {
-  for (const s of sets) {
-    // Drop unperformed rows: anything not checked off that's missing a weight
-    // or a rep count (e.g. a prefilled 155×0). They'd otherwise be recreated by
-    // prefill in every future workout and mask real history in the PREV column.
-    if (!s.completed && ((s.weight || 0) === 0 || (s.reps || 0) === 0)) {
-      await del('sets', s.id);
-    }
-  }
+  // Drop unperformed rows: anything not checked off that's missing a weight
+  // or a rep count (e.g. a prefilled 155×0). They'd otherwise be recreated by
+  // prefill in every future workout and mask real history in the PREV column.
+  await delMany('sets', sets
+    .filter((s) => !s.completed && ((s.weight || 0) === 0 || (s.reps || 0) === 0))
+    .map((s) => s.id));
   workout.endedAt = Date.now();
   await put('workouts', workout);
 }
@@ -1077,14 +1056,7 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
       const chipRow = sheet.querySelector('#picker-chips');
 
       function renderChips() {
-        const muscles = sortMuscles(new Set(allExercises.map((e) => primaryMuscleFor(e))));
-        const cats = ['All', ...muscles];
-        chipRow.innerHTML = cats
-          .map((c) => {
-            const isActive = (c === 'All' && !category) || c === category;
-            return `<button class="chip${isActive ? ' active' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`;
-          })
-          .join('');
+        chipRow.innerHTML = muscleChipsHtml(allExercises, category);
         for (const chip of chipRow.querySelectorAll('.chip')) {
           chip.addEventListener('click', () => {
             const c = chip.dataset.cat;

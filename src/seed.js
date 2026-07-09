@@ -105,6 +105,21 @@ export function setCountLabel(count) {
   return `<div class="exercise-count">${count} ${count === 1 ? 'set' : 'sets'}</div>`;
 }
 
+/**
+ * Muscle filter chip row ("All" + every muscle present in the library, in
+ * canonical order) — shared by the Exercises tab and the Add Exercises picker.
+ * Each chip carries data-cat; the caller wires the clicks.
+ */
+export function muscleChipsHtml(exercises, active) {
+  const muscles = sortMuscles(new Set(exercises.map((e) => primaryMuscleFor(e))));
+  return ['All', ...muscles]
+    .map((c) => {
+      const isActive = (c === 'All' && !active) || c === active;
+      return `<button class="chip${isActive ? ' active' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`;
+    })
+    .join('');
+}
+
 const SEEDS = [
   // Chest
   ['Bench Press (Barbell)', 'Chest', 'Barbell'],

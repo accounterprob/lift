@@ -1,5 +1,5 @@
 import { getAll, putMany, clearAll, deleteUnusedExercises } from './db.js';
-import { showSheet, showToast, emit, esc } from './utils.js';
+import { showSheet, showToast, emit } from './utils.js';
 
 export async function buildSnapshot() {
   const [exercises, workouts, sets] = await Promise.all([

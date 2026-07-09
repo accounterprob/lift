@@ -1,12 +1,12 @@
 import {
-  getAll, get, getExerciseSets, del,
+  getAll, get, del, getActiveWorkout, performedSets,
 } from '../db.js';
 import {
   esc, formatLbs, formatDateShort, emit, showSheet, trashIcon, errorState,
 } from '../utils.js';
 import { openExerciseForm } from './workout.js';
 import { openWorkoutDetailSheet } from './progress.js';
-import { primaryMuscleFor, sortMuscles, displayName, exerciseRowMain, setCountLabel } from '../seed.js';
+import { primaryMuscleFor, displayName, exerciseRowMain, setCountLabel, muscleChipsHtml } from '../seed.js';
 import { mountTimeSeriesChart } from '../charts.js';
 
 export function renderExercisesTab(ctx) {
@@ -50,14 +50,7 @@ async function renderList(ctx) {
   const searchInput = ctx.container.querySelector('#ex-search');
 
   function renderChips() {
-    const muscles = sortMuscles(new Set(allExercises.map((e) => primaryMuscleFor(e))));
-    const cats = ['All', ...muscles];
-    chipsEl.innerHTML = cats
-      .map((c) => {
-        const active = (c === 'All' && !category) || c === category;
-        return `<button class="chip${active ? ' active' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`;
-      })
-      .join('');
+    chipsEl.innerHTML = muscleChipsHtml(allExercises, category);
     for (const chip of chipsEl.querySelectorAll('.chip')) {
       chip.addEventListener('click', () => {
         const c = chip.dataset.cat;
@@ -199,16 +192,21 @@ export async function openExerciseDetailSheet(exerciseId) {
 
 /** Computes stats + chart data + HTML body for an exercise. Returns null if not found. */
 async function buildExerciseDetail(exerciseId) {
-  const [exercise, exerciseSets, allWorkouts] = await Promise.all([
+  const [exercise, allSets, allWorkouts, active] = await Promise.all([
     get('exercises', exerciseId),
-    getExerciseSets(exerciseId),
+    getAll('sets'),
     getAll('workouts'),
+    getActiveWorkout(),
   ]);
   if (!exercise) return null;
 
   const workoutMap = new Map(allWorkouts.map((w) => [w.id, w]));
-  const completed = exerciseSets
-    .filter((s) => s.completed && workoutMap.get(s.workoutId)?.endedAt)
+  // performedSets needs the full set list (workout completion is judged across
+  // ALL of a workout's sets); the in-progress workout is excluded by id so
+  // half-done sessions don't pollute the stats. Imported history (no completed
+  // flags, no endedAt) counts — same rule as records, PRs, and Progress.
+  const completed = performedSets(allSets)
+    .filter((s) => s.exerciseId === exerciseId && s.workoutId !== active?.id && workoutMap.has(s.workoutId))
     .map((s) => ({ ...s, workout: workoutMap.get(s.workoutId) }))
     .sort((a, b) => a.workout.startedAt - b.workout.startedAt);
 

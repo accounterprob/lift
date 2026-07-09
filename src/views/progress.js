@@ -1,8 +1,9 @@
 import {
   getFinishedWorkouts, getAll, get, getWorkoutSets, deleteWorkoutAndSets, put,
+  performedSets,
 } from '../db.js';
 import {
-  esc, formatVolume, formatDateShort, formatDateLong, formatDurationShort,
+  esc, formatVolumeLbs, formatDateShort, formatDateLong, formatDurationShort,
   formatLbs, emit, shareIcon, trashIcon, errorState, showSheet, debounce,
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
@@ -33,8 +34,10 @@ async function loadSnapshot() {
     getAll('exercises'),
   ]);
   const exMap = new Map(allExercises.map((e) => [e.id, e]));
+  // performedSets: the shared in-app vs imported rule, so Progress totals and
+  // history agree with the volume bars, records, and PR detection.
   const setsByWorkout = new Map();
-  for (const s of allSets) {
+  for (const s of performedSets(allSets)) {
     if (!setsByWorkout.has(s.workoutId)) setsByWorkout.set(s.workoutId, []);
     setsByWorkout.get(s.workoutId).push(s);
   }
@@ -46,8 +49,7 @@ async function loadSnapshot() {
   const bestByExercise = new Map();
 
   for (const w of workouts) {
-    const sets = setsByWorkout.get(w.id) || [];
-    const completed = sets.filter((s) => s.completed);
+    const completed = setsByWorkout.get(w.id) || [];
     const vol = completed.reduce((s, x) => s + x.weight * x.reps, 0);
     totalVolume += vol;
     totalSets += completed.length;
@@ -240,7 +242,8 @@ function renderHistoryList(ctx) {
 }
 
 function renderHistoryRow(workout, sets, exMap) {
-  const completed = sets.filter((s) => s.completed);
+  // `sets` already passed through performedSets in loadSnapshot.
+  const completed = sets;
   const volume = completed.reduce((sum, s) => sum + s.weight * s.reps, 0);
   const duration = (workout.endedAt - workout.startedAt) / 1000;
   const exNames = [];
@@ -258,7 +261,7 @@ function renderHistoryRow(workout, sets, exMap) {
       <div class="row-main">
         <div class="row-title" style="font-weight: 600;">${esc(workout.name)}</div>
         <div class="row-subtitle" style="margin-top: 4px;">
-          ${formatDateShort(workout.startedAt)} · ${formatDurationShort(duration)} · ${completed.length} sets · ${formatVolume(volume)}
+          ${formatDateShort(workout.startedAt)} · ${formatDurationShort(duration)} · ${completed.length} sets · ${formatVolumeLbs(volume)}
         </div>
         ${exNames.length > 0
           ? `<div class="row-subtitle" style="margin-top: 4px;">${esc(exNames.join(' · '))}${seen.size > 3 ? ' …' : ''}</div>`
@@ -293,10 +296,9 @@ async function buildWorkoutDetail(workoutId) {
     setsByExercise.get(s.exerciseId).push(s);
   }
 
-  const totalVolume = allSets
-    .filter((s) => s.completed)
-    .reduce((sum, s) => sum + s.weight * s.reps, 0);
-  const completedCount = allSets.filter((s) => s.completed).length;
+  const counted = performedSets(allSets);
+  const totalVolume = counted.reduce((sum, s) => sum + s.weight * s.reps, 0);
+  const completedCount = counted.length;
   const duration = (workout.endedAt - workout.startedAt) / 1000;
 
   const html = `
@@ -304,7 +306,7 @@ async function buildWorkoutDetail(workoutId) {
     <div class="form-section">
       <div class="stat-row"><div class="stat-label">Date</div><div class="stat-value">${formatDateLong(workout.startedAt)}</div></div>
       <div class="stat-row"><div class="stat-label">Duration</div><div class="stat-value">${formatDurationShort(duration)}</div></div>
-      <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${formatVolume(totalVolume)}</div></div>
+      <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${formatVolumeLbs(totalVolume)}</div></div>
       <div class="stat-row"><div class="stat-label">Completed Sets</div><div class="stat-value">${completedCount}</div></div>
     </div>
 

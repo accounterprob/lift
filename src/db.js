@@ -73,6 +73,20 @@ export async function del(store, id) {
   return promisify((await txStore(store, 'readwrite')).delete(id));
 }
 
+/** Delete many ids in one transaction (one disk commit instead of N). */
+export async function delMany(store, ids) {
+  if (ids.length === 0) return;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const s = tx.objectStore(store);
+    for (const id of ids) s.delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 export async function getByIndex(store, indexName, value) {
   const s = await txStore(store);
   return promisify(s.index(indexName).getAll(value));
@@ -92,6 +106,21 @@ export async function clearAll() {
 }
 
 // ---------- Domain helpers ----------
+
+/**
+ * The single source of truth for which sets count as "performed":
+ * in-app workouts mark sets completed, so only those count (prefilled-but-
+ * unchecked rows don't masquerade as work). Imported HEVY history has no
+ * completed flags at all — a workout with zero completed sets is treated as
+ * fully performed. Judged per workout across the whole input, so pass sets
+ * spanning any number of workouts. Used by the volume bars, PR detection,
+ * Progress totals/history, and exercise stats so they can never disagree.
+ */
+export function performedSets(sets) {
+  const completedWorkouts = new Set();
+  for (const s of sets) if (s.completed) completedWorkouts.add(s.workoutId);
+  return sets.filter((s) => s.completed || !completedWorkouts.has(s.workoutId));
+}
 
 export async function getActiveWorkout() {
   const workouts = await getAll('workouts');
