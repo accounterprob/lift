@@ -243,7 +243,7 @@ async function buildExerciseDetail(exerciseId) {
     ${completed.length > 0 ? `
       <div class="section">Stats</div>
       <div class="form-section">
-        <div class="stat-row"><div class="stat-label">Total Sets</div><div class="stat-value">${completed.length}</div></div>
+        <div class="stat-row"><div class="stat-label">Total Sets</div><div class="stat-value">${completed.length.toLocaleString()}</div></div>
         <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${Math.round(totalVolume).toLocaleString()} lbs</div></div>
         ${bestSet ? `<div class="stat-row"><div class="stat-label">Best Set</div><div class="stat-value">${formatLbs(bestSet.weight)} × ${bestSet.reps}</div></div>` : ''}
       </div>

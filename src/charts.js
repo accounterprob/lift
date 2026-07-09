@@ -148,7 +148,7 @@ function fmtDate(ms) {
  */
 function buildChart(data, unit) {
   const W = 400, H = 200;
-  const pad = { top: 16, right: 14, bottom: 14, left: 44 };
+  const pad = { top: 16, right: 14, bottom: 14, left: 52 };  // room for full y labels like 12,500
   const innerW = W - pad.left - pad.right;
   const innerH = H - pad.top - pad.bottom;
 
@@ -158,7 +158,7 @@ function buildChart(data, unit) {
   if (data.length === 1) {
     const x = pad.left + innerW / 2;
     const y = pad.top + innerH / 2;
-    return { html: `<svg viewBox="0 0 ${W} ${H}"><circle cx="${x}" cy="${y}" r="4" class="chart-point"/><text x="${x}" y="${y - 10}" text-anchor="middle" class="chart-axis-label">${Math.round(data[0].value)} ${unit}</text></svg>`, geom: null };
+    return { html: `<svg viewBox="0 0 ${W} ${H}"><circle cx="${x}" cy="${y}" r="4" class="chart-point"/><text x="${x}" y="${y - 10}" text-anchor="middle" class="chart-axis-label">${Math.round(data[0].value).toLocaleString()} ${unit}</text></svg>`, geom: null };
   }
 
   const xs = data.map((d) => d.date);
@@ -176,7 +176,7 @@ function buildChart(data, unit) {
   const path = smoothPath(pixelPts);
 
   const ticks = 4;
-  const fmt = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v)));
+  const fmt = (v) => Math.round(v).toLocaleString();
   const yLabels = Array.from({ length: ticks + 1 }, (_, i) => {
     const val = yMin + ((yMax - yMin) * i) / ticks;
     const y = yScale(val);

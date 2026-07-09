@@ -34,9 +34,9 @@ export function formatDurationShort(seconds) {
   return `${m}m`;
 }
 
-/** "12.3k" / "8,540" — number only; use formatVolumeLbs when the unit belongs. */
+/** Full number with locale thousands separators (never abbreviated); use
+    formatVolumeLbs when the unit belongs. */
 export function formatVolume(v) {
-  if (v >= 10_000) return `${(v / 1000).toFixed(1)}k`;
   return Math.round(v).toLocaleString();
 }
 
