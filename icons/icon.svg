@@ -1,10 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <style>
-    .bg { fill: #1aa459; }
-    .bar { fill: #ffffff; }
+    /* Neutral monochrome: the in-app theme changes with the training day,
+       so the icon stays colorless in both modes. */
+    .bg { fill: #ffffff; }
+    .bar { fill: #000000; }
     @media (prefers-color-scheme: dark) {
       .bg { fill: #000000; }
-      .bar { fill: #2fd07f; }
+      .bar { fill: #ffffff; }
     }
   </style>
   <rect class="bg" width="1024" height="1024" rx="220"/>
