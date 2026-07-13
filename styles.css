@@ -677,7 +677,9 @@ button {
 .set-row-wrap {
   position: relative;
   overflow: hidden;
-  background: var(--red);  /* visible only when row is swiped */
+  /* No background: the translucent separator would tint red over one. The
+     swipe reveal is fully painted by .set-swipe-delete, whose width is grown
+     in JS to stay flush behind the sliding row. */
   border-bottom: 0.5px solid var(--separator);
 }
 .set-row-wrap:last-of-type {
