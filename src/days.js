@@ -122,16 +122,15 @@ export function dayForMuscle(muscle) {
 }
 
 /**
- * Best-effort rotation day for a workout. A name that fits the cycle always
- * wins; otherwise the workout is classified by content — its volume is
- * summed per day family (via each exercise's muscle) and the day with the
- * most volume takes it. So an imported "Midday Workout" full of squats
- * lands on Legs. Returns null only when the sets train none of the three
- * families (e.g. a core-only session) — genuinely no day to give it.
- * Used for the Progress chart grouping; the rotation/theme stays name-based
- * so a custom-named session never advances the PPL cycle.
+ * Rotation day for one workout from its own data. A name that fits the
+ * cycle always wins; otherwise the workout is classified by content — its
+ * volume is summed per day family (via each exercise's muscle) and the day
+ * with the most volume takes it. So an imported "Midday Workout" full of
+ * squats lands on Legs. Returns null only when the sets train none of the
+ * three families (e.g. a core-only session); classifyWorkoutDays turns even
+ * that into a day from rotation context.
  */
-export function classifyWorkoutDay(name, sets, exMap) {
+function classifyWorkoutDay(name, sets, exMap) {
   const named = normalizeDayName(name);
   if (named) return named;
   const volByDay = new Map();
@@ -150,6 +149,38 @@ export function classifyWorkoutDay(name, sets, exMap) {
     if (vol > bestVol) { best = day; bestVol = vol; }
   }
   return best;
+}
+
+/**
+ * Assigns EVERY workout a rotation day — the training is a strict 3-day
+ * cycle, so nothing is allowed to fall outside it. Name and content decide
+ * first (classifyWorkoutDay); a workout with no signal of its own (e.g.
+ * core-only) takes its day from rotation context: the previous workout's
+ * day when logged on the same calendar day (it's part of that session),
+ * otherwise the next day in the cycle after the previous workout, and the
+ * first workout ever defaults to the start of the rotation. Used for the
+ * Progress chart grouping; the live rotation/theme stays name-based.
+ *
+ * @param {Array} workouts  finished workouts, any order
+ * @param {Map} setsByWorkout  workoutId → performed sets
+ * @param {Map} exMap  exerciseId → exercise
+ * @returns {Map} workoutId → rotation day name
+ */
+export function classifyWorkoutDays(workouts, setsByWorkout, exMap) {
+  const chrono = [...workouts].sort((a, b) => a.startedAt - b.startedAt);
+  const dayById = new Map();
+  let prev = null;  // { day, startedAt } of the previous (older) workout
+  for (const w of chrono) {
+    let day = classifyWorkoutDay(w.name, setsByWorkout.get(w.id) ?? [], exMap);
+    if (!day) {
+      if (!prev) day = ROTATION[0];
+      else if (isSameCalendarDay(prev.startedAt, w.startedAt)) day = prev.day;
+      else day = nextInRotation(prev.day);
+    }
+    dayById.set(w.id, day);
+    prev = { day, startedAt: w.startedAt };
+  }
+  return dayById;
 }
 
 /**

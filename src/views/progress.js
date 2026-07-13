@@ -10,7 +10,7 @@ import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
 import { openExerciseDetailSheet } from './exercises.js';
 import { displayName, exerciseRowMain, setCountLabel } from '../seed.js';
-import { ROTATION, DAYS, classifyWorkoutDay, dayColor } from '../days.js';
+import { ROTATION, DAYS, classifyWorkoutDays, dayColor } from '../days.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
 // from IndexedDB on every navigation.
@@ -45,9 +45,14 @@ async function loadSnapshot() {
 
   let totalVolume = 0;
   let totalSets = 0;
-  const volumeByDay = new Map();  // rotation day (or 'Other') → volume points
+  const volumeByDay = new Map();  // rotation day → volume points
   const exerciseCounts = new Map();
   const bestByExercise = new Map();
+
+  // Every workout gets one of the three rotation days — named days as-is,
+  // the rest classified by trained muscles or, failing that, by rotation
+  // position. Nothing falls outside the cycle.
+  const dayById = classifyWorkoutDays(workouts, setsByWorkout, exMap);
 
   for (const w of workouts) {
     const completed = setsByWorkout.get(w.id) || [];
@@ -56,11 +61,8 @@ async function loadSnapshot() {
     totalSets += completed.length;
 
     // All workouts — the chart's period selector handles the time window.
-    // One series per rotation day: named days as-is, custom-named workouts
-    // classified by which day's muscles got the most volume. 'Other' is only
-    // a workout training none of the three families (e.g. core-only).
     if (vol > 0) {
-      const day = classifyWorkoutDay(w.name, completed, exMap) ?? 'Other';
+      const day = dayById.get(w.id);
       if (!volumeByDay.has(day)) volumeByDay.set(day, []);
       volumeByDay.get(day).push({ date: w.startedAt, value: vol });
     }
@@ -88,12 +90,12 @@ async function loadSnapshot() {
     .map(([, e]) => e);
   const prs = Array.from(bestByExercise.values()).sort((a, b) => b.weight - a.weight);
 
-  // Rotation order first (Chest, Legs, Back/Bi in their day colors), then a
-  // gray 'Other' line for anything outside the cycle. Empty days drop out.
-  const volumeSeries = [...ROTATION, 'Other']
+  // One series per rotation day, in cycle order; days with no workouts yet
+  // drop out.
+  const volumeSeries = ROTATION
     .filter((day) => volumeByDay.has(day))
     .map((day) => ({
-      label: DAYS[day]?.short ?? 'Other',
+      label: DAYS[day].short,
       color: dayColor(day),
       points: volumeByDay.get(day),
     }));
