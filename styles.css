@@ -17,6 +17,12 @@
   --shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
   --nav-height: 52px;
   --tab-height: 56px;
+  /* Rotation-day identity colors (chart lines, legend, day picker). Chest
+     pink / Legs gold / Back-Bi blue — validated to stay apart under
+     red-green colorblindness on both light and dark cards. */
+  --day-chest: #db2777;
+  --day-leg: #d97706;
+  --day-back: #2563eb;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -34,7 +40,25 @@
     --fill-1: rgba(120, 120, 128, 0.24);
     --fill-2: rgba(120, 120, 128, 0.14);
     --shadow: none;
+    --day-chest: #ec4899;
+    --day-leg: #d97706;
+    --day-back: #3b82f6;
   }
+}
+
+/* ---------- Day theming ----------
+   days.js stamps <html data-day="chest|leg|back"> with today's rotation day
+   (based on the last finished day / the active workout), and the whole app
+   accent follows that day's color: nav actions, tab bar, buttons, chips,
+   completed sets, the Finish button — everything that was always-green. */
+:root[data-day="chest"] { --accent: #db2777; --green: #ec4899; }
+:root[data-day="leg"]   { --accent: #d97706; --green: #f59e0b; }
+:root[data-day="back"]  { --accent: #2563eb; --green: #3b82f6; }
+
+@media (prefers-color-scheme: dark) {
+  :root[data-day="chest"] { --accent: #f472b6; --green: #f472b6; }
+  :root[data-day="leg"]   { --accent: #f5a524; --green: #fbbf24; }
+  :root[data-day="back"]  { --accent: #60a5fa; --green: #60a5fa; }
 }
 
 * {
@@ -563,8 +587,10 @@ button {
   line-height: 1.1;
   pointer-events: none;
 }
-/* When the fill covers most of the section, white reads better than theme text. */
-.vol-info.on-fill { color: #ffffff; }
+/* When the fill covers most of the section, switch to the black/white text
+   picked per muscle color (--mtext, set inline) — pale shades like butter
+   gold or ice blue need dark text where midtones want white. */
+.vol-info.on-fill { color: var(--mtext, #ffffff); }
 .vol-muscle .seg-name {
   font-size: 11px;
   font-weight: 700;
@@ -969,6 +995,28 @@ button.stat-row { width: 100%; text-align: left; }
 .chart-axis-label { fill: var(--text-tertiary); font-size: 10px; }
 .chart-line { stroke: var(--accent); stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .chart-point { fill: var(--accent); }
+
+/* One entry per series (rotation day) above a multi-line chart. */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  padding: 0 16px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.chart-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.chart-legend .legend-item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
 
 /* Scrubbing: drag along the chart to read date + value at that point. */
 .chart-container svg { touch-action: none; }  /* the drag scrubs, not scrolls */

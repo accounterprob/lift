@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'lift-v91';
+const CACHE_VERSION = 'lift-v92';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   './src/state.js',
   './src/db.js',
   './src/seed.js',
+  './src/days.js',
   './src/backup.js',
   './src/utils.js',
   './src/charts.js',

@@ -1,47 +1,8 @@
 import { getAll, putMany } from './db.js';
 import { uuid, esc } from './utils.js';
 
-/**
- * Stable color palette per muscle group. Chosen so that any single workout's
- * 4-5 muscle groups land on maximally distinct HUES (not just shades), which
- * matters for colorblind viewing. Muscles trained on the same day get
- * different hues; muscles on different days can repeat colors.
- *
- * Palette: Blue / Orange / Purple / Yellow / Pink / Brown / Green / Cyan / Red / Gray
- */
-const MUSCLE_COLORS = {
-  // Leg Day: Quadriceps, Hamstrings, Glutes, Calves, Adductors, Abductors
-  'Quadriceps':         '#3b82f6', // blue
-  'Hamstrings':         '#f97316', // orange
-  'Glutes':             '#a855f7', // purple
-  'Calves':             '#eab308', // yellow
-  'Adductors':          '#ec4899', // pink
-  'Abductors':          '#06b6d4', // cyan
-
-  // Chest Day: Pectorals, Triceps, Anterior Deltoid, Lateral Deltoid
-  'Pectorals':          '#3b82f6', // blue
-  'Triceps':            '#f97316', // orange
-  'Anterior Deltoid':   '#a855f7', // purple
-  'Lateral Deltoid':    '#eab308', // yellow
-
-  // Back Day: Lats, Upper Back, Biceps, Posterior Deltoid, Traps
-  'Lats':               '#3b82f6', // blue
-  'Upper Back':         '#f97316', // orange
-  'Biceps':             '#ec4899', // pink (keeps Back Day hues distinct)
-  'Posterior Deltoid':  '#a855f7', // purple
-  'Traps':              '#eab308', // yellow
-
-  // Misc / cross-day
-  'Lower Back':         '#92400e', // brown
-  'Forearms':           '#22c55e', // green
-  'Abs':                '#ef4444', // red
-  'Obliques':           '#14b8a6', // teal
-  'Other':              '#6b7280', // gray
-};
-
-export function colorForMuscle(muscle) {
-  return MUSCLE_COLORS[muscle] ?? '#6b7280';
-}
+// Muscle-group colors live in days.js (colorForMuscle): each muscle wears a
+// shade of the color of the rotation day it's trained on.
 
 /**
  * Canonical display order for the specific muscle groups — push, pull, legs,

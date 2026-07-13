@@ -5,6 +5,7 @@ import {
 import { seedIfNeeded, categoryFor } from './seed.js';
 import { on, showToast, esc } from './utils.js';
 import { setCurrentTab } from './state.js';
+import { refreshDayTheme } from './days.js';
 import { renderWorkoutTab } from './views/workout.js';
 import { renderExercisesTab } from './views/exercises.js';
 import { renderProgressTab } from './views/progress.js';
@@ -134,9 +135,19 @@ navAction.addEventListener('click', () => {
   if (activeActionHandler) activeActionHandler();
 });
 
-on('data:changed', () => renderTab(currentTab));
+on('data:changed', () => {
+  refreshDayTheme();
+  renderTab(currentTab);
+});
 on('workout:changed', () => {
+  refreshDayTheme();
   if (currentTab === 'workout') renderTab(currentTab);
+});
+
+// Re-check the day when the app comes back to the foreground, so the theme
+// rolls over to the next rotation day past midnight without a relaunch.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshDayTheme();
 });
 
 async function init() {
@@ -160,6 +171,8 @@ async function init() {
     if (stripped > 0) console.info(`Stripped equipment from ${stripped} exercise name(s).`);
     const merged = await mergeButterflyIntoChestFly();
     if (merged > 0) showToast(`Merged Butterfly into Chest Fly (${merged} sets moved).`);
+    // Theme the app to today's rotation day before first paint.
+    await refreshDayTheme();
     renderTab('workout');
   } catch (err) {
     console.error('Init failed:', err);

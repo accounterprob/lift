@@ -10,6 +10,7 @@ import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
 import { openExerciseDetailSheet } from './exercises.js';
 import { displayName, exerciseRowMain, setCountLabel } from '../seed.js';
+import { ROTATION, DAYS, normalizeDayName, dayColor } from '../days.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
 // from IndexedDB on every navigation.
@@ -44,7 +45,7 @@ async function loadSnapshot() {
 
   let totalVolume = 0;
   let totalSets = 0;
-  const volumePoints = [];
+  const volumeByDay = new Map();  // rotation day (or 'Other') → volume points
   const exerciseCounts = new Map();
   const bestByExercise = new Map();
 
@@ -55,7 +56,12 @@ async function loadSnapshot() {
     totalSets += completed.length;
 
     // All workouts — the chart's period selector handles the time window.
-    if (vol > 0) volumePoints.push({ date: w.startedAt, value: vol });
+    // One series per rotation day; custom-named workouts pool under 'Other'.
+    if (vol > 0) {
+      const day = normalizeDayName(w.name) ?? 'Other';
+      if (!volumeByDay.has(day)) volumeByDay.set(day, []);
+      volumeByDay.get(day).push({ date: w.startedAt, value: vol });
+    }
 
     for (const s of completed) {
       const ex = exMap.get(s.exerciseId);
@@ -80,7 +86,17 @@ async function loadSnapshot() {
     .map(([, e]) => e);
   const prs = Array.from(bestByExercise.values()).sort((a, b) => b.weight - a.weight);
 
-  return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, volumePoints, topExercises, prs };
+  // Rotation order first (Chest, Legs, Back/Bi in their day colors), then a
+  // gray 'Other' line for anything outside the cycle. Empty days drop out.
+  const volumeSeries = [...ROTATION, 'Other']
+    .filter((day) => volumeByDay.has(day))
+    .map((day) => ({
+      label: DAYS[day]?.short ?? 'Other',
+      color: dayColor(day),
+      points: volumeByDay.get(day),
+    }));
+
+  return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, volumeSeries, topExercises, prs };
 }
 
 function renderOverview(ctx) {
@@ -102,7 +118,7 @@ function renderOverview(ctx) {
     return;
   }
 
-  const { workouts, totalVolume, totalSets, volumePoints, topExercises, prs } = snapshot;
+  const { workouts, totalVolume, totalSets, volumeSeries, topExercises, prs } = snapshot;
 
   ctx.container.innerHTML = `
     <div class="section">Totals</div>
@@ -111,7 +127,7 @@ function renderOverview(ctx) {
       <div class="stat-row"><div class="stat-label">Total Sets</div><div class="stat-value">${totalSets.toLocaleString()}</div></div>
     </div>
 
-    ${volumePoints.length > 0 ? `
+    ${volumeSeries.length > 0 ? `
       <div class="section">Workout Volume</div>
       <div class="volume-chart-mount"></div>
     ` : ''}
@@ -142,8 +158,8 @@ function renderOverview(ctx) {
   `;
 
   const chartMount = ctx.container.querySelector('.volume-chart-mount');
-  if (chartMount && volumePoints.length > 0) {
-    mountTimeSeriesChart(chartMount, volumePoints, { unit: 'lbs' });
+  if (chartMount && volumeSeries.length > 0) {
+    mountTimeSeriesChart(chartMount, volumeSeries, { unit: 'lbs' });
   }
 
   for (const row of ctx.container.querySelectorAll('[data-page]')) {

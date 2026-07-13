@@ -1,5 +1,6 @@
-// Interactive time-series chart: smooth (bezier) line with a period selector.
-// Used by the per-exercise detail and the Progress volume trend.
+// Interactive time-series chart: smooth (bezier) lines with a period selector.
+// Draws one line per series — the Progress volume trend passes one series per
+// rotation day; the per-exercise detail passes a single flat point list.
 
 const PERIODS = [
   { key: '1W', tick: '1W', days: 7 },
@@ -9,14 +10,9 @@ const PERIODS = [
   { key: 'All', tick: 'All', all: true },
 ];
 
-/**
- * @param {HTMLElement} container  where to render
- * @param {Array<{date:number, value:number}>} rawPoints  full dataset (ms timestamps)
- * @param {object} opts  { defaultPeriod?: string, unit?: string }
- */
-export function mountTimeSeriesChart(container, rawPoints, opts = {}) {
-  // Collapse to one point per calendar day (average) so two same-day sessions
-  // never produce a vertical segment.
+// Collapse to one point per calendar day (average) so two same-day sessions
+// never produce a vertical segment.
+function collapseByDay(rawPoints) {
   const byDay = new Map();
   for (const p of rawPoints) {
     const d = new Date(p.date);
@@ -28,9 +24,27 @@ export function mountTimeSeriesChart(container, rawPoints, opts = {}) {
     cur.date = Math.min(cur.date, p.date);
     byDay.set(key, cur);
   }
-  const points = [...byDay.values()]
+  return [...byDay.values()]
     .map((d) => ({ date: d.date, value: d.total / d.count }))
     .sort((a, b) => a.date - b.date);
+}
+
+/**
+ * @param {HTMLElement} container  where to render
+ * @param {Array<{date:number, value:number}> | Array<{label:string, color:string, points:Array<{date:number, value:number}>}>} raw
+ *        one flat point list (single accent-colored line) or named series
+ *        (one colored line each, with a legend). Timestamps in ms.
+ * @param {object} opts  { defaultPeriod?: string, unit?: string }
+ */
+export function mountTimeSeriesChart(container, raw, opts = {}) {
+  const isMulti = raw.length > 0 && raw[0].points !== undefined;
+  const series = (isMulti ? raw : [{ points: raw }])
+    .map((s) => ({
+      label: s.label ?? '',
+      color: s.color || 'var(--accent)',
+      points: collapseByDay(s.points),
+    }))
+    .filter((s) => s.points.length > 0);
 
   const defaultKey = opts.defaultPeriod || 'All';
   let activeIdx = Math.max(0, PERIODS.findIndex((p) => p.key === defaultKey));
@@ -38,16 +52,24 @@ export function mountTimeSeriesChart(container, rawPoints, opts = {}) {
 
   function filtered() {
     const p = PERIODS[activeIdx];
-    if (p.all) return points;
+    if (p.all) return series.map((s) => s.points);
     const cutoff = Date.now() - p.days * 86400000;
-    const within = points.filter((pt) => pt.date >= cutoff);
-    return within.length >= 1 ? within : points.slice(-1);
+    const within = series.map((s) => s.points.filter((pt) => pt.date >= cutoff));
+    // Nothing at all in the window: fall back to each line's latest point.
+    if (within.every((pts) => pts.length === 0)) return series.map((s) => s.points.slice(-1));
+    return within;
   }
 
-  // Build the static shell once (readout + chart + date range + slider).
-  // Dragging the slider only re-renders the chart body, so it keeps focus.
+  // Build the static shell once (readout + legend + chart + date range +
+  // slider). Dragging the slider only re-renders the chart body.
+  const legendHtml = isMulti && series.some((s) => s.label)
+    ? `<div class="chart-legend">${series.map((s) =>
+        `<span class="legend-item"><i style="background: ${s.color};"></i>${s.label}</span>`
+      ).join('')}</div>`
+    : '';
   container.innerHTML = `
     <div class="chart-scrub-readout" data-role="scrub"></div>
+    ${legendHtml}
     <div class="chart-container" data-role="chart"></div>
     <div class="chart-daterange" data-role="range"></div>
     <div class="chart-slider">
@@ -68,13 +90,18 @@ export function mountTimeSeriesChart(container, rawPoints, opts = {}) {
   let geom = null;  // pixel points + data for the currently drawn chart
 
   function update() {
-    const pts = filtered();
-    const built = buildChart(pts, unit);
+    const perSeries = filtered();
+    const built = buildChart(perSeries, series, unit);
     chartEl.innerHTML = built.html;
     geom = built.geom;
-    rangeEl.innerHTML = pts.length >= 2
-      ? `<span>${fmtDate(pts[0].date)}</span><span>${fmtDate(pts[pts.length - 1].date)}</span>`
-      : '';
+    const all = perSeries.flat();
+    if (all.length >= 2) {
+      const minD = Math.min(...all.map((p) => p.date));
+      const maxD = Math.max(...all.map((p) => p.date));
+      rangeEl.innerHTML = `<span>${fmtDate(minD)}</span><span>${fmtDate(maxD)}</span>`;
+    } else {
+      rangeEl.innerHTML = '';
+    }
     tickEls.forEach((t, i) => t.classList.toggle('active', i === activeIdx));
   }
 
@@ -98,7 +125,6 @@ export function mountTimeSeriesChart(container, rawPoints, opts = {}) {
       if (d < bestDist) { bestDist = d; best = i; }
     });
     const p = geom.pts[best];
-    const d = geom.data[best];
     const line = svg.querySelector('.chart-scrub-line');
     const dot = svg.querySelector('.chart-scrub-dot');
     if (line) {
@@ -109,9 +135,11 @@ export function mountTimeSeriesChart(container, rawPoints, opts = {}) {
     if (dot) {
       dot.setAttribute('cx', p.x);
       dot.setAttribute('cy', p.y);
+      dot.style.fill = p.color;
       dot.removeAttribute('visibility');
     }
-    scrubEl.textContent = `${fmtDate(d.date)} · ${Math.round(d.value).toLocaleString()} ${unit}`;
+    const label = p.label ? ` · ${p.label}` : '';
+    scrubEl.textContent = `${fmtDate(p.date)}${label} · ${Math.round(p.value).toLocaleString()} ${unit}`;
   }
 
   function endScrub() {
@@ -143,26 +171,33 @@ function fmtDate(ms) {
 
 /**
  * Renders the chart SVG and returns { html, geom } where geom carries the
- * pixel-space points + their data, so the scrubber can map a finger position
- * back to a date/value. geom is null when there's nothing to scrub.
+ * pixel-space points (each tagged with its series label/color + data), so the
+ * scrubber can map a finger position back to a date/value/series. geom is
+ * null when there's nothing to scrub.
+ *
+ * @param {Array<Array<{date,value}>>} perSeries  period-filtered points, one
+ *        array per entry in `series` (same order)
  */
-function buildChart(data, unit) {
+function buildChart(perSeries, series, unit) {
   const W = 400, H = 200;
   const pad = { top: 16, right: 14, bottom: 14, left: 52 };  // room for full y labels like 12,500
   const innerW = W - pad.left - pad.right;
   const innerH = H - pad.top - pad.bottom;
 
-  if (data.length === 0) {
+  const all = perSeries.flat();
+  if (all.length === 0) {
     return { html: `<svg viewBox="0 0 ${W} ${H}"><text x="${W / 2}" y="${H / 2}" text-anchor="middle" class="chart-axis-label">No data in range</text></svg>`, geom: null };
   }
-  if (data.length === 1) {
+  if (all.length === 1) {
+    const only = all[0];
+    const color = series[perSeries.findIndex((pts) => pts.length > 0)]?.color || 'var(--accent)';
     const x = pad.left + innerW / 2;
     const y = pad.top + innerH / 2;
-    return { html: `<svg viewBox="0 0 ${W} ${H}"><circle cx="${x}" cy="${y}" r="4" class="chart-point"/><text x="${x}" y="${y - 10}" text-anchor="middle" class="chart-axis-label">${Math.round(data[0].value).toLocaleString()} ${unit}</text></svg>`, geom: null };
+    return { html: `<svg viewBox="0 0 ${W} ${H}"><circle cx="${x}" cy="${y}" r="4" class="chart-point" style="fill: ${color};"/><text x="${x}" y="${y - 10}" text-anchor="middle" class="chart-axis-label">${Math.round(only.value).toLocaleString()} ${unit}</text></svg>`, geom: null };
   }
 
-  const xs = data.map((d) => d.date);
-  const ys = data.map((d) => d.value);
+  const xs = all.map((d) => d.date);
+  const ys = all.map((d) => d.value);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const maxY = Math.max(...ys), minY = Math.min(...ys);
   const yRange = Math.max(maxY - minY, 1);
@@ -171,9 +206,6 @@ function buildChart(data, unit) {
 
   const xScale = (x) => pad.left + ((x - minX) / Math.max(maxX - minX, 1)) * innerW;
   const yScale = (y) => pad.top + innerH - ((y - yMin) / (yMax - yMin)) * innerH;
-
-  const pixelPts = data.map((d) => ({ x: xScale(d.date), y: yScale(d.value) }));
-  const path = smoothPath(pixelPts);
 
   const ticks = 4;
   const fmt = (v) => Math.round(v).toLocaleString();
@@ -187,16 +219,31 @@ function buildChart(data, unit) {
     return `<line x1="${pad.left}" x2="${W - pad.right}" y1="${y}" y2="${y}" class="chart-axis-line"/>`;
   }).join('');
 
+  const scrubPts = [];
+  const marks = perSeries.map((pts, si) => {
+    const s = series[si];
+    const pixelPts = pts.map((d) => ({ x: xScale(d.date), y: yScale(d.value) }));
+    pts.forEach((d, i) => scrubPts.push({
+      ...pixelPts[i], date: d.date, value: d.value, label: s.label, color: s.color,
+    }));
+    if (pixelPts.length === 0) return '';
+    // A series with a single point in range still shows as a dot on the line chart.
+    if (pixelPts.length === 1) {
+      return `<circle cx="${pixelPts[0].x}" cy="${pixelPts[0].y}" r="3.5" class="chart-point" style="fill: ${s.color};"/>`;
+    }
+    return `<path d="${smoothPath(pixelPts)}" class="chart-line" style="stroke: ${s.color};"/>`;
+  }).join('');
+
   const html = `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
       ${grid}
       ${yLabels}
-      <path d="${path}" class="chart-line"/>
+      ${marks}
       <line class="chart-scrub-line" y1="${pad.top}" y2="${pad.top + innerH}" x1="0" x2="0" visibility="hidden"/>
       <circle class="chart-scrub-dot" r="4.5" visibility="hidden"/>
     </svg>
   `;
-  return { html, geom: { pts: pixelPts, data } };
+  return { html, geom: { pts: scrubPts } };
 }
 
 /** Catmull-Rom → cubic-bezier smoothing through all points. */

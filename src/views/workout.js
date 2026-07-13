@@ -15,9 +15,13 @@ import {
   uuid, esc, formatDuration, formatWeight, formatVolume, showSheet, emit, debounce, showToast,
 } from '../utils.js';
 import {
-  MUSCLES, EQUIPMENT, primaryMuscleFor, colorForMuscle, displayName,
+  MUSCLES, EQUIPMENT, primaryMuscleFor, displayName,
   exerciseRowMain, setCountLabel, muscleChipsHtml,
 } from '../seed.js';
+import {
+  ROTATION, nextInRotation, lastRotationWorkout,
+  colorForMuscle, textOnColor, dayColor, refreshDayTheme,
+} from '../days.js';
 import { downloadBackup } from '../backup.js';
 import { renderExerciseDetailPage } from './exercises.js';
 
@@ -79,37 +83,8 @@ async function renderStart(ctx) {
   ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName, hintLabel));
 }
 
-// PPL rotation: Chest → Legs → Back/Bi → Chest → ...
-const ROTATION = ['Chest Day', 'Leg Day', 'Back/Bi Day'];
-
-/**
- * Maps any workout name (current or historical) to its rotation slot, or
- * null if it doesn't fit the cycle (e.g. custom names).
- */
-function normalizeDayName(name) {
-  if (!name) return null;
-  const lower = name.toLowerCase();
-  if (lower.includes('chest')) return 'Chest Day';
-  if (lower.includes('leg') && !lower.includes('curl') && !lower.includes('extension')) return 'Leg Day';
-  if (lower.includes('back')) return 'Back/Bi Day';  // matches "Back Day" + "Back/Bi Day"
-  if (lower.includes('pull')) return 'Back/Bi Day';  // legacy "Pull Day"
-  if (lower.includes('push')) return 'Chest Day';    // legacy "Push Day"
-  return null;
-}
-
-function lastRotationWorkout(finishedWorkouts) {
-  for (const w of finishedWorkouts) {
-    const norm = normalizeDayName(w.name);
-    if (norm) return { name: w.name, normalized: norm, startedAt: w.startedAt };
-  }
-  return null;
-}
-
-function nextInRotation(currentNormalized) {
-  const idx = ROTATION.indexOf(currentNormalized);
-  if (idx === -1) return ROTATION[0];
-  return ROTATION[(idx + 1) % ROTATION.length];
-}
+// Day rotation + normalization live in days.js (shared with the Progress
+// chart and the day theming).
 
 function relativeDay(ts) {
   const now = new Date();
@@ -138,7 +113,7 @@ function startNewWorkout(recommendedName, badgeLabel = 'Today') {
 }
 
 function openWorkoutTypePicker(recommendedName, onPick, badgeLabel = 'Today') {
-  const PRESETS = ['Chest Day', 'Leg Day', 'Back/Bi Day'];
+  const PRESETS = ROTATION;  // each preset renders in its own day color
   const dismiss = showSheet({
     html: `
       <div class="sheet-header">
@@ -154,7 +129,7 @@ function openWorkoutTypePicker(recommendedName, onPick, badgeLabel = 'Today') {
             const tag = isRecommended ? ` <span class="badge">${esc(badgeLabel)}</span>` : '';
             return `
               <button class="list-row button" data-name="${esc(p)}">
-                <div class="row-main"><div class="row-title" style="color: var(--accent);">${esc(p)}${tag}</div></div>
+                <div class="row-main"><div class="row-title" style="color: ${dayColor(p)}; font-weight: 600;">${esc(p)}${tag}</div></div>
               </button>
             `;
           }).join('')}
@@ -240,11 +215,13 @@ function renderActive(ctx, workout) {
   updateTimer();
   timerInterval = setInterval(updateTimer, 1000);
 
-  // Save name on input
+  // Save name on input. Renaming can change which rotation day this is
+  // (e.g. "Chest Day" → "Leg Day"), so re-theme without re-rendering.
   const nameInput = ctx.container.querySelector('#wname');
   nameInput.addEventListener('input', debounce(async () => {
     workout.name = nameInput.value;
     await put('workouts', workout);
+    refreshDayTheme();
   }, 300));
 
   // All-time best single-workout volume per muscle, across the whole history.
@@ -352,8 +329,9 @@ function renderActive(ctx, workout) {
       const volText = record > 0
         ? `${formatVolume(cur)} / ${formatVolume(record)} · ${stat}`
         : `${formatVolume(cur)} · ${stat}`;
+      const color = colorForMuscle(muscle);
       return `
-        <div class="vol-muscle" style="width: ${widthPct.toFixed(2)}%; --mcolor: ${colorForMuscle(muscle)};" title="${esc(muscle)}: ${formatVolume(cur)} / record ${formatVolume(record)} lbs">
+        <div class="vol-muscle" style="width: ${widthPct.toFixed(2)}%; --mcolor: ${color}; --mtext: ${textOnColor(color)};" title="${esc(muscle)}: ${formatVolume(cur)} / record ${formatVolume(record)} lbs">
           <div class="vol-fill" style="width: ${fillPct.toFixed(2)}%;"></div>
           <div class="vol-info${fillPct > 55 ? ' on-fill' : ''}">
             <span class="seg-name">${esc(muscle)}</span>

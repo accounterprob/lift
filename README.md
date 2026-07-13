@@ -7,7 +7,8 @@ A self-contained, offline-first workout tracker that runs as a Progressive Web A
 - ~70 seeded common exercises + ability to add your own custom exercises.
 - History tab with all past workouts.
 - Per-exercise detail with recent sets and an estimated-1RM line chart.
-- Progress tab with totals, an 8-week volume bar chart, top exercises, and PRs.
+- Progress tab with totals, a volume trend chart with one line per training day (Chest / Legs / Back/Bi), top exercises, and PRs.
+- The app accent color follows today's rotation day (Chest pink, Legs gold, Back/Bi blue), and each muscle group's volume-bar color is a shade of its day's color.
 - JSON Export/Import via the Files picker — point at iCloud Drive for cross-device sync.
 - iOS-style design with dark mode auto-detect.
 - Works fully offline once installed (service worker caches everything).
