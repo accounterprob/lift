@@ -5,6 +5,7 @@
 // the active-workout volume bars.
 
 import { getFinishedWorkouts, getActiveWorkout } from './db.js';
+import { primaryMuscleFor } from './seed.js';
 
 // PPL rotation: Chest → Legs → Back/Bi → Chest → ...
 export const ROTATION = ['Chest Day', 'Leg Day', 'Back/Bi Day'];
@@ -98,6 +99,57 @@ const MUSCLE_COLORS = {
 
 export function colorForMuscle(muscle) {
   return MUSCLE_COLORS[muscle] ?? '#6b7280';
+}
+
+/**
+ * Which rotation day a muscle belongs to — mirrors the color families above.
+ * Core is null: it trains on any day and shouldn't sway classification.
+ */
+const MUSCLE_DAY = {
+  'Pectorals': 'Chest Day', 'Triceps': 'Chest Day',
+  'Anterior Deltoid': 'Chest Day', 'Lateral Deltoid': 'Chest Day',
+
+  'Quadriceps': 'Leg Day', 'Hamstrings': 'Leg Day', 'Glutes': 'Leg Day',
+  'Calves': 'Leg Day', 'Adductors': 'Leg Day', 'Abductors': 'Leg Day',
+
+  'Lats': 'Back/Bi Day', 'Upper Back': 'Back/Bi Day', 'Biceps': 'Back/Bi Day',
+  'Posterior Deltoid': 'Back/Bi Day', 'Traps': 'Back/Bi Day',
+  'Lower Back': 'Back/Bi Day', 'Forearms': 'Back/Bi Day',
+};
+
+export function dayForMuscle(muscle) {
+  return MUSCLE_DAY[muscle] ?? null;
+}
+
+/**
+ * Best-effort rotation day for a workout. A name that fits the cycle always
+ * wins; otherwise the workout is classified by content — its volume is
+ * summed per day family (via each exercise's muscle) and the day with the
+ * most volume takes it. So an imported "Midday Workout" full of squats
+ * lands on Legs. Returns null only when the sets train none of the three
+ * families (e.g. a core-only session) — genuinely no day to give it.
+ * Used for the Progress chart grouping; the rotation/theme stays name-based
+ * so a custom-named session never advances the PPL cycle.
+ */
+export function classifyWorkoutDay(name, sets, exMap) {
+  const named = normalizeDayName(name);
+  if (named) return named;
+  const volByDay = new Map();
+  for (const s of sets) {
+    const ex = exMap.get(s.exerciseId);
+    if (!ex) continue;
+    const day = dayForMuscle(primaryMuscleFor(ex));
+    if (!day) continue;
+    const vol = (s.weight || 0) * (s.reps || 0);
+    if (vol <= 0) continue;
+    volByDay.set(day, (volByDay.get(day) ?? 0) + vol);
+  }
+  let best = null;
+  let bestVol = 0;
+  for (const [day, vol] of volByDay) {
+    if (vol > bestVol) { best = day; bestVol = vol; }
+  }
+  return best;
 }
 
 /**

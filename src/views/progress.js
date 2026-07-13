@@ -10,7 +10,7 @@ import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
 import { openExerciseDetailSheet } from './exercises.js';
 import { displayName, exerciseRowMain, setCountLabel } from '../seed.js';
-import { ROTATION, DAYS, normalizeDayName, dayColor } from '../days.js';
+import { ROTATION, DAYS, classifyWorkoutDay, dayColor } from '../days.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
 // from IndexedDB on every navigation.
@@ -56,9 +56,11 @@ async function loadSnapshot() {
     totalSets += completed.length;
 
     // All workouts — the chart's period selector handles the time window.
-    // One series per rotation day; custom-named workouts pool under 'Other'.
+    // One series per rotation day: named days as-is, custom-named workouts
+    // classified by which day's muscles got the most volume. 'Other' is only
+    // a workout training none of the three families (e.g. core-only).
     if (vol > 0) {
-      const day = normalizeDayName(w.name) ?? 'Other';
+      const day = classifyWorkoutDay(w.name, completed, exMap) ?? 'Other';
       if (!volumeByDay.has(day)) volumeByDay.set(day, []);
       volumeByDay.get(day).push({ date: w.startedAt, value: vol });
     }
