@@ -49,22 +49,26 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
   const defaultKey = opts.defaultPeriod || 'All';
   let activeIdx = Math.max(0, PERIODS.findIndex((p) => p.key === defaultKey));
   const maxIdx = PERIODS.length - 1;
+  let isolatedIdx = null;  // tap a legend day to show only that line; tap again for all
 
   function filtered() {
     const p = PERIODS[activeIdx];
-    if (p.all) return series.map((s) => s.points);
+    // Isolation empties the other series rather than dropping them, so
+    // series/colors stay index-aligned for the chart builder.
+    const active = series.map((s, i) => (isolatedIdx === null || i === isolatedIdx ? s.points : []));
+    if (p.all) return active;
     const cutoff = Date.now() - p.days * 86400000;
-    const within = series.map((s) => s.points.filter((pt) => pt.date >= cutoff));
-    // Nothing at all in the window: fall back to each line's latest point.
-    if (within.every((pts) => pts.length === 0)) return series.map((s) => s.points.slice(-1));
+    const within = active.map((pts) => pts.filter((pt) => pt.date >= cutoff));
+    // Nothing at all in the window: fall back to each shown line's latest point.
+    if (within.every((pts) => pts.length === 0)) return active.map((pts) => pts.slice(-1));
     return within;
   }
 
   // Build the static shell once (readout + legend + chart + date range +
   // slider). Dragging the slider only re-renders the chart body.
   const legendHtml = isMulti && series.some((s) => s.label)
-    ? `<div class="chart-legend">${series.map((s) =>
-        `<span class="legend-item"><i style="background: ${s.color};"></i>${s.label}</span>`
+    ? `<div class="chart-legend">${series.map((s, i) =>
+        `<button class="legend-item" data-i="${i}" aria-pressed="false"><i style="background: ${s.color};"></i>${s.label}</button>`
       ).join('')}</div>`
     : '';
   container.innerHTML = `
@@ -110,6 +114,22 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
     endScrub();
     update();
   });
+
+  // Tap a day in the legend to isolate its line (and rescale the axes to
+  // it); tap it again to bring every line back.
+  const legendEls = [...container.querySelectorAll('.chart-legend .legend-item')];
+  for (const btn of legendEls) {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.i);
+      isolatedIdx = isolatedIdx === i ? null : i;
+      legendEls.forEach((el, j) => {
+        el.classList.toggle('dimmed', isolatedIdx !== null && j !== isolatedIdx);
+        el.setAttribute('aria-pressed', String(isolatedIdx === j));
+      });
+      endScrub();
+      update();
+    });
+  }
 
   // ----- Scrubbing: drag a finger along the chart to read date + value -----
   function scrubAt(clientX) {

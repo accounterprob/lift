@@ -1013,6 +1013,12 @@ button.stat-row { width: 100%; text-align: left; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  padding: 4px 2px;  /* keeps the tap target comfortable */
+  transition: opacity 0.15s ease;
+}
+/* Another day is isolated — fade the rest to show they're hidden. */
+.chart-legend .legend-item.dimmed {
+  opacity: 0.35;
 }
 .chart-legend .legend-item i {
   width: 8px;
