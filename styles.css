@@ -998,32 +998,35 @@ button.stat-row { width: 100%; text-align: left; }
 .chart-line { stroke: var(--accent); stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .chart-point { fill: var(--accent); }
 
-/* One entry per series (rotation day) above a multi-line chart. */
+/* One pill per series (rotation day) above a multi-line chart. Each pill
+   carries its day color via --dcolor (set inline): tinted at rest, solid
+   while that day is isolated, faded while another day is. */
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 4px 14px;
+  gap: 6px 8px;
   padding: 0 16px 8px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
 }
 .chart-legend .legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 2px;  /* keeps the tap target comfortable */
-  transition: opacity 0.15s ease;
+  padding: 5px 13px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dcolor) 14%, transparent);
+  color: var(--dcolor);
+  line-height: 1.2;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+.chart-legend .legend-item[aria-pressed="true"] {
+  background: var(--dcolor);
+  color: #ffffff;
 }
 /* Another day is isolated — fade the rest to show they're hidden. */
 .chart-legend .legend-item.dimmed {
   opacity: 0.35;
-}
-.chart-legend .legend-item i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
 }
 
 /* Scrubbing: drag along the chart to read date + value at that point. */

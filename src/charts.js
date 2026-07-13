@@ -68,7 +68,7 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
   // slider). Dragging the slider only re-renders the chart body.
   const legendHtml = isMulti && series.some((s) => s.label)
     ? `<div class="chart-legend">${series.map((s, i) =>
-        `<button class="legend-item" data-i="${i}" aria-pressed="false"><i style="background: ${s.color};"></i>${s.label}</button>`
+        `<button class="legend-item" data-i="${i}" style="--dcolor: ${s.color};" aria-pressed="false">${s.label}</button>`
       ).join('')}</div>`
     : '';
   container.innerHTML = `
