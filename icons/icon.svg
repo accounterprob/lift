@@ -1,12 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <style>
     /* Neutral monochrome: the in-app theme changes with the training day,
-       so the icon stays colorless in both modes. */
-    .bg { fill: #ffffff; }
-    .bar { fill: #000000; }
-    @media (prefers-color-scheme: dark) {
-      .bg { fill: #000000; }
-      .bar { fill: #ffffff; }
+       so the icon stays colorless in both modes. DARK-FIRST on purpose:
+       iOS rasterizes the home-screen icon once from the base styles and
+       ignores media queries, then its dark appearance blackens light tiles
+       while keeping the glyph — a black-glyph base turns invisible there.
+       A white-barbell-on-black base stays legible everywhere; browsers
+       that evaluate media queries still get the light version live. */
+    .bg { fill: #000000; }
+    .bar { fill: #ffffff; }
+    @media (prefers-color-scheme: light) {
+      .bg { fill: #ffffff; }
+      .bar { fill: #000000; }
     }
   </style>
   <rect class="bg" width="1024" height="1024" rx="220"/>
