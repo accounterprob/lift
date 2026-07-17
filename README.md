@@ -94,6 +94,22 @@ After that, the flow on iPhone is:
 
 **Restoring after a wipe:** Reinstall the PWA → open it → it'll have no data → Progress → Restore from Backup → pick the most recent JSON from `iCloud Drive/Lift`. Done.
 
+### Keeping the backup folder tidy
+
+Every backup is a **full snapshot** of the entire database, so older ones are pure redundancy — only the newest few matter. The app itself can't delete files (browsers don't allow it), but a tiny Mac-side job can trim the folder for you. `tools/prune-backups.sh` keeps the newest 3 backups (edit the `KEEP=` line for a different number) and touches nothing but `lift-backup-*.json` files; it finds the folder in `~/Desktop/Lift` or `iCloud Drive/Lift` automatically.
+
+One-time install on the Mac (from a clone of this repo):
+
+```bash
+mkdir -p ~/Scripts
+cp tools/prune-backups.sh ~/Scripts/
+chmod +x ~/Scripts/prune-backups.sh
+cp tools/com.lift.prune-backups.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.lift.prune-backups.plist
+```
+
+It then runs once a day at noon and at every login. Run `bash ~/Scripts/prune-backups.sh` any time to trim immediately. To undo: `launchctl unload ~/Library/LaunchAgents/com.lift.prune-backups.plist` and delete the two files.
+
 ---
 
 ## File layout
@@ -104,6 +120,9 @@ lift-pwa/
 ├── manifest.webmanifest    — PWA install metadata
 ├── service-worker.js       — offline caching of all assets
 ├── styles.css              — iOS-style design system (auto dark mode)
+├── tools/
+│   ├── prune-backups.sh    — Mac-side trim of the backup folder to the newest few
+│   └── com.lift.prune-backups.plist — LaunchAgent that runs it daily
 ├── icons/
 │   └── icon.svg            — app icon (dumbbell on iOS blue)
 └── src/
