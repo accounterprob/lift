@@ -98,7 +98,16 @@ After that, the flow on iPhone is:
 
 Every backup is a **full snapshot** of the entire database, so older ones are pure redundancy — only the newest few matter. The app itself can't delete files (browsers don't allow it), but a tiny Mac-side job can trim the folder for you. `tools/prune-backups.sh` keeps the newest 3 backups (edit the `KEEP=` line for a different number) and touches nothing but `lift-backup-*.json` files; it finds the folder in `~/Desktop/Lift` or `iCloud Drive/Lift` automatically.
 
-One-time install on the Mac (from a clone of this repo):
+If an older cleanup job (e.g. an age-based one) is already installed, remove it first so two agents don't fight over the folder:
+
+```bash
+launchctl list | grep -i lift          # find any old agent's label
+ls ~/Library/LaunchAgents | grep -i lift
+launchctl unload ~/Library/LaunchAgents/<old-plist-name>.plist
+rm ~/Library/LaunchAgents/<old-plist-name>.plist
+```
+
+Then the one-time install (from a clone of this repo):
 
 ```bash
 mkdir -p ~/Scripts
