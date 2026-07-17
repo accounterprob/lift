@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- LaunchAgent that trims the Lift backup folder to the newest few
-     backups, once a day at noon and on login. Install instructions are
-     in the README under "Keeping the backup folder tidy". -->
+     backups. Event-driven: WatchPaths fires it the moment the folder
+     changes (i.e. when a new backup syncs down from the phone), plus once
+     at login — no daily schedule. launchd can't expand ~ in WatchPaths,
+     so this file is a TEMPLATE: install it with the sed one-liner from the
+     README, which bakes in your real home folder. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -13,14 +16,17 @@
     <string>-c</string>
     <string>"$HOME/Scripts/prune-backups.sh"</string>
   </array>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>12</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
+  <key>WatchPaths</key>
+  <array>
+    <string>__HOME__/Desktop/Lift</string>
+    <string>__HOME__/Library/Mobile Documents/com~apple~CloudDocs/Lift</string>
+  </array>
   <key>RunAtLoad</key>
   <true/>
+  <!-- The prune itself changes the folder, which re-fires the watcher once;
+       the second run finds nothing to delete and the chain stops. Throttle
+       keeps that settle-down cheap. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
 </dict>
 </plist>

@@ -107,17 +107,19 @@ launchctl unload ~/Library/LaunchAgents/<old-plist-name>.plist
 rm ~/Library/LaunchAgents/<old-plist-name>.plist
 ```
 
-Then the one-time install (from a clone of this repo):
+Then the one-time install (from a clone of this repo). The plist is a template — launchd can't expand `~` in WatchPaths, so the `sed` line bakes your real home folder into the installed copy:
 
 ```bash
 mkdir -p ~/Scripts
 cp tools/prune-backups.sh ~/Scripts/
 chmod +x ~/Scripts/prune-backups.sh
-cp tools/com.lift.prune-backups.plist ~/Library/LaunchAgents/
+sed "s|__HOME__|$HOME|g" tools/com.lift.prune-backups.plist > ~/Library/LaunchAgents/com.lift.prune-backups.plist
 launchctl load ~/Library/LaunchAgents/com.lift.prune-backups.plist
 ```
 
-It then runs once a day at noon and at every login. Run `bash ~/Scripts/prune-backups.sh` any time to trim immediately. To undo: `launchctl unload ~/Library/LaunchAgents/com.lift.prune-backups.plist` and delete the two files.
+The agent is event-driven: it fires the moment the Lift folder changes — i.e. right after a new backup syncs down from the phone — plus once at login to catch anything it slept through. There is no daily schedule. Run `bash ~/Scripts/prune-backups.sh` any time to trim immediately. To undo: `launchctl unload ~/Library/LaunchAgents/com.lift.prune-backups.plist` and delete the two files.
+
+> Why can't the app do this itself? iOS gives web apps no access to the Files app / iCloud Drive — Lift can hand a backup *down* as a download, but can never list or delete what's in the folder. Any cleanup has to run on the Mac.
 
 ---
 
