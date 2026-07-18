@@ -107,15 +107,13 @@ launchctl unload ~/Library/LaunchAgents/<old-plist-name>.plist
 rm ~/Library/LaunchAgents/<old-plist-name>.plist
 ```
 
-Then the one-time install (from a clone of this repo). The plist is a template — launchd can't expand `~` in WatchPaths, so the `sed` line bakes your real home folder into the installed copy:
+Then install with one command in Terminal on the Mac — it fetches the prune script, writes the agent with your real home folder baked in, loads it, and trims the folder immediately:
 
 ```bash
-mkdir -p ~/Scripts
-cp tools/prune-backups.sh ~/Scripts/
-chmod +x ~/Scripts/prune-backups.sh
-sed "s|__HOME__|$HOME|g" tools/com.lift.prune-backups.plist > ~/Library/LaunchAgents/com.lift.prune-backups.plist
-launchctl load ~/Library/LaunchAgents/com.lift.prune-backups.plist
+curl -fsSL https://accounterprob.github.io/lift/tools/install-prune-agent.sh | bash
 ```
+
+(From a clone of this repo, `bash tools/install-prune-agent.sh` does the same using the local files. The manual steps it automates: copy `tools/prune-backups.sh` to `~/Scripts/`, `chmod +x` it, write `tools/com.lift.prune-backups.plist` to `~/Library/LaunchAgents/` with `__HOME__` replaced by your home folder — launchd can't expand `~` in WatchPaths — and `launchctl load` it.)
 
 The agent is event-driven: it fires the moment the Lift folder changes — i.e. right after a new backup syncs down from the phone — plus once at login to catch anything it slept through. There is no daily schedule. Run `bash ~/Scripts/prune-backups.sh` any time to trim immediately. To undo: `launchctl unload ~/Library/LaunchAgents/com.lift.prune-backups.plist` and delete the two files.
 
@@ -132,8 +130,9 @@ lift-pwa/
 ├── service-worker.js       — offline caching of all assets
 ├── styles.css              — iOS-style design system (auto dark mode)
 ├── tools/
+│   ├── install-prune-agent.sh — one-command installer for the backup pruner
 │   ├── prune-backups.sh    — Mac-side trim of the backup folder to the newest few
-│   └── com.lift.prune-backups.plist — LaunchAgent that runs it daily
+│   └── com.lift.prune-backups.plist — LaunchAgent template that runs it on folder changes
 ├── icons/
 │   └── icon.svg            — app icon (dumbbell on iOS blue)
 └── src/
