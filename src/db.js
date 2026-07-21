@@ -1,17 +1,8 @@
 const DB_NAME = 'lift';
-const DB_VERSION = 2;
-
-export const STORE_NAMES = [
-  'exercises',
-  'workouts',
-  'sets',
-  'wellbeingEntries',
-  'asthmaEvents',
-  'healthKitLinks',
-  'healthKitOutbox',
-  'migrationState',
-  'appSettings',
-];
+// Version 2 was used briefly by the removed health-integration build. Keep a
+// higher version so phones that opened that build can return to the original
+// three-store model without an IndexedDB VersionError or lost workouts.
+const DB_VERSION = 3;
 
 let _db = null;
 
@@ -40,35 +31,28 @@ export function openDB() {
         s.createIndex('workoutId', 'workoutId', { unique: false });
         s.createIndex('exerciseId', 'exerciseId', { unique: false });
       }
-      if (!db.objectStoreNames.contains('wellbeingEntries')) {
-        const s = db.createObjectStore('wellbeingEntries', { keyPath: 'id' });
-        s.createIndex('localCalendarDayIdentifier', 'localCalendarDayIdentifier', { unique: true });
-        s.createIndex('timestamp', 'timestamp', { unique: false });
+
+      for (const name of [
+        'wellbeingEntries', 'asthmaEvents', 'healthKitLinks',
+        'healthKitOutbox', 'migrationState', 'appSettings',
+      ]) {
+        if (db.objectStoreNames.contains(name)) db.deleteObjectStore(name);
       }
-      if (!db.objectStoreNames.contains('asthmaEvents')) {
-        const s = db.createObjectStore('asthmaEvents', { keyPath: 'id' });
-        s.createIndex('timestamp', 'timestamp', { unique: false });
-        s.createIndex('relatedWorkoutID', 'relatedWorkoutID', { unique: false });
-      }
-      if (!db.objectStoreNames.contains('healthKitLinks')) {
-        const s = db.createObjectStore('healthKitLinks', { keyPath: 'id' });
-        s.createIndex('localEntityID', 'localEntityID', { unique: false });
-        s.createIndex('entityKind', 'entityKind', { unique: false });
-        s.createIndex('syncIdentifier', 'syncIdentifier', { unique: true });
-      }
-      if (!db.objectStoreNames.contains('healthKitOutbox')) {
-        const s = db.createObjectStore('healthKitOutbox', { keyPath: 'id' });
-        s.createIndex('localEntityID', 'localEntityID', { unique: false });
-        s.createIndex('operationType', 'operationType', { unique: false });
-        s.createIndex('syncStatus', 'syncStatus', { unique: false });
-        s.createIndex('createdAt', 'createdAt', { unique: false });
-      }
-      if (!db.objectStoreNames.contains('migrationState')) {
-        db.createObjectStore('migrationState', { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains('appSettings')) {
-        db.createObjectStore('appSettings', { keyPath: 'key' });
-      }
+
+      // Remove integration-only metadata while retaining the original workout
+      // fields and every exercise/set relationship.
+      const workouts = req.transaction.objectStore('workouts');
+      const cursor = workouts.openCursor();
+      cursor.onsuccess = () => {
+        const row = cursor.result;
+        if (!row) return;
+        const workout = row.value;
+        for (const key of Object.keys(workout)) {
+          if (/^(healthKit|appleHealthShortcut)/.test(key) || key === 'localEffort') delete workout[key];
+        }
+        row.update(workout);
+        row.continue();
+      };
     };
   });
 }
@@ -94,14 +78,8 @@ export async function get(store, id) {
 }
 
 export async function put(store, value) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, 'readwrite');
-    tx.objectStore(store).put(value);
-    tx.oncomplete = () => resolve(value);
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+  await promisify((await txStore(store, 'readwrite')).put(value));
+  return value;
 }
 
 export async function putMany(store, values) {
@@ -117,14 +95,7 @@ export async function putMany(store, values) {
 }
 
 export async function del(store, id) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, 'readwrite');
-    tx.objectStore(store).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
+  return promisify((await txStore(store, 'readwrite')).delete(id));
 }
 
 /** Delete many ids in one transaction (one disk commit instead of N). */
@@ -141,17 +112,6 @@ export async function delMany(store, ids) {
   });
 }
 
-export async function clearStore(store) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, 'readwrite');
-    tx.objectStore(store).clear();
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
-}
-
 export async function getByIndex(store, indexName, value) {
   const s = await txStore(store);
   return promisify(s.index(indexName).getAll(value));
@@ -160,40 +120,39 @@ export async function getByIndex(store, indexName, value) {
 export async function clearAll() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const available = STORE_NAMES.filter((name) => db.objectStoreNames.contains(name));
-    const tx = db.transaction(available, 'readwrite');
-    for (const name of available) tx.objectStore(name).clear();
+    const tx = db.transaction(['exercises', 'workouts', 'sets'], 'readwrite');
+    tx.objectStore('exercises').clear();
+    tx.objectStore('workouts').clear();
+    tx.objectStore('sets').clear();
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
 }
 
-/** Replace every Lift store in one transaction so a failed restore can never
- * leave a half-cleared database. Unknown store names are ignored. */
-export async function replaceAllData(dataByStore) {
+/** Replace the complete Lift database in one transaction. If any restored
+ * record is invalid or cannot be written, IndexedDB rolls the transaction
+ * back so the existing workouts are never left half-erased. */
+export async function replaceAllData({ exercises, workouts, sets }) {
   const db = await openDB();
-  const available = STORE_NAMES.filter((name) => db.objectStoreNames.contains(name));
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(available, 'readwrite');
-    for (const name of available) {
-      const store = tx.objectStore(name);
-      store.clear();
-      for (const value of dataByStore[name] ?? []) store.put(value);
+    const tx = db.transaction(['exercises', 'workouts', 'sets'], 'readwrite');
+    const rowsByStore = { exercises, workouts, sets };
+    try {
+      for (const [name, rows] of Object.entries(rowsByStore)) {
+        const store = tx.objectStore(name);
+        store.clear();
+        for (const row of rows) store.put(row);
+      }
+    } catch (error) {
+      tx.abort();
+      reject(error);
+      return;
     }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
-}
-
-export async function getSetting(key, fallback = null) {
-  const row = await get('appSettings', key);
-  return row?.value ?? fallback;
-}
-
-export async function setSetting(key, value) {
-  return put('appSettings', { key, value, updatedAt: Date.now() });
 }
 
 // ---------- Domain helpers ----------

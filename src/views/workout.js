@@ -10,10 +10,9 @@ import {
   previousWorkoutSetsForExercise,
   buildPrevSlotMaps,
   performedSets,
-  getByIndex,
 } from '../db.js';
 import {
-  uuid, esc, formatDuration, formatWeight, formatVolume, showSheet, emit, debounce, showToast, respiratoryIcon,
+  uuid, esc, formatDuration, formatWeight, formatVolume, showSheet, emit, debounce, showToast,
 } from '../utils.js';
 import {
   MUSCLES, EQUIPMENT, primaryMuscleFor, displayName,
@@ -25,11 +24,6 @@ import {
 } from '../days.js';
 import { downloadBackup } from '../backup.js';
 import { renderExerciseDetailPage } from './exercises.js';
-import { localCalendarDayIdentifier, validateEffort } from '../health/domain.js';
-import { enqueueWorkout, enqueueWorkoutEffort, processHealthKitOutbox } from '../health/sync.js';
-import { healthKitService } from '../health/service.js';
-import { openAsthmaQuickLog, openWellbeingCheckIn } from './data.js';
-import { openAppleHealthShortcutPrompt } from './shortcut.js';
 
 export function renderWorkoutTab(ctx) {
   let mounted = true;
@@ -86,20 +80,7 @@ async function renderStart(ctx) {
       <button id="start-btn" class="btn-primary">Start Empty Workout</button>
     </div>
   `;
-  ctx.container.querySelector('#start-btn').addEventListener('click', async () => {
-    const existing = (await getByIndex('wellbeingEntries', 'localCalendarDayIdentifier', localCalendarDayIdentifier()))[0];
-    if (existing) {
-      startNewWorkout(todayName, hintLabel);
-      return;
-    }
-    let continued = false;
-    const continueOnce = () => {
-      if (continued) return;
-      continued = true;
-      startNewWorkout(todayName, hintLabel);
-    };
-    openWellbeingCheckIn({ context: 'preWorkout', onSaved: continueOnce, onDismiss: continueOnce });
-  });
+  ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName, hintLabel));
 }
 
 // Day rotation + normalization live in days.js (shared with the Progress
@@ -208,7 +189,6 @@ function renderActive(ctx, workout) {
       <div id="exercise-sections"></div>
       <div class="action-section">
         <button id="add-exercise-btn" class="btn-secondary">+ Add Exercise</button>
-        <button id="asthma-quick-btn" class="btn-secondary lungs-action" aria-label="Log inhaler use or respiratory symptoms during this workout">${respiratoryIcon()}<span>Log Inhaler or Symptoms</span></button>
       </div>
       <div class="action-section">
         <button id="finish-btn" class="btn-primary green">Finish Workout</button>
@@ -238,11 +218,11 @@ function renderActive(ctx, workout) {
   // Save name on input. Renaming can change which rotation day this is
   // (e.g. "Chest Day" → "Leg Day"), so re-theme without re-rendering.
   const nameInput = ctx.container.querySelector('#wname');
-  nameInput.addEventListener('input', debounce(async () => {
+  nameInput.addEventListener('input', async () => {
     workout.name = nameInput.value;
-    await put('workouts', workout);
+    await put('workouts', { ...workout });
     refreshDayTheme();
-  }, 300));
+  });
 
   // All-time best single-workout volume per muscle, across the whole history.
   let muscleRecords = new Map();
@@ -259,38 +239,13 @@ function renderActive(ctx, workout) {
   ctx.container.querySelector('#finish-btn').addEventListener('click', async () => {
     if (!confirm('Finish this workout?')) return;
     await finishWorkout(workout, sets);
-    const effort = await openPostWorkoutEffort();
-    if (healthKitService.nativeAvailable) {
-      const nativeStatus = await healthKitService.getStatus().catch(() => null);
-      const workoutOperation = await enqueueWorkout(workout);
-      if (effort != null && nativeStatus?.authorization?.workoutEffort === 'unavailable') {
-        workout.localEffort = effort;
-        await put('workouts', workout);
-      } else if (effort != null) {
-        await enqueueWorkoutEffort(workout, effort, workoutOperation.id);
-      }
-      processHealthKitOutbox().then((result) => {
-        if (result.failed > 0) showToast('Workout saved · Apple Health will retry later.');
-        emit('data:changed');
-      }).catch(() => {});
-    } else {
-      workout.localEffort = effort;
-      workout.appleHealthShortcutStatus = 'notExported';
-      workout.appleHealthShortcutLastError = null;
-      await put('workouts', workout);
-    }
     try {
       const { filename } = await downloadBackup();
-      showToast(`Workout saved · backup: ${filename}`);
+      showToast(`Saved · backup: ${filename}`);
     } catch (err) {
       showToast(`Saved · backup failed: ${err.message}`);
     }
     emit('workout:changed');
-    if (!healthKitService.nativeAvailable) await openAppleHealthShortcutPrompt(workout);
-  });
-
-  ctx.container.querySelector('#asthma-quick-btn').addEventListener('click', () => {
-    openAsthmaQuickLog({ context: 'duringWorkout', relatedWorkoutID: workout.id });
   });
 
   ctx.container.querySelector('#discard-btn').addEventListener('click', async () => {
@@ -586,21 +541,27 @@ function renderActive(ctx, workout) {
         await reload();
       });
 
-      weightInput.addEventListener('input', debounce(async () => {
-        set.weight = parseFloat(weightInput.value) || 0;
-        clearBumpMarker(set);          // user now owns this value
-        await put('sets', set);
-        await resyncBumps(set);        // revert old bumps, re-apply from the new value
-        if (set.completed) updateRunningStats();
-      }, 200));
-
-      repsInput.addEventListener('input', debounce(async () => {
-        set.reps = parseInt(repsInput.value, 10) || 0;
-        clearBumpMarker(set);
-        await put('sets', set);
+      const persistWeight = debounce(async () => {
         await resyncBumps(set);
         if (set.completed) updateRunningStats();
-      }, 200));
+      }, 200);
+      weightInput.addEventListener('input', () => {
+        set.weight = parseFloat(weightInput.value) || 0;
+        clearBumpMarker(set);          // user now owns this value
+        put('sets', { ...set }).catch((error) => console.error('Set save failed', error));
+        persistWeight();
+      });
+
+      const persistReps = debounce(async () => {
+        await resyncBumps(set);
+        if (set.completed) updateRunningStats();
+      }, 200);
+      repsInput.addEventListener('input', () => {
+        set.reps = parseInt(repsInput.value, 10) || 0;
+        clearBumpMarker(set);
+        put('sets', { ...set }).catch((error) => console.error('Set save failed', error));
+        persistReps();
+      });
 
       completeBtn.addEventListener('click', async () => {
         const wasCompleted = set.completed;
@@ -765,9 +726,9 @@ function renderSetRow(set, displayLabel, prevSet) {
       <div class="set-row type-${type}${set.completed ? ' completed' : ''}" data-set-id="${set.id}">
         <button class="set-number" aria-label="Tap to toggle warmup">${displayLabel}</button>
         <div class="prev" aria-label="Previous">${prevText}</div>
-        <input class="weight-input" type="number" inputmode="decimal" step="0.5"
+        <input class="weight-input" type="number" inputmode="decimal" step="0.5" aria-label="Weight in pounds for set ${displayLabel}"
                placeholder="0" value="${set.weight > 0 ? set.weight : ''}" />
-        <input class="reps-input" type="number" inputmode="numeric" step="1"
+        <input class="reps-input" type="number" inputmode="numeric" step="1" aria-label="Repetitions for set ${displayLabel}"
                placeholder="0" value="${set.reps > 0 ? set.reps : ''}" />
         <button class="complete-btn" aria-label="Toggle complete">${checkIcon(set.completed)}</button>
       </div>
@@ -1043,45 +1004,6 @@ async function finishWorkout(workout, sets) {
     .map((s) => s.id));
   workout.endedAt = Date.now();
   await put('workouts', workout);
-}
-
-function openPostWorkoutEffort() {
-  return new Promise((resolve) => {
-    let selected = 5;
-    const descriptions = ['Very easy', 'Easy', 'Light', 'Moderate', 'Steady', 'Challenging', 'Hard', 'Very hard', 'Near maximum', 'All-out effort'];
-    let completed = false;
-    const dismiss = showSheet({
-      dismissOnBackdrop: false,
-      html: `
-        <div class="sheet-header"><button class="btn-text" id="effort-skip">Skip</button><div class="title">Workout Effort</div><span style="width:60px"></span></div>
-        <div class="sheet-content effort-sheet">
-          <h2>How hard was this workout overall?</h2>
-          <output id="effort-value" aria-live="polite">5</output>
-          <div id="effort-description">Challenging</div>
-          <input id="effort-slider" type="range" min="1" max="10" step="1" value="5" aria-label="Workout effort from 1 very easy to 10 all-out effort" />
-          <div class="range-endpoints"><span>1 · Very easy</span><span>10 · All-out</span></div>
-          <div class="effort-grid" role="group" aria-label="Workout effort">${Array.from({ length: 10 }, (_, index) => `<button type="button" data-effort="${index + 1}" aria-pressed="${index === 4}">${index + 1}</button>`).join('')}</div>
-          <button class="btn-primary" id="effort-save">Save & Continue</button>
-        </div>`,
-      onMount(sheet) {
-        const slider = sheet.querySelector('#effort-slider');
-        const value = sheet.querySelector('#effort-value');
-        const description = sheet.querySelector('#effort-description');
-        const update = (next) => {
-          selected = validateEffort(next);
-          slider.value = String(selected);
-          value.textContent = String(selected);
-          description.textContent = descriptions[selected - 1];
-          for (const button of sheet.querySelectorAll('[data-effort]')) button.setAttribute('aria-pressed', String(Number(button.dataset.effort) === selected));
-        };
-        slider.addEventListener('input', () => update(slider.value));
-        for (const button of sheet.querySelectorAll('[data-effort]')) button.addEventListener('click', () => update(button.dataset.effort));
-        const finish = (result) => { if (completed) return; completed = true; dismiss(); resolve(result); };
-        sheet.querySelector('#effort-save').addEventListener('click', () => finish(selected));
-        sheet.querySelector('#effort-skip').addEventListener('click', () => finish(null));
-      },
-    });
-  });
 }
 
 // ----------------- Exercise picker sheet -----------------

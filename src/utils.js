@@ -59,11 +59,6 @@ export function formatDateLong(d) {
   });
 }
 
-export function formatTime(d) {
-  const date = d instanceof Date ? d : new Date(d);
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
-
 export function debounce(fn, delay = 200) {
   let timer = null;
   return (...args) => {
@@ -113,9 +108,9 @@ export function on(type, handler) {
 
 /**
  * Display a bottom sheet. Returns a dismiss function.
- * @param {{ html: string, onMount?: (sheetEl: HTMLElement, dismiss: () => void) => void, onDismiss?: () => void, dismissOnBackdrop?: boolean }} config
+ * @param {{ html: string, onMount?: (sheetEl: HTMLElement, dismiss: () => void) => void }} config
  */
-export function showSheet({ html, onMount, onDismiss, dismissOnBackdrop = true }) {
+export function showSheet({ html, onMount }) {
   const backdrop = document.createElement('div');
   backdrop.className = 'sheet-backdrop';
   backdrop.innerHTML = `<div class="sheet"></div>`;
@@ -160,17 +155,15 @@ export function showSheet({ html, onMount, onDismiss, dismissOnBackdrop = true }
   vv?.addEventListener('scroll', syncHeight);
 
   function dismiss() {
-    if (!backdrop.isConnected) return;
     backdrop.remove();
     vv?.removeEventListener('resize', syncHeight);
     vv?.removeEventListener('scroll', syncHeight);
-    onDismiss?.();
   }
   // Let the tab bar (main.js) close any open sheets when switching tabs.
   backdrop.dismissSheet = dismiss;
 
   backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop && dismissOnBackdrop) dismiss();
+    if (e.target === backdrop) dismiss();
   });
 
   onMount?.(sheet, dismiss);
@@ -195,10 +188,6 @@ export function trashIcon() {
 
 export function shareIcon() {
   return `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M16 5l-1.42 1.42-1.59-1.59V16h-2V4.83L9.41 6.42 8 5l4-4 4 4zm4 5v11c0 1.1-.9 2-2 2H6c-1.11 0-2-.9-2-2V10c0-1.11.89-2 2-2h3v2H6v11h12V10h-3V8h3c1.1 0 2 .89 2 2z"/></svg>`;
-}
-
-export function respiratoryIcon() {
-  return `<svg class="health-action-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M10 8.1C8.8 6.8 7.7 6.2 6.8 6.6 4.7 7.5 3 12.2 3 15.6 3 18.1 4.5 20 6.8 20c1.8 0 3.2-1.1 3.2-3V8.1Z"/><path d="M14 8.1c1.2-1.3 2.3-1.9 3.2-1.5 2.1.9 3.8 5.6 3.8 9 0 2.5-1.5 4.4-3.8 4.4-1.8 0-3.2-1.1-3.2-3V8.1Z"/></svg>`;
 }
 
 export function errorState(err) {

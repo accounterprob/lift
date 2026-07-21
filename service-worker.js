@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'lift-v107-health-polish';
+const CACHE_VERSION = 'lift-v102-restored';
 const ASSETS = [
   './',
   './index.html',
@@ -16,13 +16,6 @@ const ASSETS = [
   './src/views/workout.js',
   './src/views/exercises.js',
   './src/views/progress.js',
-  './src/views/data.js',
-  './src/views/shortcut.js',
-  './src/health/domain.js',
-  './src/health/shortcut.js',
-  './src/health/service.js',
-  './src/health/sync.js',
-  './src/health/outbox-runner.js',
 ];
 
 self.addEventListener('install', (event) => {

@@ -1,49 +1,18 @@
 import { getAll, replaceAllData } from './db.js';
 import { showSheet, showToast, emit } from './utils.js';
-import { BACKUP_SCHEMA_VERSION, HEALTH_SYNC_SCHEMA_VERSION } from './health/domain.js';
-import { healthKitService } from './health/service.js';
-
-const EXTENDED_STORES = [
-  'wellbeingEntries',
-  'asthmaEvents',
-  'healthKitLinks',
-  'healthKitOutbox',
-  'migrationState',
-  'appSettings',
-];
 
 export async function buildSnapshot() {
-  const [exercises, workouts, rawSets, ...extended] = await Promise.all([
+  const [exercises, workouts, sets] = await Promise.all([
     getAll('exercises'),
     getAll('workouts'),
     getAll('sets'),
-    ...EXTENDED_STORES.map((store) => getAll(store)),
   ]);
-  const hasRealRPE = rawSets.some((set) => set.rpe !== null && set.rpe !== undefined && set.rpe !== '');
-  const sets = hasRealRPE
-    ? rawSets
-    : rawSets.map(({ rpe: _deprecatedRPE, ...set }) => set);
-  const containsLocalFallbackHealthValues = workouts.some((workout) => workout.localEffort != null || workout.appleHealthShortcutStatus)
-    || extended[0].some((entry) => entry.localMood != null)
-    || extended[1].some((event) => event.localPuffs != null || Object.keys(event.localSymptoms ?? {}).length > 0);
   return {
-    version: BACKUP_SCHEMA_VERSION,
-    schemaVersion: BACKUP_SCHEMA_VERSION,
-    healthKitMigrationVersion: HEALTH_SYNC_SCHEMA_VERSION,
+    version: 1,
     exportedAt: new Date().toISOString(),
-    manifest: {
-      archiveDescription: 'This Lift backup contains all locally stored Lift data. Keep a separate Apple Health export for entries written natively or through the optional Shortcut.',
-      liftOwns: ['exercises', 'workouts', 'sets', 'locally stored effort and check-in values', 'locally stored mood, inhaler, and symptom values', 'asthma notes', 'pending native synchronization payloads'],
-      appleHealthOwns: ['entries successfully written by the native app', 'workout summaries created by the optional Apple Health Shortcut'],
-      shortcutExportNote: 'Shortcut-created Apple Health workout summaries may also exist in Apple Health; Lift cannot read or include those Health records directly.',
-      containsPendingHealthPayloads: extended[3].length > 0,
-      containsLocalFallbackHealthValues,
-      containsSynchronizedHealthValues: false,
-    },
     exercises,
     workouts,
     sets,
-    ...Object.fromEntries(EXTENDED_STORES.map((store, index) => [store, extended[index]])),
   };
 }
 
@@ -61,15 +30,6 @@ export async function downloadBackup() {
 
   const filename = timestampedName();
 
-  if (typeof healthKitService.exportBackup === 'function' && window.webkit?.messageHandlers?.liftNative) {
-    try {
-      await healthKitService.exportBackup(filename, json);
-      return { filename, bytes: blob.size, snapshot };
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
@@ -86,62 +46,33 @@ export async function downloadBackup() {
 
 export async function restoreFromFile(file) {
   const text = await file.text();
-  const snapshot = normalizeSnapshot(JSON.parse(text), { afterRestore: true });
+  const snapshot = JSON.parse(text);
 
+  if (!snapshot || !Array.isArray(snapshot.exercises) || !Array.isArray(snapshot.workouts) || !Array.isArray(snapshot.sets)) {
+    throw new Error('File doesn\'t look like a Lift backup.');
+  }
+
+  // Backups made during the short-lived integration build still contain the
+  // original workout records, plus synchronization-only metadata. Restore the
+  // workout itself and discard only those retired fields.
+  const workouts = snapshot.workouts.map((source) => {
+    const workout = { ...source };
+    for (const key of Object.keys(workout)) {
+      if (/^(healthKit|appleHealthShortcut)/.test(key) || key === 'localEffort') delete workout[key];
+    }
+    return workout;
+  });
   await replaceAllData({
     exercises: snapshot.exercises,
-    workouts: snapshot.workouts,
+    workouts,
     sets: snapshot.sets,
-    ...Object.fromEntries(EXTENDED_STORES.map((store) => [store, snapshot[store]])),
   });
 
   return {
     exercises: snapshot.exercises.length,
-    workouts: snapshot.workouts.length,
+    workouts: workouts.length,
     sets: snapshot.sets.length,
-    healthRecords: snapshot.wellbeingEntries.length + snapshot.asthmaEvents.length,
   };
-}
-
-export function normalizeSnapshot(input, { afterRestore = false } = {}) {
-  if (!input || !Array.isArray(input.exercises) || !Array.isArray(input.workouts) || !Array.isArray(input.sets)) {
-    throw new Error('File doesn\'t look like a Lift backup.');
-  }
-  const version = Number(input.schemaVersion ?? input.version ?? 1);
-  if (!Number.isInteger(version) || version < 1 || version > BACKUP_SCHEMA_VERSION) {
-    throw new Error(`Unsupported Lift backup schema version: ${version}.`);
-  }
-  const normalized = {
-    ...input,
-    version: BACKUP_SCHEMA_VERSION,
-    schemaVersion: BACKUP_SCHEMA_VERSION,
-    exercises: input.exercises.map((exercise) => ({ notes: '', ...exercise })),
-    workouts: input.workouts.map((workout) => ({
-      notes: '',
-      healthKitLinkID: null,
-      healthKitSyncVersion: 0,
-      healthKitSyncStatus: 'notSynchronized',
-      healthKitLastAttemptAt: null,
-      healthKitLastError: null,
-      ...workout,
-    })),
-    sets: input.sets.map((set) => ({ setType: 'working', completed: false, ...set })),
-  };
-  for (const store of EXTENDED_STORES) normalized[store] = Array.isArray(input[store]) ? input[store] : [];
-  if (afterRestore) {
-    normalized.healthKitLinks = normalized.healthKitLinks.map((link) => ({
-      ...link,
-      syncStatus: 'needsReconciliation',
-      externallyDeletedOrInaccessible: false,
-    }));
-    normalized.healthKitOutbox = normalized.healthKitOutbox.map((operation) => ({
-      ...operation,
-      syncStatus: 'pendingReviewAfterRestore',
-      requiresUserAttention: true,
-      lastError: 'Review this restored HealthKit write before retrying.',
-    }));
-  }
-  return normalized;
 }
 
 export function openBackupSheet() {
@@ -159,12 +90,8 @@ export function openBackupSheet() {
             <div class="row-main"><div class="row-title" style="color: var(--accent);">Download Backup</div></div>
           </button>
         </div>
-        <div class="section-footer backup-copy">
-          Downloads one JSON file with everything Lift stores locally. On iPhone, open Safari’s Downloads, then choose <b>Share → Save to Files</b> to keep it in iCloud Drive.
-        </div>
-
-        <div class="section-footer backup-copy">
-          Apple Health entries are not included. Keep a separate Apple Health export if you use the Shortcut or native app.
+        <div class="section-footer">
+          Saves a JSON file. In Safari on iPhone, after the download finishes tap the Downloads button → long-press the file → <b>Share → Save to Files</b> → pick <b>iCloud Drive</b>. On Mac, set Safari's download folder to iCloud Drive in Settings.
         </div>
 
         <div class="section">Restore</div>
@@ -173,8 +100,8 @@ export function openBackupSheet() {
             <div class="row-main"><div class="row-title" style="color: var(--red);">Restore from Backup…</div></div>
           </button>
         </div>
-        <div class="section-footer backup-copy">
-          <b>Replaces all data currently stored in Lift</b>—including workouts, exercises, check-ins, and inhaler or symptom logs—with the selected backup.
+        <div class="section-footer">
+          <b>Replaces</b> all current workouts and exercises with the contents of the chosen JSON file.
         </div>
 
         <input type="file" id="bk-file" accept=".json,application/json" style="display: none;" />
@@ -205,7 +132,7 @@ export function openBackupSheet() {
         try {
           const counts = await restoreFromFile(file);
           dismiss();
-          showToast(`Restored ${counts.workouts} workouts, ${counts.exercises} exercises, and ${counts.healthRecords} health records`);
+          showToast(`Restored ${counts.workouts} workouts, ${counts.exercises} exercises`);
           emit('data:changed');
         } catch (err) {
           showToast(`Restore failed: ${err.message}`);

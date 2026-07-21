@@ -25,79 +25,6 @@
   --day-back: #2563eb;
 }
 
-/* Health-data workflows */
-.accent { color: var(--accent); }
-.compact-actions { display: grid; gap: 10px; }
-.lungs-action { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; font-weight: 600; }
-.health-action-icon { width: 20px; height: 20px; flex: 0 0 auto; }
-.ownership-copy { padding: 14px 16px; color: var(--text-secondary); line-height: 1.45; }
-.ownership-copy p { margin: 0 0 12px; }
-.ownership-copy p:last-child { margin-bottom: 0; }
-.toggle-row input[type="checkbox"] { position: relative; flex: 0 0 auto; width: 50px; height: 30px; margin: 0; border: 0; border-radius: 999px; appearance: none; -webkit-appearance: none; background: var(--fill-1); cursor: pointer; transition: background 0.18s ease; }
-.toggle-row input[type="checkbox"]::after { content: ''; position: absolute; top: 2px; left: 2px; width: 26px; height: 26px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28); transition: transform 0.18s ease; }
-.toggle-row input[type="checkbox"]:checked { background: var(--green); }
-.toggle-row input[type="checkbox"]:checked::after { transform: translateX(20px); }
-.toggle-row input[type="checkbox"]:focus-visible, .symptom-row input:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 2px; }
-.health-auth-sharingAuthorized { color: var(--green); }
-.health-auth-sharingDenied { color: var(--red); }
-.health-explanation { padding: 22px; line-height: 1.5; color: var(--text-secondary); }
-.health-explanation p { margin: 0 0 16px; }
-.shortcut-step-list { margin: 8px 16px 20px; overflow: hidden; border-radius: 16px; background: var(--card); box-shadow: var(--shadow); }
-.shortcut-step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; padding: 13px 16px; border-bottom: 0.5px solid var(--separator); }
-.shortcut-step:last-child { border-bottom: 0; }
-.shortcut-step-number { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 16%, var(--card)); color: var(--accent); font-size: 14px; font-weight: 750; }
-.shortcut-step strong { display: block; font-size: 15px; }
-.shortcut-step p { margin: 3px 0 0; color: var(--text-secondary); font-size: 14px; line-height: 1.4; }
-.shortcut-step b { color: var(--text); font-weight: 650; }
-.sheet-intro { margin: 4px 18px 16px; color: var(--text-secondary); line-height: 1.4; }
-.checkin-control { margin: 0 16px 18px; padding: 14px; background: var(--grouped-secondary, var(--card)); border-radius: 14px; }
-.range-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; }
-.range-heading output { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--green); color: #fff; font-size: 22px; font-weight: 750; }
-.checkin-control input[type="range"], .effort-sheet input[type="range"] { width: 100%; min-height: 44px; accent-color: var(--green); }
-.range-endpoints { display: flex; justify-content: space-between; color: var(--text-tertiary); font-size: 12px; }
-.effort-sheet { padding: 24px 18px max(24px, env(safe-area-inset-bottom)); text-align: center; }
-.effort-sheet h2 { margin: 0 0 14px; font-size: clamp(21px, 6vw, 28px); }
-.effort-sheet output { display: block; margin: 8px auto; font-size: 72px; line-height: 1; font-weight: 800; color: var(--green); }
-#effort-description { min-height: 28px; color: var(--text-secondary); font-size: 18px; }
-.effort-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 18px 0 24px; }
-.effort-grid button, .segmented button { min-height: 48px; border: 1px solid var(--separator); border-radius: 12px; background: var(--card); color: var(--text); font: inherit; font-weight: 650; }
-.effort-grid button[aria-pressed="true"], .segmented button[aria-pressed="true"] { background: var(--green); border-color: var(--green); color: #fff; }
-.segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 16px 14px; }
-.other-puffs { margin: 0 16px 12px; border-radius: 12px; background: var(--card); padding: 10px 14px; }
-.symptom-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 54px; padding: 6px 14px; border-bottom: 1px solid var(--separator); }
-.symptom-row:last-child { border-bottom: 0; }
-.symptom-row label { display: flex; align-items: center; gap: 8px; min-height: 44px; }
-.symptom-row input { position: relative; flex: 0 0 auto; width: 24px; height: 24px; margin: 0; border: 1.5px solid var(--text-tertiary); border-radius: 7px; appearance: none; -webkit-appearance: none; background: var(--fill-2); }
-.symptom-row input:checked { border-color: var(--green); background: var(--green); }
-.symptom-row input:checked::after { content: ''; position: absolute; left: 7px; top: 3px; width: 6px; height: 12px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
-.symptom-row select { max-width: 132px; min-height: 32px; padding: 4px 6px; border: 0; border-radius: 8px; background: var(--fill-2); color: var(--text-secondary); font: inherit; font-size: 13px; }
-.symptom-row select:disabled { opacity: 1; color: var(--text-tertiary); -webkit-text-fill-color: var(--text-tertiary); }
-.health-event-row { padding: 12px 16px; border-bottom: 0.5px solid var(--separator); }
-.health-event-row:last-child { border-bottom: 0; }
-.health-event-summary { color: var(--text); font-size: 16px; }
-.health-event-meta { margin-top: 3px; color: var(--text-secondary); font-size: 13px; }
-.backup-copy { color: var(--text-secondary); line-height: 1.45; }
-textarea { resize: vertical; background: transparent; color: var(--text); border: 0; font: inherit; text-align: right; max-width: 62%; }
-.notice-card { margin: 14px 16px; padding: 14px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 11%, var(--card)); color: var(--text-secondary); line-height: 1.4; }
-.migration-summary { margin: 16px; line-height: 1.5; }
-.migration-progress { position: sticky; top: 0; z-index: 2; margin: 12px 16px; padding: 12px; border-radius: 10px; background: var(--green); color: #fff; text-align: center; font-weight: 650; }
-.migration-list { margin: 14px 12px; }
-.migration-item { border-bottom: 1px solid var(--separator); background: var(--card); }
-.migration-item:first-child { border-radius: 12px 12px 0 0; }
-.migration-item:last-child { border-radius: 0 0 12px 12px; border-bottom: 0; }
-.migration-item summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 58px; padding: 8px 12px; list-style: none; }
-.migration-item summary::-webkit-details-marker { display: none; }
-.migration-item summary input { width: 24px; height: 24px; accent-color: var(--green); }
-.migration-item summary small { display: block; margin-top: 3px; color: var(--text-secondary); }
-.migration-status { font-size: 11px; color: var(--text-tertiary); max-width: 82px; overflow-wrap: anywhere; }
-.migration-detail { padding: 0 16px 14px 46px; color: var(--text-secondary); font-size: 13px; }
-.migration-detail p { margin: 5px 0; }
-.warning-text { color: var(--orange, #ff9500); }
-
-@media (prefers-reduced-motion: reduce) {
-  .sheet, .toast, .set-row { animation: none !important; transition: none !important; }
-}
-
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #000000;
@@ -137,10 +64,6 @@ textarea { resize: vertical; background: transparent; color: var(--text); border
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
-}
-
-[hidden] {
-  display: none !important;
 }
 
 html, body {

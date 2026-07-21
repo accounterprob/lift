@@ -1,8 +1,5 @@
 # macOS
 .DS_Store
-xcuserdata/
-DerivedData/
-*.xcuserstate
 
 # Personal data exports — these should never be committed.
 # Backups belong in iCloud Drive, not a public GitHub repo.
