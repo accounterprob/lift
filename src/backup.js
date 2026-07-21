@@ -1,4 +1,4 @@
-import { getAll, putMany, clearAll } from './db.js';
+import { getAll, replaceAllData } from './db.js';
 import { showSheet, showToast, emit } from './utils.js';
 import { BACKUP_SCHEMA_VERSION, HEALTH_SYNC_SCHEMA_VERSION } from './health/domain.js';
 import { healthKitService } from './health/service.js';
@@ -88,18 +88,18 @@ export async function restoreFromFile(file) {
   const text = await file.text();
   const snapshot = normalizeSnapshot(JSON.parse(text), { afterRestore: true });
 
-  await clearAll();
-  if (snapshot.exercises.length) await putMany('exercises', snapshot.exercises);
-  if (snapshot.workouts.length) await putMany('workouts', snapshot.workouts);
-  if (snapshot.sets.length) await putMany('sets', snapshot.sets);
-  for (const store of EXTENDED_STORES) {
-    if (snapshot[store].length) await putMany(store, snapshot[store]);
-  }
+  await replaceAllData({
+    exercises: snapshot.exercises,
+    workouts: snapshot.workouts,
+    sets: snapshot.sets,
+    ...Object.fromEntries(EXTENDED_STORES.map((store) => [store, snapshot[store]])),
+  });
 
   return {
     exercises: snapshot.exercises.length,
     workouts: snapshot.workouts.length,
     sets: snapshot.sets.length,
+    healthRecords: snapshot.wellbeingEntries.length + snapshot.asthmaEvents.length,
   };
 }
 
@@ -159,12 +159,12 @@ export function openBackupSheet() {
             <div class="row-main"><div class="row-title" style="color: var(--accent);">Download Backup</div></div>
           </button>
         </div>
-        <div class="section-footer">
-          Saves a JSON file. In Safari on iPhone, after the download finishes tap the Downloads button → long-press the file → <b>Share → Save to Files</b> → pick <b>iCloud Drive</b>. On Mac, set Safari's download folder to iCloud Drive in Settings.
+        <div class="section-footer backup-copy">
+          Downloads one JSON file with everything Lift stores locally. On iPhone, open Safari’s Downloads, then choose <b>Share → Save to Files</b> to keep it in iCloud Drive.
         </div>
 
-        <div class="section-footer">
-          This backup includes values stored locally by the web app. Keep it together with a separate Apple Health export if you also use the Health Shortcut or native HealthKit synchronization.
+        <div class="section-footer backup-copy">
+          Apple Health entries are not included. Keep a separate Apple Health export if you use the Shortcut or native app.
         </div>
 
         <div class="section">Restore</div>
@@ -173,8 +173,8 @@ export function openBackupSheet() {
             <div class="row-main"><div class="row-title" style="color: var(--red);">Restore from Backup…</div></div>
           </button>
         </div>
-        <div class="section-footer">
-          <b>Replaces</b> all current workouts and exercises with the contents of the chosen JSON file.
+        <div class="section-footer backup-copy">
+          <b>Replaces all data currently stored in Lift</b>—including workouts, exercises, check-ins, and inhaler or symptom logs—with the selected backup.
         </div>
 
         <input type="file" id="bk-file" accept=".json,application/json" style="display: none;" />
@@ -205,7 +205,7 @@ export function openBackupSheet() {
         try {
           const counts = await restoreFromFile(file);
           dismiss();
-          showToast(`Restored ${counts.workouts} workouts, ${counts.exercises} exercises`);
+          showToast(`Restored ${counts.workouts} workouts, ${counts.exercises} exercises, and ${counts.healthRecords} health records`);
           emit('data:changed');
         } catch (err) {
           showToast(`Restore failed: ${err.message}`);

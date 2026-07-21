@@ -70,10 +70,13 @@ const ctx = {
     if (!config) {
       navAction.hidden = true;
       navAction.innerHTML = '';
+      navAction.removeAttribute('aria-label');
       activeActionHandler = null;
       return;
     }
     navAction.hidden = false;
+    if (config.label) navAction.setAttribute('aria-label', config.label);
+    else navAction.removeAttribute('aria-label');
     if (config.html) {
       navAction.innerHTML = config.html;
     } else {

@@ -31,7 +31,10 @@ final class NativeHealthKitService: HealthKitServicing {
         for (kind, type) in sampleTypesByKind() {
             authorization[kind] = authorizationName(store.authorizationStatus(for: type))
         }
-        if #unavailable(iOS 18.0) { authorization["workoutEffort"] = "unavailable" }
+        if #unavailable(iOS 18.0) {
+            authorization["workoutEffort"] = "unavailable"
+            authorization["stateOfMind"] = "unavailable"
+        }
         return [
             "available": true,
             "nativeApp": true,
@@ -65,6 +68,7 @@ final class NativeHealthKitService: HealthKitServicing {
             guard #available(iOS 18.0, *) else { throw HealthBridgeError.unsupported }
             uuids = [try await saveWorkoutEffort(payload: payload, syncIdentifier: syncIdentifier, version: version).uuid]
         case "saveStateOfMind":
+            guard #available(iOS 18.0, *) else { throw HealthBridgeError.unsupported }
             uuids = [try await saveStateOfMind(payload: payload, syncIdentifier: syncIdentifier, version: version).uuid]
         case "saveInhalerUsage":
             uuids = [try await saveInhalerUsage(payload: payload, syncIdentifier: syncIdentifier, version: version).uuid]
@@ -81,7 +85,7 @@ final class NativeHealthKitService: HealthKitServicing {
         let datePredicate = HKQuery.predicateForSamples(
             withStart: Date(milliseconds: startMS),
             end: Date(milliseconds: endMS),
-            options: [.strictStartDate, .strictEndDate]
+            options: []
         )
         let samples = try await query(type: HKObjectType.workoutType(), predicate: datePredicate, limit: HKObjectQueryNoLimit)
         return samples.compactMap { sample in
@@ -120,6 +124,7 @@ final class NativeHealthKitService: HealthKitServicing {
     }
 
     func queryStateOfMind(_ payload: [String: Any]) async throws -> [String: Any] {
+        guard #available(iOS 18.0, *) else { return ["found": false, "unsupported": true] }
         guard let identifier = payload["syncIdentifier"] as? String else { throw HealthBridgeError.invalidPayload }
         let matches = try await samples(syncIdentifier: identifier, type: HKObjectType.stateOfMindType())
             .compactMap { $0 as? HKStateOfMind }
@@ -213,6 +218,7 @@ final class NativeHealthKitService: HealthKitServicing {
         return sample
     }
 
+    @available(iOS 18.0, *)
     private func saveStateOfMind(payload: [String: Any], syncIdentifier: String, version: Int) async throws -> HKStateOfMind {
         let type = HKObjectType.stateOfMindType()
         if let existing = try await currentObject(syncIdentifier: syncIdentifier, type: type, minimumVersion: version) as? HKStateOfMind { return existing }
@@ -334,14 +340,16 @@ final class NativeHealthKitService: HealthKitServicing {
     private func sampleTypesByKind() -> [String: HKSampleType] {
         var result: [String: HKSampleType] = [
             "workout": HKObjectType.workoutType(),
-            "stateOfMind": HKObjectType.stateOfMindType(),
             "inhalerUsage": HKQuantityType(.inhalerUsage),
             "wheezing": HKCategoryType(.wheezing),
             "shortnessOfBreath": HKCategoryType(.shortnessOfBreath),
             "coughing": HKCategoryType(.coughing),
             "chestTightnessOrPain": HKCategoryType(.chestTightnessOrPain),
         ]
-        if #available(iOS 18.0, *) { result["workoutEffort"] = HKQuantityType(.workoutEffortScore) }
+        if #available(iOS 18.0, *) {
+            result["workoutEffort"] = HKQuantityType(.workoutEffortScore)
+            result["stateOfMind"] = HKObjectType.stateOfMindType()
+        }
         return result
     }
 

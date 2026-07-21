@@ -39,7 +39,7 @@ Requirements:
 - An Apple development team and an App ID for `com.accounterprob.lift`
 - A physical iPhone for complete HealthKit testing
 
-Open `Lift.xcodeproj`, select the Lift target, choose your development team, confirm the HealthKit capability, and run. Swift is compiled in Swift 5 language mode. Workout effort is available on iOS 18 and later; on iOS 17 the rest of the HealthKit integration continues to work and effort writes are marked unsupported instead of retried indefinitely.
+Open `Lift.xcodeproj`, select the Lift target, choose your development team, confirm the HealthKit capability, and run. Swift is compiled in Swift 5 language mode. Workout effort and State of Mind synchronization are available on iOS 18 and later. On iOS 17, Lift keeps those two values locally while the remaining HealthKit integration continues to work.
 
 The native target bundles the existing web app into `Web/` during its Copy Web App build phase. `WKWebView` hosts the interface and `NativeBridge` is the only boundary to HealthKit, notifications, settings, and Files export.
 

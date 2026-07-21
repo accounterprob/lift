@@ -169,6 +169,24 @@ export async function clearAll() {
   });
 }
 
+/** Replace every Lift store in one transaction so a failed restore can never
+ * leave a half-cleared database. Unknown store names are ignored. */
+export async function replaceAllData(dataByStore) {
+  const db = await openDB();
+  const available = STORE_NAMES.filter((name) => db.objectStoreNames.contains(name));
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(available, 'readwrite');
+    for (const name of available) {
+      const store = tx.objectStore(name);
+      store.clear();
+      for (const value of dataByStore[name] ?? []) store.put(value);
+    }
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 export async function getSetting(key, fallback = null) {
   const row = await get('appSettings', key);
   return row?.value ?? fallback;

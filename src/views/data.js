@@ -24,7 +24,7 @@ import {
   saveWellbeingCheckIn,
   setHealthWritesEnabled,
 } from '../health/sync.js';
-import { esc, emit, formatDateLong, formatDurationShort, formatTime, showSheet, showToast } from '../utils.js';
+import { esc, emit, formatDateLong, formatDurationShort, formatTime, respiratoryIcon, showSheet, showToast } from '../utils.js';
 import { openAppleHealthShortcutPrompt, openShortcutSetup, shortcutSettings } from './shortcut.js';
 
 export function renderDataTab(ctx) {
@@ -54,17 +54,18 @@ async function renderDataOverview(ctx) {
     get('migrationState', 'healthKitBackfill'),
   ]);
   const moodState = await stateOfMindDisplay(today);
+  const moodSource = moodState.local ? ' · stored in Lift' : moodState.pending ? ' · pending Health sync' : ' · Apple Health';
 
   const authRows = Object.entries(healthStatus.authorization ?? {}).map(([kind, status]) => `
     <div class="stat-row"><div class="stat-label">${esc(healthLabel(kind))}</div><div class="stat-value health-auth-${esc(status)}">${esc(authorizationLabel(status))}</div></div>
   `).join('');
   const todayValues = today ? `
-    <div class="stat-row"><div class="stat-label">Mood</div><div class="stat-value">${moodState.found ? `${moodState.mood}/5${moodState.pending ? ' · pending Health sync' : ' · Apple Health'}` : 'Not accessible in Apple Health'}</div></div>
+    <div class="stat-row"><div class="stat-label">Mood</div><div class="stat-value">${moodState.found ? `${moodState.mood}/5${moodSource}` : 'Not accessible in Apple Health'}</div></div>
     <div class="stat-row"><div class="stat-label">Energy</div><div class="stat-value">${today.energy}/5</div></div>
     <div class="stat-row"><div class="stat-label">Stress intensity</div><div class="stat-value">${today.stress}/5</div></div>
     <div class="stat-row"><div class="stat-label">Muscular soreness</div><div class="stat-value">${today.muscularSoreness}/3</div></div>
     <div class="stat-row"><div class="stat-label">Breathing limitation</div><div class="stat-value">${today.breathingLimitation}/3</div></div>
-    <div class="section-footer">Recorded ${formatTime(today.timestamp)} · ${esc(contextLabel(today.context))}. Synchronized mood is read from Apple Health; a pending value remains only in Lift’s outbox.</div>
+    <div class="section-footer">Recorded ${formatTime(today.timestamp)} · ${esc(contextLabel(today.context))}. ${moodState.local ? 'Mood is stored in Lift because State of Mind is unavailable on this iOS version.' : 'Synchronized mood is read from Apple Health; a pending value remains only in Lift’s outbox.'}</div>
   ` : '<div class="section-footer">No check-in has been completed for this local calendar day.</div>';
 
   ctx.container.innerHTML = `
@@ -72,7 +73,7 @@ async function renderDataOverview(ctx) {
     <div class="form-section">${todayValues}</div>
     <div class="action-section compact-actions">
       <button class="btn-primary" id="data-checkin">${today ? 'Edit Check-In' : 'Complete Check-In'}</button>
-      <button class="btn-secondary lungs-action" id="data-asthma" aria-label="Log inhaler use or respiratory symptoms">◌ Log Inhaler or Symptoms</button>
+      <button class="btn-secondary lungs-action" id="data-asthma" aria-label="Log inhaler use or respiratory symptoms">${respiratoryIcon()}<span>Log Inhaler or Symptoms</span></button>
     </div>
 
     <div class="section">Most recent Apple Health information</div>
@@ -100,7 +101,7 @@ async function renderDataOverview(ctx) {
       <div class="stat-row"><div class="stat-label">Status</div><div class="stat-value">${esc(migrationStatusLabel(migrationState))}</div></div>
       <button class="list-row button" id="health-migration"><div class="row-main"><div class="row-title accent">Review Existing Lift Data for Apple Health</div><div class="row-subtitle">Preview, resolve conflicts, and backfill safely</div></div><div class="chevron">›</div></button>
       ${migrationState ? '<button class="list-row button" id="health-migration-resume"><div class="row-main"><div class="row-title accent">Resume</div></div></button><button class="list-row button" id="health-migration-retry"><div class="row-main"><div class="row-title accent">Retry Failed</div></div></button><button class="list-row button" id="health-migration-conflicts"><div class="row-main"><div class="row-title accent">Review Conflicts</div></div></button><button class="list-row button" id="health-migration-report-view"><div class="row-main"><div class="row-title accent">View Report</div></div></button>' : ''}
-      <button class="list-row button" id="health-cleanup-report"><div class="row-main"><div class="row-title accent">Export Structural Cleanup Report</div><div class="row-subtitle">Non-destructive findings only</div></div></button>
+      <button class="list-row button" id="health-cleanup-report"><div class="row-main"><div class="row-title accent">Download Data Quality Report</div><div class="row-subtitle">Checks for incomplete or unmatched records</div></div></button>
     </div>
 
     <div class="section">Daily reminder</div>
@@ -114,6 +115,7 @@ async function renderDataOverview(ctx) {
     <div class="form-section ownership-copy">
       <p><strong>Lift</strong> keeps exercises, sets, weights, repetitions, workout timestamps and notes, energy, stress, soreness, general breathing limitation, and asthma notes.</p>
       <p><strong>Apple Health</strong> owns synchronized workout summaries, effort, State of Mind mood, inhaler puffs, and exact respiratory symptoms.</p>
+      <p>On iOS versions where workout effort or State of Mind synchronization is unavailable, those values stay in Lift and its backup.</p>
       <p>Recording Traditional Strength Training separately in Apple Workout for the same session can create a second workout. Lift does not merge other apps’ workouts.</p>
     </div>
   `;
@@ -185,13 +187,14 @@ async function renderBrowserDataOverview(ctx) {
     <div class="section-footer">Recorded ${formatTime(today.timestamp)} · ${esc(contextLabel(today.context))}. These values stay in Lift and are included in its backup.</div>
   ` : '<div class="section-footer">No check-in has been completed for this local calendar day.</div>';
   const latestStatus = latestWorkout ? shortcutStatusLabel(latestWorkout.appleHealthShortcutStatus) : 'No completed workout';
+  const latestNeedsRepeat = latestWorkout && ['exported', 'launching', 'changedAfterExport'].includes(latestWorkout.appleHealthShortcutStatus);
 
   ctx.container.innerHTML = `
     <div class="section">Today’s check-in</div>
     <div class="form-section">${todayValues}</div>
     <div class="action-section compact-actions">
       <button class="btn-primary" id="data-checkin">${today ? 'Edit Check-In' : 'Complete Check-In'}</button>
-      <button class="btn-secondary lungs-action" id="data-asthma" aria-label="Log inhaler use or respiratory symptoms">◌ Log Inhaler or Symptoms</button>
+      <button class="btn-secondary lungs-action" id="data-asthma" aria-label="Log inhaler use or respiratory symptoms">${respiratoryIcon()}<span>Log Inhaler or Symptoms</span></button>
     </div>
 
     <div class="section">Recent inhaler & symptoms</div>
@@ -203,7 +206,7 @@ async function renderBrowserDataOverview(ctx) {
       <div class="stat-row"><div class="stat-label">Shortcut</div><div class="stat-value">${shortcut.ready ? `Ready · ${esc(shortcut.name)}` : 'Setup needed'}</div></div>
       <div class="stat-row"><div class="stat-label">Latest workout</div><div class="stat-value">${esc(latestStatus)}</div></div>
       <button class="list-row button" id="shortcut-setup"><div class="row-main"><div class="row-title accent">${shortcut.ready ? 'Review Shortcut Setup' : 'Set Up Apple Health Shortcut'}</div><div class="row-subtitle">One-time setup · no paid developer account</div></div><div class="chevron">›</div></button>
-      ${latestWorkout ? '<button class="list-row button" id="shortcut-latest"><div class="row-main"><div class="row-title accent">Add Latest Workout to Apple Health</div><div class="row-subtitle">Opens Shortcuts with the saved workout summary</div></div><div class="chevron">›</div></button>' : ''}
+      ${latestWorkout ? `<button class="list-row button" id="shortcut-latest"><div class="row-main"><div class="row-title accent">${latestNeedsRepeat ? 'Open Shortcut for Latest Workout Again' : 'Add Latest Workout to Apple Health'}</div><div class="row-subtitle">Opens Shortcuts with the saved workout summary</div></div><div class="chevron">›</div></button>` : ''}
     </div>
     <div class="section-footer">The Home Screen web app cannot read Apple Health. It sends only the selected workout name, start time, and duration to your Shortcut. Running it twice can create a duplicate.</div>
 
@@ -211,9 +214,9 @@ async function renderBrowserDataOverview(ctx) {
     <div class="form-section"><div class="stat-row"><div class="stat-label">Web app reminder</div><div class="stat-value">Not available reliably</div></div></div>
     <div class="section-footer">If you want one, create a personal automation in Shortcuts that opens Lift at your preferred time.</div>
 
-    <div class="section">Data tools</div>
+    <div class="section">Data quality</div>
     <div class="form-section">
-      <button class="list-row button" id="health-cleanup-report"><div class="row-main"><div class="row-title accent">Export Structural Cleanup Report</div><div class="row-subtitle">Non-destructive findings only</div></div></button>
+      <button class="list-row button" id="health-cleanup-report"><div class="row-main"><div class="row-title accent">Download Data Quality Report</div><div class="row-subtitle">Checks Lift data without changing it</div></div></button>
     </div>
 
     <div class="section">Where data lives</div>
@@ -226,8 +229,8 @@ async function renderBrowserDataOverview(ctx) {
 
   ctx.container.querySelector('#data-checkin').addEventListener('click', () => openWellbeingCheckIn({ existing: today, context: 'general', onSaved: () => emit('data:changed') }));
   ctx.container.querySelector('#data-asthma').addEventListener('click', () => openAsthmaQuickLog({ context: 'outsideWorkout', onSaved: () => emit('data:changed') }));
-  ctx.container.querySelector('#shortcut-setup').addEventListener('click', () => openShortcutSetup());
-  ctx.container.querySelector('#shortcut-latest')?.addEventListener('click', () => openAppleHealthShortcutPrompt(latestWorkout, { repeat: latestWorkout.appleHealthShortcutStatus === 'exported' }));
+  ctx.container.querySelector('#shortcut-setup').addEventListener('click', () => openShortcutSetup({ onReady: () => emit('data:changed') }));
+  ctx.container.querySelector('#shortcut-latest')?.addEventListener('click', () => openAppleHealthShortcutPrompt(latestWorkout, { repeat: latestNeedsRepeat }));
   ctx.container.querySelector('#health-cleanup-report').addEventListener('click', () => exportStructuralCleanupReport());
 }
 
@@ -238,14 +241,15 @@ function recentLocalAsthmaMarkup(rows) {
     const details = [];
     if (Number(row.localPuffs) > 0) details.push(`${row.localPuffs} puff${Number(row.localPuffs) === 1 ? '' : 's'}`);
     for (const [kind, severity] of Object.entries(row.localSymptoms ?? {})) details.push(`${labels[kind] ?? kind}: ${severity}`);
-    return `<div class="stat-row"><div class="stat-label">${formatDateLong(row.timestamp)}</div><div class="stat-value">${esc(details.join(' · ') || 'Event saved')}</div></div>`;
+    return `<div class="health-event-row"><div class="health-event-summary">${esc(details.join(' · ') || 'Event saved')}</div><div class="health-event-meta">${formatDateLong(row.timestamp)} · ${formatTime(row.timestamp)}</div></div>`;
   }).join('');
 }
 
 function shortcutStatusLabel(status) {
   return ({
     exported: 'Added to Apple Health',
-    launching: 'Waiting for Shortcut',
+    launching: 'Opened in Shortcuts',
+    changedAfterExport: 'Edited since Health export',
     failed: 'Shortcut needs retry',
     notExported: 'Not added yet',
   })[status] ?? 'Not added yet';
@@ -364,7 +368,7 @@ export async function openWellbeingCheckIn({ existing = null, context = 'general
             relatedWorkoutID,
           });
           dismiss(); onSaved?.(); showToast('Check-in saved.');
-          processHealthKitOutbox().then(() => emit('data:changed')).catch(() => {});
+          if (healthKitService.nativeAvailable) processHealthKitOutbox().then(() => emit('data:changed')).catch(() => {});
         } catch (error) { showToast(error.message); }
       });
     },
@@ -419,7 +423,7 @@ export function openAsthmaQuickLog({ context = 'outsideWorkout', relatedWorkoutI
           });
           if (amount > 0) localStorage.setItem('lift.lastInhalerPuffs', String(amount));
           dismiss(); onSaved?.(); showToast('Asthma event saved.');
-          processHealthKitOutbox().then(() => emit('data:changed')).catch(() => {});
+          if (healthKitService.nativeAvailable) processHealthKitOutbox().then(() => emit('data:changed')).catch(() => {});
         } catch (error) { showToast(error.message); }
       });
     },
@@ -444,8 +448,9 @@ async function openHistoricalMigration() {
   let healthMessage = 'Apple Health is unavailable; preview is based on Lift data only.';
   try {
     const status = await healthKitService.getStatus();
-    if (status.available && rows.length) {
-      const accessible = await healthKitService.queryWorkouts({ start: Math.min(...rows.map((r) => r.start).filter(Boolean)), end: Math.max(...rows.map((r) => r.end).filter(Boolean)) });
+    const validRows = rows.filter((row) => Number.isFinite(row.start) && Number.isFinite(row.end) && row.end > row.start);
+    if (status.available && validRows.length) {
+      const accessible = await healthKitService.queryWorkouts({ start: Math.min(...validRows.map((row) => row.start)), end: Math.max(...validRows.map((row) => row.end)) });
       rows = detectAccessibleWorkoutConflicts(audit, accessible);
       healthMessage = accessible.length ? `${accessible.length} accessible Health workout(s) were checked.` : 'No accessible overlapping workouts were found. HealthKit may hide data Lift cannot read.';
     }
@@ -477,6 +482,7 @@ function showMigrationPreview(audit, rows, healthMessage, snapshot) {
   const selected = new Set(rows.filter((row) => row.status === 'eligible').map((row) => row.workoutID));
   const counts = migrationCounts(rows);
   let canceled = false;
+  let finished = false;
   const dismiss = showSheet({
     dismissOnBackdrop: false,
     html: `
@@ -509,6 +515,7 @@ function showMigrationPreview(audit, rows, healthMessage, snapshot) {
         generatedAt: new Date().toISOString(),
       }));
       run.addEventListener('click', async () => {
+        if (finished) { dismiss(); emit('data:changed'); return; }
         if (!confirm(`Import ${selected.size} reviewed workout summaries to Apple Health? Keep Lift open until this finishes.`)) return;
         try {
           await downloadBackup();
@@ -528,6 +535,7 @@ function showMigrationPreview(audit, rows, healthMessage, snapshot) {
           state.updatedAt = Date.now(); state.completedAt = result.canceled ? null : Date.now(); state.result = result;
           await put('migrationState', state);
           progress.textContent = `${result.succeeded} synchronized · ${result.failed} failed${result.canceled ? ' · canceled safely' : ''}`;
+          finished = !result.failed;
           run.textContent = result.failed ? 'Retry Failed' : 'Done';
           run.disabled = false;
           showToast('Migration state saved.');

@@ -109,11 +109,18 @@ export async function saveWellbeingCheckIn({ existing = null, saveMood = true, .
     context: validated.context,
     relatedWorkoutID: input.relatedWorkoutID ?? null,
     stateOfMindHealthKitLinkID: existing?.stateOfMindHealthKitLinkID ?? null,
+    stateOfMindSyncVersion: existing?.stateOfMindSyncVersion ?? 0,
     createdAt: existing?.createdAt ?? Date.now(),
     updatedAt: Date.now(),
   };
   if (!healthKitService.nativeAvailable) {
-    record.localMood = validated.mood;
+    if (saveMood) record.localMood = validated.mood;
+    await put('wellbeingEntries', record);
+    return { record, operation: null };
+  }
+  const status = await healthKitService.getStatus().catch(() => null);
+  if (status?.authorization?.stateOfMind === 'unavailable') {
+    if (saveMood) record.localMood = validated.mood;
     await put('wellbeingEntries', record);
     return { record, operation: null };
   }

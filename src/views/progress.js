@@ -110,6 +110,7 @@ function renderOverview(ctx) {
   ctx.setTitle('Progress');
   ctx.setBack(null);
   ctx.setAction({
+    label: 'Backup and restore',
     html: shareIcon(),
     onClick: () => openBackupSheet(),
   });
@@ -300,10 +301,13 @@ function renderHistoryRow(workout, sets, exMap) {
  * Returns null if the workout doesn't exist.
  */
 async function buildWorkoutDetail(workoutId) {
-  const [workout, allExercises, allSets] = await Promise.all([
+  const [workout, allExercises, allSets, workoutLinks, effortLinks, effortOperations] = await Promise.all([
     get('workouts', workoutId),
     getAll('exercises'),
     getWorkoutSets(workoutId),
+    getByIndex('healthKitLinks', 'localEntityID', workoutId),
+    getByIndex('healthKitLinks', 'localEntityID', `${workoutId}:effort`),
+    getByIndex('healthKitOutbox', 'localEntityID', `${workoutId}:effort`),
   ]);
   if (!workout) return null;
 
@@ -322,6 +326,13 @@ async function buildWorkoutDetail(workoutId) {
   const totalVolume = counted.reduce((sum, s) => sum + s.weight * s.reps, 0);
   const completedCount = counted.length;
   const duration = (workout.endedAt - workout.startedAt) / 1000;
+  const pendingEffort = effortOperations.find((operation) => operation.entityKind === 'workoutEffort');
+  const nativeEffort = workout.localEffort != null
+    ? `${workout.localEffort}/10 · stored in Lift`
+    : pendingEffort?.payload?.value != null
+      ? `${pendingEffort.payload.value}/10 · ${pendingEffort.syncStatus === 'failed' ? 'needs attention' : 'pending'}`
+      : effortLinks.some((link) => link.syncStatus === 'synchronized') ? 'Saved to Apple Health' : 'Not recorded';
+  const nativeHealth = nativeWorkoutStatus(workout, workoutLinks.find((link) => link.entityKind === 'workout'));
 
   const html = `
     <div class="section">Summary</div>
@@ -330,7 +341,7 @@ async function buildWorkoutDetail(workoutId) {
       <div class="stat-row"><div class="stat-label">Duration</div><div class="stat-value">${formatDurationShort(duration)}</div></div>
       <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${formatVolumeLbs(totalVolume)}</div></div>
       <div class="stat-row"><div class="stat-label">Completed Sets</div><div class="stat-value">${completedCount}</div></div>
-      ${!healthKitService.nativeAvailable ? `<div class="stat-row"><div class="stat-label">Effort</div><div class="stat-value">${workout.localEffort == null ? 'Not recorded' : `${workout.localEffort}/10`}</div></div><div class="stat-row"><div class="stat-label">Apple Health</div><div class="stat-value">${esc(shortcutWorkoutStatus(workout.appleHealthShortcutStatus))}</div></div>` : ''}
+      ${healthKitService.nativeAvailable ? `<div class="stat-row"><div class="stat-label">Effort</div><div class="stat-value">${esc(nativeEffort)}</div></div><div class="stat-row"><div class="stat-label">Apple Health</div><div class="stat-value">${esc(nativeHealth)}</div></div>` : `<div class="stat-row"><div class="stat-label">Effort</div><div class="stat-value">${workout.localEffort == null ? 'Not recorded' : `${workout.localEffort}/10`}</div></div><div class="stat-row"><div class="stat-label">Apple Health</div><div class="stat-value">${esc(shortcutWorkoutStatus(workout.appleHealthShortcutStatus))}</div></div>`}
     </div>
 
     ${exerciseIds.map((eid) => {
@@ -392,6 +403,7 @@ async function renderWorkoutDetail(ctx, workoutId) {
     renderHistoryList(ctx);
   });
   ctx.setAction({
+    label: 'Workout actions',
     html: '<span aria-hidden="true" style="font-weight:700;letter-spacing:2px">•••</span>',
     onClick: () => openWorkoutActions(workoutId, ctx),
   });
@@ -484,7 +496,7 @@ function openWorkoutEdit(workout, ctx) {
 }
 
 function openBrowserWorkoutActions(workout, ctx) {
-  const repeat = ['exported', 'changedAfterExport'].includes(workout.appleHealthShortcutStatus);
+  const repeat = ['exported', 'launching', 'changedAfterExport'].includes(workout.appleHealthShortcutStatus);
   const dismiss = showSheet({
     html: `<div class="sheet-header"><button class="btn-text" id="wa-close">Done</button><div class="title">Workout Actions</div><span style="width:60px"></span></div><div class="sheet-content"><div class="form-section"><button class="list-row button" id="wa-shortcut"><div class="row-main"><div class="row-title accent">${repeat ? 'Run Apple Health Shortcut Again…' : 'Add to Apple Health'}</div><div class="row-subtitle">Send this completed workout summary</div></div></button><button class="list-row button" id="wa-edit"><div class="row-main"><div class="row-title accent">Edit Workout Summary</div><div class="row-subtitle">Name, start, and end time</div></div></button><button class="list-row button destructive" id="wa-delete"><div class="row-main"><div class="row-title" style="color:var(--red)">Delete from Lift…</div></div></button></div></div>`,
     onMount(sheet) {
@@ -502,11 +514,22 @@ function openBrowserWorkoutActions(workout, ctx) {
 function shortcutWorkoutStatus(status) {
   return ({
     exported: 'Added via Shortcut',
-    launching: 'Waiting for Shortcut',
+    launching: 'Opened in Shortcuts',
     failed: 'Shortcut needs retry',
     changedAfterExport: 'Edited after export',
     notExported: 'Not added',
   })[status] ?? 'Not added';
+}
+
+function nativeWorkoutStatus(workout, link) {
+  if (link?.externallyDeletedOrInaccessible || ['externallyDeleted', 'inaccessibleOrDeleted'].includes(link?.syncStatus)) return 'Deleted or unavailable';
+  return ({
+    synchronized: 'Synced',
+    pending: 'Pending',
+    syncing: 'Syncing',
+    failed: 'Needs attention',
+    notSynchronized: 'Not synced',
+  })[workout.healthKitSyncStatus] ?? (link?.syncStatus === 'synchronized' ? 'Synced' : 'Not synced');
 }
 
 function openWorkoutDeleteChoices(workout, ctx) {

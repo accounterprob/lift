@@ -13,7 +13,7 @@ import {
   getByIndex,
 } from '../db.js';
 import {
-  uuid, esc, formatDuration, formatWeight, formatVolume, showSheet, emit, debounce, showToast,
+  uuid, esc, formatDuration, formatWeight, formatVolume, showSheet, emit, debounce, showToast, respiratoryIcon,
 } from '../utils.js';
 import {
   MUSCLES, EQUIPMENT, primaryMuscleFor, displayName,
@@ -208,7 +208,7 @@ function renderActive(ctx, workout) {
       <div id="exercise-sections"></div>
       <div class="action-section">
         <button id="add-exercise-btn" class="btn-secondary">+ Add Exercise</button>
-        <button id="asthma-quick-btn" class="btn-secondary lungs-action" aria-label="Log inhaler use or respiratory symptoms during this workout">◌ Log Inhaler or Symptoms</button>
+        <button id="asthma-quick-btn" class="btn-secondary lungs-action" aria-label="Log inhaler use or respiratory symptoms during this workout">${respiratoryIcon()}<span>Log Inhaler or Symptoms</span></button>
       </div>
       <div class="action-section">
         <button id="finish-btn" class="btn-primary green">Finish Workout</button>
@@ -261,8 +261,14 @@ function renderActive(ctx, workout) {
     await finishWorkout(workout, sets);
     const effort = await openPostWorkoutEffort();
     if (healthKitService.nativeAvailable) {
+      const nativeStatus = await healthKitService.getStatus().catch(() => null);
       const workoutOperation = await enqueueWorkout(workout);
-      if (effort != null) await enqueueWorkoutEffort(workout, effort, workoutOperation.id);
+      if (effort != null && nativeStatus?.authorization?.workoutEffort === 'unavailable') {
+        workout.localEffort = effort;
+        await put('workouts', workout);
+      } else if (effort != null) {
+        await enqueueWorkoutEffort(workout, effort, workoutOperation.id);
+      }
       processHealthKitOutbox().then((result) => {
         if (result.failed > 0) showToast('Workout saved · Apple Health will retry later.');
         emit('data:changed');

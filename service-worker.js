@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'lift-v101-shortcuts';
+const CACHE_VERSION = 'lift-v107-health-polish';
 const ASSETS = [
   './',
   './index.html',

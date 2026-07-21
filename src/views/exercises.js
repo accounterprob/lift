@@ -21,6 +21,7 @@ async function renderList(ctx) {
   ctx.setTitle('Exercises');
   ctx.setBack(null);
   ctx.setAction({
+    label: 'Add exercise',
     html: '<span style="font-size: 24px;">+</span>',
     onClick: () => {
       openExerciseForm(null);  // create mode emits data:changed itself
@@ -121,6 +122,7 @@ export async function renderExerciseDetailPage(ctx, exerciseId, onBack) {
   ctx.setTitle(displayName(detail.exercise));
   ctx.setAction(detail.exercise.isCustom
     ? {
+        label: 'Delete exercise',
         html: trashIcon(),
         onClick: async () => {
           if (detail.completed.length > 0) {
