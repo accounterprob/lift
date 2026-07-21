@@ -111,6 +111,7 @@ function renderOverview(ctx) {
     html: shareIcon(),
     onClick: () => openBackupSheet(),
   });
+  ctx.container.scrollTop = 0;
 
   if (!snapshot || snapshot.workouts.length === 0) {
     ctx.container.innerHTML = `
@@ -194,6 +195,7 @@ function renderMostTrained(ctx) {
       `).join('')}
     </div>
   `;
+  ctx.container.scrollTop = 0;
 
   wireExerciseLinks(ctx);
 }
@@ -222,6 +224,7 @@ function renderPRs(ctx) {
       `).join('')}
     </div>
   `;
+  ctx.container.scrollTop = 0;
 
   wireExerciseLinks(ctx);
 }
@@ -250,6 +253,7 @@ function renderHistoryList(ctx) {
       ${workouts.map((w) => renderHistoryRow(w, setsByWorkout.get(w.id) || [], exMap)).join('')}
     </div>
   `;
+  ctx.container.scrollTop = 0;
 
   for (const row of ctx.container.querySelectorAll('[data-workout-id]')) {
     row.addEventListener('click', () => {
@@ -406,6 +410,7 @@ async function renderWorkoutDetail(ctx, workoutId) {
 
   ctx.setTitle(detail.workout.name);
   ctx.container.innerHTML = detail.html;
+  ctx.container.scrollTop = 0;
   wireExerciseLinks(ctx);
   wireSetEditors(ctx.container, detail.sets);
 }

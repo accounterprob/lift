@@ -570,6 +570,8 @@ function renderActive(ctx, workout) {
         await put('sets', set);
         setRow.classList.toggle('completed', set.completed);
         completeBtn.innerHTML = checkIcon(set.completed);
+        const setLabel = setRow.querySelector('.set-number')?.textContent?.trim() || '';
+        completeBtn.setAttribute('aria-label', `${set.completed ? 'Mark incomplete' : 'Mark complete'} set ${setLabel}`);
         updateRunningStats();
         if (!wasCompleted && set.completed) {
           const bumped = await bumpSucceedingSets(set, sets, prevTargetFor);
@@ -683,7 +685,7 @@ function renderExerciseSection(exercise, sets, prevSets = new Map(), totalSetCou
       <div class="exercise-section-header">
         <button class="exercise-name-btn" data-exercise-id="${exercise?.id}">${exerciseRowMain(exercise)}</button>
         <div class="row-trailing trailing-stack">${setCountLabel(totalSetCount)}</div>
-        <button class="menu exercise-menu" data-exercise-id="${exercise?.id}" aria-label="Remove">×</button>
+        <button class="menu exercise-menu" data-exercise-id="${exercise?.id}" aria-label="Remove ${esc(displayName(exercise))} from workout">×</button>
       </div>
       <div class="set-table-header">
         <div class="col-set">SET</div>
@@ -722,15 +724,15 @@ function renderSetRow(set, displayLabel, prevSet) {
     : '—';
   return `
     <div class="set-row-wrap" data-set-id="${set.id}">
-      <button class="set-swipe-delete" data-set-id="${set.id}" aria-label="Delete set">Delete</button>
+      <button class="set-swipe-delete" data-set-id="${set.id}" aria-label="Delete set ${displayLabel}">Delete</button>
       <div class="set-row type-${type}${set.completed ? ' completed' : ''}" data-set-id="${set.id}">
-        <button class="set-number" aria-label="Tap to toggle warmup">${displayLabel}</button>
+        <button class="set-number" aria-label="Set ${displayLabel}, tap to mark as ${type === 'warmup' ? 'working' : 'warmup'}">${displayLabel}</button>
         <div class="prev" aria-label="Previous">${prevText}</div>
         <input class="weight-input" type="number" inputmode="decimal" step="0.5" aria-label="Weight in pounds for set ${displayLabel}"
                placeholder="0" value="${set.weight > 0 ? set.weight : ''}" />
         <input class="reps-input" type="number" inputmode="numeric" step="1" aria-label="Repetitions for set ${displayLabel}"
                placeholder="0" value="${set.reps > 0 ? set.reps : ''}" />
-        <button class="complete-btn" aria-label="Toggle complete">${checkIcon(set.completed)}</button>
+        <button class="complete-btn" aria-label="${set.completed ? 'Mark incomplete' : 'Mark complete'} set ${displayLabel}">${checkIcon(set.completed)}</button>
       </div>
     </div>
   `;

@@ -45,6 +45,7 @@ async function renderList(ctx) {
     <div class="chip-row" id="ex-chips"></div>
     <div class="list" id="ex-list"></div>
   `;
+  ctx.container.scrollTop = 0;
 
   const listEl = ctx.container.querySelector('#ex-list');
   const chipsEl = ctx.container.querySelector('#ex-chips');

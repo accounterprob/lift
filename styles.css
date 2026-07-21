@@ -1217,6 +1217,13 @@ button.stat-row { width: 100%; text-align: left; }
   cursor: pointer;
 }
 
+/* Keep workout notices clear of the calculator button. Persistent PR toasts
+   can be several lines tall, so sharing the FAB's bottom edge made the two
+   controls collide on an iPhone. */
+body:has(.calc-fab) .toast {
+  bottom: calc(var(--tab-height) + env(safe-area-inset-bottom) + 82px);
+}
+
 @media (prefers-color-scheme: dark) {
   .toast { background: rgba(255, 255, 255, 0.92); color: black; }
 }
