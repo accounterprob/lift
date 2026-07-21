@@ -1,5 +1,17 @@
 const DB_NAME = 'lift';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+
+export const STORE_NAMES = [
+  'exercises',
+  'workouts',
+  'sets',
+  'wellbeingEntries',
+  'asthmaEvents',
+  'healthKitLinks',
+  'healthKitOutbox',
+  'migrationState',
+  'appSettings',
+];
 
 let _db = null;
 
@@ -28,6 +40,35 @@ export function openDB() {
         s.createIndex('workoutId', 'workoutId', { unique: false });
         s.createIndex('exerciseId', 'exerciseId', { unique: false });
       }
+      if (!db.objectStoreNames.contains('wellbeingEntries')) {
+        const s = db.createObjectStore('wellbeingEntries', { keyPath: 'id' });
+        s.createIndex('localCalendarDayIdentifier', 'localCalendarDayIdentifier', { unique: true });
+        s.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('asthmaEvents')) {
+        const s = db.createObjectStore('asthmaEvents', { keyPath: 'id' });
+        s.createIndex('timestamp', 'timestamp', { unique: false });
+        s.createIndex('relatedWorkoutID', 'relatedWorkoutID', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('healthKitLinks')) {
+        const s = db.createObjectStore('healthKitLinks', { keyPath: 'id' });
+        s.createIndex('localEntityID', 'localEntityID', { unique: false });
+        s.createIndex('entityKind', 'entityKind', { unique: false });
+        s.createIndex('syncIdentifier', 'syncIdentifier', { unique: true });
+      }
+      if (!db.objectStoreNames.contains('healthKitOutbox')) {
+        const s = db.createObjectStore('healthKitOutbox', { keyPath: 'id' });
+        s.createIndex('localEntityID', 'localEntityID', { unique: false });
+        s.createIndex('operationType', 'operationType', { unique: false });
+        s.createIndex('syncStatus', 'syncStatus', { unique: false });
+        s.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('migrationState')) {
+        db.createObjectStore('migrationState', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('appSettings')) {
+        db.createObjectStore('appSettings', { keyPath: 'key' });
+      }
     };
   });
 }
@@ -53,8 +94,14 @@ export async function get(store, id) {
 }
 
 export async function put(store, value) {
-  await promisify((await txStore(store, 'readwrite')).put(value));
-  return value;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put(value);
+    tx.oncomplete = () => resolve(value);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
 }
 
 export async function putMany(store, values) {
@@ -70,7 +117,14 @@ export async function putMany(store, values) {
 }
 
 export async function del(store, id) {
-  return promisify((await txStore(store, 'readwrite')).delete(id));
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
 }
 
 /** Delete many ids in one transaction (one disk commit instead of N). */
@@ -87,6 +141,17 @@ export async function delMany(store, ids) {
   });
 }
 
+export async function clearStore(store) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 export async function getByIndex(store, indexName, value) {
   const s = await txStore(store);
   return promisify(s.index(indexName).getAll(value));
@@ -95,14 +160,22 @@ export async function getByIndex(store, indexName, value) {
 export async function clearAll() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(['exercises', 'workouts', 'sets'], 'readwrite');
-    tx.objectStore('exercises').clear();
-    tx.objectStore('workouts').clear();
-    tx.objectStore('sets').clear();
+    const available = STORE_NAMES.filter((name) => db.objectStoreNames.contains(name));
+    const tx = db.transaction(available, 'readwrite');
+    for (const name of available) tx.objectStore(name).clear();
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+}
+
+export async function getSetting(key, fallback = null) {
+  const row = await get('appSettings', key);
+  return row?.value ?? fallback;
+}
+
+export async function setSetting(key, value) {
+  return put('appSettings', { key, value, updatedAt: Date.now() });
 }
 
 // ---------- Domain helpers ----------

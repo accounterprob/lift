@@ -14,7 +14,7 @@
       .bar { fill: #000000; }
     }
   </style>
-  <rect class="bg" width="1024" height="1024" rx="220"/>
+  <rect class="bg" width="1024" height="1024"/>
   <g class="bar" transform="translate(512 512)">
     <rect x="-280" y="-32" width="560" height="64" rx="12"/>
     <rect x="-340" y="-112" width="56" height="224" rx="14"/>

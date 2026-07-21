@@ -59,6 +59,11 @@ export function formatDateLong(d) {
   });
 }
 
+export function formatTime(d) {
+  const date = d instanceof Date ? d : new Date(d);
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 export function debounce(fn, delay = 200) {
   let timer = null;
   return (...args) => {
@@ -108,9 +113,9 @@ export function on(type, handler) {
 
 /**
  * Display a bottom sheet. Returns a dismiss function.
- * @param {{ html: string, onMount?: (sheetEl: HTMLElement, dismiss: () => void) => void }} config
+ * @param {{ html: string, onMount?: (sheetEl: HTMLElement, dismiss: () => void) => void, onDismiss?: () => void, dismissOnBackdrop?: boolean }} config
  */
-export function showSheet({ html, onMount }) {
+export function showSheet({ html, onMount, onDismiss, dismissOnBackdrop = true }) {
   const backdrop = document.createElement('div');
   backdrop.className = 'sheet-backdrop';
   backdrop.innerHTML = `<div class="sheet"></div>`;
@@ -155,15 +160,17 @@ export function showSheet({ html, onMount }) {
   vv?.addEventListener('scroll', syncHeight);
 
   function dismiss() {
+    if (!backdrop.isConnected) return;
     backdrop.remove();
     vv?.removeEventListener('resize', syncHeight);
     vv?.removeEventListener('scroll', syncHeight);
+    onDismiss?.();
   }
   // Let the tab bar (main.js) close any open sheets when switching tabs.
   backdrop.dismissSheet = dismiss;
 
   backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) dismiss();
+    if (e.target === backdrop && dismissOnBackdrop) dismiss();
   });
 
   onMount?.(sheet, dismiss);

@@ -1,14 +1,17 @@
 import {
-  openDB, purgeCardioData, reorganizeOtherExercises, stripEquipmentFromNames,
-  mergeButterflyIntoChestFly,
+  get, openDB, put, purgeCardioData, reorganizeOtherExercises,
+  stripEquipmentFromNames, mergeButterflyIntoChestFly,
 } from './db.js';
 import { seedIfNeeded, categoryFor } from './seed.js';
-import { on, showToast, esc } from './utils.js';
+import { emit, on, showToast, esc } from './utils.js';
 import { setCurrentTab } from './state.js';
 import { refreshDayTheme } from './days.js';
 import { renderWorkoutTab } from './views/workout.js';
 import { renderExercisesTab } from './views/exercises.js';
 import { renderProgressTab } from './views/progress.js';
+import { renderDataTab, maybeOfferDailyCheckIn } from './views/data.js';
+import { processHealthKitOutbox, reconcileHealthKitLinks } from './health/sync.js';
+import { parseShortcutCallback } from './health/shortcut.js';
 
 // iOS PWA standalone mode misreports `visualViewport.height` and `innerHeight`
 // — it leaves a phantom Safari-URL-bar-sized gap at the bottom. The OS-reported
@@ -44,6 +47,7 @@ const TABS = {
   workout: { title: 'Workout', render: renderWorkoutTab },
   exercises: { title: 'Exercises', render: renderExercisesTab },
   progress: { title: 'Progress', render: renderProgressTab },
+  data: { title: 'Data', render: renderDataTab },
 };
 
 const viewContent = document.getElementById('view-content');
@@ -153,6 +157,7 @@ document.addEventListener('visibilitychange', () => {
 async function init() {
   try {
     await openDB();
+    const shortcutMessage = await handleShortcutCallback();
     const seededCount = await seedIfNeeded();
     if (seededCount > 0) console.info(`Seeded ${seededCount} exercises.`);
     const purged = await purgeCardioData();
@@ -174,6 +179,10 @@ async function init() {
     // Theme the app to today's rotation day before first paint.
     await refreshDayTheme();
     renderTab('workout');
+    if (shortcutMessage) setTimeout(() => showToast(shortcutMessage, 3200), 100);
+    setTimeout(() => maybeOfferDailyCheckIn({ context: 'general' }).catch(() => {}), 500);
+    processHealthKitOutbox().catch(() => {});
+    reconcileHealthKitLinks().catch(() => {});
   } catch (err) {
     console.error('Init failed:', err);
     viewContent.innerHTML = `
@@ -186,4 +195,38 @@ async function init() {
   }
 }
 
+async function handleShortcutCallback() {
+  const callback = parseShortcutCallback(window.location.href);
+  if (!callback) return null;
+  window.history.replaceState(null, '', callback.cleanURL);
+  const workout = await get('workouts', callback.workoutID);
+  if (!workout) return 'Shortcut finished. Reopen Lift from your Home Screen to see the workout.';
+  if (callback.result === 'success') {
+    workout.appleHealthShortcutStatus = 'exported';
+    workout.appleHealthShortcutExportedAt = Date.now();
+    workout.appleHealthShortcutLastError = null;
+    await put('workouts', workout);
+    return 'Workout added to Apple Health.';
+  }
+  if (callback.result === 'cancel') {
+    workout.appleHealthShortcutStatus = 'notExported';
+    await put('workouts', workout);
+    return 'Apple Health export canceled. Your workout is still saved in Lift.';
+  }
+  workout.appleHealthShortcutStatus = 'failed';
+  workout.appleHealthShortcutLastError = callback.errorMessage ? 'The Shortcut reported an error.' : 'The Shortcut did not finish.';
+  await put('workouts', workout);
+  return 'Apple Health export did not finish. Your workout is still saved in Lift.';
+}
+
 init();
+
+window.addEventListener('lift:native-active', () => {
+  processHealthKitOutbox().then(() => emit('data:changed')).catch(() => {});
+  reconcileHealthKitLinks().then(() => emit('data:changed')).catch(() => {});
+});
+
+window.addEventListener('lift:open-checkin', () => {
+  document.querySelector('[data-tab="data"]')?.click();
+  setTimeout(() => maybeOfferDailyCheckIn({ context: 'general' }).catch(() => {}), 100);
+});

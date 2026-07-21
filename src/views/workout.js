@@ -10,6 +10,7 @@ import {
   previousWorkoutSetsForExercise,
   buildPrevSlotMaps,
   performedSets,
+  getByIndex,
 } from '../db.js';
 import {
   uuid, esc, formatDuration, formatWeight, formatVolume, showSheet, emit, debounce, showToast,
@@ -24,6 +25,11 @@ import {
 } from '../days.js';
 import { downloadBackup } from '../backup.js';
 import { renderExerciseDetailPage } from './exercises.js';
+import { localCalendarDayIdentifier, validateEffort } from '../health/domain.js';
+import { enqueueWorkout, enqueueWorkoutEffort, processHealthKitOutbox } from '../health/sync.js';
+import { healthKitService } from '../health/service.js';
+import { openAsthmaQuickLog, openWellbeingCheckIn } from './data.js';
+import { openAppleHealthShortcutPrompt } from './shortcut.js';
 
 export function renderWorkoutTab(ctx) {
   let mounted = true;
@@ -80,7 +86,20 @@ async function renderStart(ctx) {
       <button id="start-btn" class="btn-primary">Start Empty Workout</button>
     </div>
   `;
-  ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName, hintLabel));
+  ctx.container.querySelector('#start-btn').addEventListener('click', async () => {
+    const existing = (await getByIndex('wellbeingEntries', 'localCalendarDayIdentifier', localCalendarDayIdentifier()))[0];
+    if (existing) {
+      startNewWorkout(todayName, hintLabel);
+      return;
+    }
+    let continued = false;
+    const continueOnce = () => {
+      if (continued) return;
+      continued = true;
+      startNewWorkout(todayName, hintLabel);
+    };
+    openWellbeingCheckIn({ context: 'preWorkout', onSaved: continueOnce, onDismiss: continueOnce });
+  });
 }
 
 // Day rotation + normalization live in days.js (shared with the Progress
@@ -189,6 +208,7 @@ function renderActive(ctx, workout) {
       <div id="exercise-sections"></div>
       <div class="action-section">
         <button id="add-exercise-btn" class="btn-secondary">+ Add Exercise</button>
+        <button id="asthma-quick-btn" class="btn-secondary lungs-action" aria-label="Log inhaler use or respiratory symptoms during this workout">◌ Log Inhaler or Symptoms</button>
       </div>
       <div class="action-section">
         <button id="finish-btn" class="btn-primary green">Finish Workout</button>
@@ -239,13 +259,32 @@ function renderActive(ctx, workout) {
   ctx.container.querySelector('#finish-btn').addEventListener('click', async () => {
     if (!confirm('Finish this workout?')) return;
     await finishWorkout(workout, sets);
+    const effort = await openPostWorkoutEffort();
+    if (healthKitService.nativeAvailable) {
+      const workoutOperation = await enqueueWorkout(workout);
+      if (effort != null) await enqueueWorkoutEffort(workout, effort, workoutOperation.id);
+      processHealthKitOutbox().then((result) => {
+        if (result.failed > 0) showToast('Workout saved · Apple Health will retry later.');
+        emit('data:changed');
+      }).catch(() => {});
+    } else {
+      workout.localEffort = effort;
+      workout.appleHealthShortcutStatus = 'notExported';
+      workout.appleHealthShortcutLastError = null;
+      await put('workouts', workout);
+    }
     try {
       const { filename } = await downloadBackup();
-      showToast(`Saved · backup: ${filename}`);
+      showToast(`Workout saved · backup: ${filename}`);
     } catch (err) {
       showToast(`Saved · backup failed: ${err.message}`);
     }
     emit('workout:changed');
+    if (!healthKitService.nativeAvailable) await openAppleHealthShortcutPrompt(workout);
+  });
+
+  ctx.container.querySelector('#asthma-quick-btn').addEventListener('click', () => {
+    openAsthmaQuickLog({ context: 'duringWorkout', relatedWorkoutID: workout.id });
   });
 
   ctx.container.querySelector('#discard-btn').addEventListener('click', async () => {
@@ -998,6 +1037,45 @@ async function finishWorkout(workout, sets) {
     .map((s) => s.id));
   workout.endedAt = Date.now();
   await put('workouts', workout);
+}
+
+function openPostWorkoutEffort() {
+  return new Promise((resolve) => {
+    let selected = 5;
+    const descriptions = ['Very easy', 'Easy', 'Light', 'Moderate', 'Steady', 'Challenging', 'Hard', 'Very hard', 'Near maximum', 'All-out effort'];
+    let completed = false;
+    const dismiss = showSheet({
+      dismissOnBackdrop: false,
+      html: `
+        <div class="sheet-header"><button class="btn-text" id="effort-skip">Skip</button><div class="title">Workout Effort</div><span style="width:60px"></span></div>
+        <div class="sheet-content effort-sheet">
+          <h2>How hard was this workout overall?</h2>
+          <output id="effort-value" aria-live="polite">5</output>
+          <div id="effort-description">Challenging</div>
+          <input id="effort-slider" type="range" min="1" max="10" step="1" value="5" aria-label="Workout effort from 1 very easy to 10 all-out effort" />
+          <div class="range-endpoints"><span>1 · Very easy</span><span>10 · All-out</span></div>
+          <div class="effort-grid" role="group" aria-label="Workout effort">${Array.from({ length: 10 }, (_, index) => `<button type="button" data-effort="${index + 1}" aria-pressed="${index === 4}">${index + 1}</button>`).join('')}</div>
+          <button class="btn-primary" id="effort-save">Save & Continue</button>
+        </div>`,
+      onMount(sheet) {
+        const slider = sheet.querySelector('#effort-slider');
+        const value = sheet.querySelector('#effort-value');
+        const description = sheet.querySelector('#effort-description');
+        const update = (next) => {
+          selected = validateEffort(next);
+          slider.value = String(selected);
+          value.textContent = String(selected);
+          description.textContent = descriptions[selected - 1];
+          for (const button of sheet.querySelectorAll('[data-effort]')) button.setAttribute('aria-pressed', String(Number(button.dataset.effort) === selected));
+        };
+        slider.addEventListener('input', () => update(slider.value));
+        for (const button of sheet.querySelectorAll('[data-effort]')) button.addEventListener('click', () => update(button.dataset.effort));
+        const finish = (result) => { if (completed) return; completed = true; dismiss(); resolve(result); };
+        sheet.querySelector('#effort-save').addEventListener('click', () => finish(selected));
+        sheet.querySelector('#effort-skip').addEventListener('click', () => finish(null));
+      },
+    });
+  });
 }
 
 // ----------------- Exercise picker sheet -----------------

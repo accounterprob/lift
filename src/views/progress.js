@@ -1,16 +1,19 @@
 import {
-  getFinishedWorkouts, getAll, get, getWorkoutSets, deleteWorkoutAndSets, put,
+  getFinishedWorkouts, getAll, get, getByIndex, getWorkoutSets, deleteWorkoutAndSets, put,
   performedSets,
 } from '../db.js';
 import {
   esc, formatVolumeLbs, formatDateShort, formatDateLong, formatDurationShort,
-  formatLbs, emit, shareIcon, trashIcon, errorState, showSheet, debounce,
+  formatLbs, emit, shareIcon, errorState, showSheet, showToast, debounce,
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
 import { openExerciseDetailSheet } from './exercises.js';
 import { displayName, exerciseRowMain, setCountLabel } from '../seed.js';
 import { ROTATION, DAYS, classifyWorkoutDays, dayColor } from '../days.js';
+import { deleteWorkoutWithChoice, enqueueWorkoutUpdate, processHealthKitOutbox } from '../health/sync.js';
+import { healthKitService } from '../health/service.js';
+import { openAppleHealthShortcutPrompt } from './shortcut.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
 // from IndexedDB on every navigation.
@@ -327,6 +330,7 @@ async function buildWorkoutDetail(workoutId) {
       <div class="stat-row"><div class="stat-label">Duration</div><div class="stat-value">${formatDurationShort(duration)}</div></div>
       <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${formatVolumeLbs(totalVolume)}</div></div>
       <div class="stat-row"><div class="stat-label">Completed Sets</div><div class="stat-value">${completedCount}</div></div>
+      ${!healthKitService.nativeAvailable ? `<div class="stat-row"><div class="stat-label">Effort</div><div class="stat-value">${workout.localEffort == null ? 'Not recorded' : `${workout.localEffort}/10`}</div></div><div class="stat-row"><div class="stat-label">Apple Health</div><div class="stat-value">${esc(shortcutWorkoutStatus(workout.appleHealthShortcutStatus))}</div></div>` : ''}
     </div>
 
     ${exerciseIds.map((eid) => {
@@ -388,12 +392,8 @@ async function renderWorkoutDetail(ctx, workoutId) {
     renderHistoryList(ctx);
   });
   ctx.setAction({
-    html: trashIcon(),
-    onClick: async () => {
-      if (!confirm('Delete this workout?')) return;
-      await deleteWorkoutAndSets(workoutId);
-      emit('data:changed');
-    },
+    html: '<span aria-hidden="true" style="font-weight:700;letter-spacing:2px">•••</span>',
+    onClick: () => openWorkoutActions(workoutId, ctx),
   });
 
   const detail = await buildWorkoutDetail(workoutId);
@@ -433,4 +433,99 @@ export async function openWorkoutDetailSheet(workoutId) {
       wireSetEditors(sheet, detail.sets);
     },
   });
+}
+
+async function openWorkoutActions(workoutID, ctx) {
+  const workout = await (async () => (await getFinishedWorkouts()).find((item) => item.id === workoutID))();
+  if (!workout) return;
+  if (!healthKitService.nativeAvailable) {
+    openBrowserWorkoutActions(workout, ctx);
+    return;
+  }
+  const link = (await getByIndex('healthKitLinks', 'localEntityID', workoutID)).find((item) => item.entityKind === 'workout');
+  const needsExplicitResync = Boolean(link?.externallyDeletedOrInaccessible || ['externallyDeleted', 'inaccessibleOrDeleted'].includes(link?.syncStatus));
+  const dismiss = showSheet({
+    html: `<div class="sheet-header"><button class="btn-text" id="wa-close">Done</button><div class="title">Workout Actions</div><span style="width:60px"></span></div><div class="sheet-content"><div class="form-section"><button class="list-row button" id="wa-edit"><div class="row-main"><div class="row-title accent">Edit Health Summary</div><div class="row-subtitle">Name, start, and end time</div></div></button>${needsExplicitResync ? '<button class="list-row button" id="wa-resync"><div class="row-main"><div class="row-title accent">Resync to Apple Health</div><div class="row-subtitle">The prior Health entry was deleted or is not accessible</div></div></button>' : ''}<button class="list-row button destructive" id="wa-delete"><div class="row-main"><div class="row-title" style="color:var(--red)">Delete Workout…</div></div></button></div></div>`,
+    onMount(sheet) {
+      sheet.querySelector('#wa-close').addEventListener('click', () => dismiss());
+      sheet.querySelector('#wa-edit').addEventListener('click', () => { dismiss(); openWorkoutEdit(workout, ctx); });
+      sheet.querySelector('#wa-resync')?.addEventListener('click', async () => {
+        await enqueueWorkoutUpdate(workout);
+        dismiss();
+        showToast('Apple Health resync queued.');
+        processHealthKitOutbox().then(() => emit('data:changed')).catch(() => {});
+      });
+      sheet.querySelector('#wa-delete').addEventListener('click', () => { dismiss(); openWorkoutDeleteChoices(workout, ctx); });
+    },
+  });
+}
+
+function openWorkoutEdit(workout, ctx) {
+  const browser = !healthKitService.nativeAvailable;
+  const dismiss = showSheet({
+    html: `<div class="sheet-header"><button class="btn-text" id="we-cancel">Cancel</button><div class="title">Edit Workout</div><button class="btn-text primary" id="we-save">Save</button></div><div class="sheet-content"><div class="form-section"><label class="form-row"><span>Name</span><input id="we-name" value="${esc(workout.name)}" /></label><label class="form-row"><span>Start</span><input id="we-start" type="datetime-local" value="${localDateTimeValue(workout.startedAt)}" /></label><label class="form-row"><span>End</span><input id="we-end" type="datetime-local" value="${localDateTimeValue(workout.endedAt)}" /></label></div><div class="section-footer">${browser ? 'This edits the workout stored in Lift. If it was already added to Apple Health, the Shortcut cannot replace the old Health entry; remove that entry in Health before exporting the edited version.' : 'Lift saves the edit first, then updates only the Apple Health workout created by Lift using the same synchronization identifier.'}</div></div>`,
+    onMount(sheet) {
+      sheet.querySelector('#we-cancel').addEventListener('click', () => dismiss());
+      sheet.querySelector('#we-save').addEventListener('click', async () => {
+        const next = { ...workout, name: sheet.querySelector('#we-name').value.trim(), startedAt: new Date(sheet.querySelector('#we-start').value).getTime(), endedAt: new Date(sheet.querySelector('#we-end').value).getTime() };
+        if (!next.name || !Number.isFinite(next.startedAt) || !Number.isFinite(next.endedAt) || next.endedAt <= next.startedAt) { showToast('Enter a name and a valid start/end interval.'); return; }
+        if (browser) {
+          next.appleHealthShortcutStatus = workout.appleHealthShortcutStatus === 'exported' ? 'changedAfterExport' : 'notExported';
+          await put('workouts', next);
+        } else {
+          await put('workouts', next);
+          await enqueueWorkoutUpdate(next);
+        }
+        dismiss(); showToast('Workout edit saved.'); emit('data:changed');
+        if (!browser) processHealthKitOutbox().then(() => emit('data:changed')).catch(() => {});
+      });
+    },
+  });
+}
+
+function openBrowserWorkoutActions(workout, ctx) {
+  const repeat = ['exported', 'changedAfterExport'].includes(workout.appleHealthShortcutStatus);
+  const dismiss = showSheet({
+    html: `<div class="sheet-header"><button class="btn-text" id="wa-close">Done</button><div class="title">Workout Actions</div><span style="width:60px"></span></div><div class="sheet-content"><div class="form-section"><button class="list-row button" id="wa-shortcut"><div class="row-main"><div class="row-title accent">${repeat ? 'Run Apple Health Shortcut Again…' : 'Add to Apple Health'}</div><div class="row-subtitle">Send this completed workout summary</div></div></button><button class="list-row button" id="wa-edit"><div class="row-main"><div class="row-title accent">Edit Workout Summary</div><div class="row-subtitle">Name, start, and end time</div></div></button><button class="list-row button destructive" id="wa-delete"><div class="row-main"><div class="row-title" style="color:var(--red)">Delete from Lift…</div></div></button></div></div>`,
+    onMount(sheet) {
+      sheet.querySelector('#wa-close').addEventListener('click', () => dismiss());
+      sheet.querySelector('#wa-shortcut').addEventListener('click', () => { dismiss(); openAppleHealthShortcutPrompt(workout, { repeat }); });
+      sheet.querySelector('#wa-edit').addEventListener('click', () => { dismiss(); openWorkoutEdit(workout, ctx); });
+      sheet.querySelector('#wa-delete').addEventListener('click', () => {
+        if (!confirm('Delete this workout and its sets from Lift? Any copy already added to Apple Health will remain there.')) return;
+        deleteWorkoutWithChoice(workout.id, 'liftOnly').then(() => { dismiss(); emit('data:changed'); }).catch((error) => showToast(error.message));
+      });
+    },
+  });
+}
+
+function shortcutWorkoutStatus(status) {
+  return ({
+    exported: 'Added via Shortcut',
+    launching: 'Waiting for Shortcut',
+    failed: 'Shortcut needs retry',
+    changedAfterExport: 'Edited after export',
+    notExported: 'Not added',
+  })[status] ?? 'Not added';
+}
+
+function openWorkoutDeleteChoices(workout, ctx) {
+  const dismiss = showSheet({
+    dismissOnBackdrop: false,
+    html: `<div class="sheet-header"><button class="btn-text" id="wd-cancel">Cancel</button><div class="title">Delete Workout</div><span style="width:60px"></span></div><div class="sheet-content"><div class="notice-card">This only applies to Apple Health objects Lift created. Other apps’ workouts are never changed.</div><div class="action-section"><button class="btn-secondary" id="wd-lift">Delete from Lift Only</button><button class="btn-secondary" id="wd-both" style="color:var(--red)">Delete from Lift and Apple Health</button></div></div>`,
+    onMount(sheet) {
+      sheet.querySelector('#wd-cancel').addEventListener('click', () => dismiss());
+      const remove = async (choice) => {
+        try { await deleteWorkoutWithChoice(workout.id, choice); dismiss(); emit('data:changed'); }
+        catch (error) { showToast(error.message); }
+      };
+      sheet.querySelector('#wd-lift').addEventListener('click', () => remove('liftOnly'));
+      sheet.querySelector('#wd-both').addEventListener('click', () => remove('liftAndHealth'));
+    },
+  });
+}
+
+function localDateTimeValue(timestamp) {
+  const date = new Date(timestamp);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }

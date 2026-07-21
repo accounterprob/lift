@@ -1,6 +1,6 @@
-# Lift — Workout Tracker PWA
+# Lift
 
-A self-contained, offline-first workout tracker that runs as a Progressive Web App. No accounts, no servers, no subscriptions, no app store. Your data lives in your browser's IndexedDB on each device; sync is by exporting a JSON file to iCloud Drive and importing it on the other end.
+Lift is a local-first strength-training app. The recommended free iPhone setup is the installable web app plus an optional Apple Shortcut for adding completed workout summaries to Apple Health. A separate native Xcode host remains available for direct HealthKit integration.
 
 **Features**
 - Start an empty workout, add exercises, log weight × reps per set, finish.
@@ -13,24 +13,47 @@ A self-contained, offline-first workout tracker that runs as a Progressive Web A
 - iOS-style design with dark mode auto-detect.
 - Works fully offline once installed (service worker caches everything).
 
----
+There are no accounts, servers, analytics, or third-party health services. The web app keeps exercises, sets, weights, repetitions, timestamps, effort, check-ins, mood, and respiratory logs in IndexedDB and includes them in its JSON backup.
 
-## Quick start — test it on your Mac (5 minutes)
+## Free iPhone setup: Home Screen app + Shortcut
 
-You need any HTTP server. The simplest is Python (already installed on macOS as `python3`).
+Serve Lift over HTTPS, open it in Safari on iPhone, then choose Share → Add to Home Screen. After finishing a workout, Lift saves it locally first and offers **Add to Apple Health**.
+
+The first time, follow Lift’s one-time setup guide to create a shortcut named `Lift Add Workout`:
+
+1. Get Dictionary from Shortcut Input.
+2. Read `startDate` and convert it to a date.
+3. Read `durationMinutes`.
+4. Use Log Workout with Traditional Strength Training, that start date, and that duration.
+
+Lift opens this shortcut with a small JSON payload containing the workout name, start time, duration, and Lift workout ID. The Shortcut writes the summary to Apple Health. No paid Apple Developer account, Xcode, Mac relay, or server is required.
+
+Web apps cannot read Apple Health, so Lift cannot confirm or delete the resulting Health entry independently. Running the same export twice can create a duplicate. Check-ins, mood, inhaler use, symptoms, and workout effort stay in Lift in this free setup.
+
+## Native iPhone build
+
+Requirements:
+
+- Xcode 16 or later
+- iOS 17.0 deployment target
+- An Apple development team and an App ID for `com.accounterprob.lift`
+- A physical iPhone for complete HealthKit testing
+
+Open `Lift.xcodeproj`, select the Lift target, choose your development team, confirm the HealthKit capability, and run. Swift is compiled in Swift 5 language mode. Workout effort is available on iOS 18 and later; on iOS 17 the rest of the HealthKit integration continues to work and effort writes are marked unsupported instead of retried indefinitely.
+
+The native target bundles the existing web app into `Web/` during its Copy Web App build phase. `WKWebView` hosts the interface and `NativeBridge` is the only boundary to HealthKit, notifications, settings, and Files export.
+
+## Browser development
+
+The PWA remains usable without HealthKit:
 
 ```bash
-cd ~/Desktop/lift-pwa
 python3 -m http.server 8080
 ```
 
-Then open <http://localhost:8080> in any browser (Chrome, Safari, Edge, Firefox — all fine).
+Open `http://localhost:8080`. Workout logging and all local data remain usable. The Apple Health button opens Shortcuts on iPhone; it will not run on a desktop browser.
 
-To stop the server, press `Ctrl+C` in the terminal.
-
-> If you see `Address already in use`, pick a different port: `python3 -m http.server 8081`.
-
----
+The service worker caches aggressively. Bump `CACHE_VERSION` in `service-worker.js` for shipped web changes, then reload twice or unregister the old worker during development.
 
 ## Install on your iPhone
 
@@ -149,42 +172,58 @@ lift-pwa/
         └── progress.js     — Totals, charts, PRs
 ```
 
-No build step. No `npm install`. Edit any file, refresh the browser.
+## Tests and checks
 
-> The service worker aggressively caches. After a code change, hard-refresh: ⌘⇧R in Chrome, or DevTools → Application → Service Workers → **Unregister** → reload. Once installed on iPhone, force-quit the app (swipe up from app switcher) to pick up a new version.
+No package installation is required.
 
----
+```bash
+npm test
+npm run check
+swiftc -frontend -parse LiftNative/*.swift
+plutil -lint Lift.xcodeproj/project.pbxproj LiftNative/Info.plist LiftNative/Lift.entitlements
+```
 
-## Customization tips
+The JavaScript tests use a deterministic fake HealthKit service. A full iOS compile, entitlement validation, signing check, and live HealthKit read/write test require Xcode and a physical iPhone.
 
-**Rename.** In `manifest.webmanifest` change `"name"` and `"short_name"`. In `index.html` change `<title>` and the `apple-mobile-web-app-title` meta. In `service-worker.js` change `CACHE_VERSION` so the new manifest is picked up.
+## Native data ownership and synchronization
 
-**App icon.** Replace `icons/icon.svg` with your own SVG. To use a PNG instead, add it to `icons/`, then in `index.html` change `apple-touch-icon` to point at it (e.g. `<link rel="apple-touch-icon" href="./icons/icon-180.png">`). For best iOS results, supply a 180×180 PNG with **no transparency**.
+Every HealthKit-owned value first enters the durable `healthKitOutbox`. Successful writes create a lightweight `healthKitLinks` record and remove the measurement payload. Failed writes retain their payload for retry. Dependencies ensure a workout exists before its effort sample is related.
 
-**Accent color.** In `styles.css`, change `--accent: #007aff;` (used for tab highlight, buttons, charts). Also change `theme-color` in `index.html` and `theme_color` in the manifest.
+Stable identifiers use the real bundle namespace:
 
-**Switch to kilograms.** Search for `lbs` in `src/` and replace with `kg`. The stored values are just numbers — there's no unit conversion happening, so existing data will be interpreted in whatever unit you choose.
+```text
+com.accounterprob.lift.<entityKind>.<localEntityID>
+```
 
-**Add more starter exercises.** In `src/seed.js`, add rows to the `SEEDS` array as `['Name', 'Category', 'Equipment']`. They'll be inserted on next launch (duplicates by name are skipped).
+HealthKit synchronization metadata and increasing versions make unchanged retries idempotent. Lift queries and deletes only objects created by Lift; it never edits or deletes another source’s workouts.
 
----
+## Backup format
 
-## Troubleshooting
+Backup schema version 2 remains backward-compatible with version 1. It adds Lift-owned wellbeing records, asthma event indexes, HealthKit links, pending/failed operations, migration state, and relevant settings. Restored links require reconciliation and restored writes require reviewed retry.
 
-**"Service worker registration failed."**
-You're loading the page from a `file://` URL, or from an `http://` URL that isn't `localhost`. Service workers require `https://` (or `localhost`). Serve via `python3 -m http.server` for local testing, GitHub Pages for production.
+A complete archive consists of:
 
-**"My data disappeared."**
-iOS Safari clears web data after ~7 days of inactivity *unless the site is installed to the home screen*. Once you've tapped **Add to Home Screen**, the storage is persistent. If you haven't installed it yet and the data vanished, that's why. Back up regularly.
+1. A Lift JSON backup containing detailed lifting and every value stored locally by the web app.
+2. An Apple Health export if the Shortcut or native HealthKit integration has written additional Health records.
 
-**"Add to Home Screen doesn't show up."**
-On iPhone you must use **Safari**, not Chrome/Firefox iOS — those are wrappers around WebKit but don't expose the install flow. On Mac, Safari supports it via **File → Add to Dock** when viewing a PWA.
+Values synchronized by the native app are not duplicated permanently in the Lift backup. Values recorded in the free web-app setup are included. Legacy non-null set RPE values are preserved; null-only RPE is omitted from new backup output.
 
-**"Code changes aren't showing up."**
-The service worker is caching. In Chrome DevTools → Application → Service Workers → Unregister, then reload. On iPhone, swipe up to kill the app, then relaunch. The cache key in `service-worker.js` (`CACHE_VERSION`) is what triggers a refresh — bump it (e.g. `lift-v2`) when shipping a major change.
+## Key files
 
-**"IndexedDB errors / 'Storage unavailable'."**
-You're in Safari Private Browsing mode, which restricts IndexedDB. Exit private mode and reload.
+```text
+Lift.xcodeproj/                 Native iPhone project
+LiftNative/HealthKitService.swift
+LiftNative/NativeBridge.swift
+LiftNative/NotificationService.swift
+src/health/domain.js            Validation, identifiers, and migration audit
+src/health/service.js           Native protocol boundary and fake service
+src/health/shortcut.js          Validated workout payload and Shortcuts URL
+src/health/outbox-runner.js     Dependency-aware retry engine
+src/health/sync.js              Links, outbox, reconciliation, and deletion
+src/views/data.js               Check-in, asthma, settings, and migration UI
+src/views/shortcut.js           One-time setup and workout export prompts
+src/backup.js                   Schema-v2 export and backward-compatible restore
+test/                           Deterministic JavaScript tests
+```
 
-**"My local IP works on my laptop but not my phone."**
-Both devices must be on the same WiFi network. Some networks (guest WiFi, hotel WiFi, college WiFi) block client-to-client communication — try your home WiFi or a phone hotspot.
+See `docs/CURRENT_DATA_AUDIT.md` for the non-destructive audit of the supplied backup.
