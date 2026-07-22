@@ -52,25 +52,15 @@ export async function restoreFromFile(file) {
     throw new Error('File doesn\'t look like a Lift backup.');
   }
 
-  // Backups made during the short-lived integration build still contain the
-  // original workout records, plus synchronization-only metadata. Restore the
-  // workout itself and discard only those retired fields.
-  const workouts = snapshot.workouts.map((source) => {
-    const workout = { ...source };
-    for (const key of Object.keys(workout)) {
-      if (/^(healthKit|appleHealthShortcut)/.test(key) || key === 'localEffort') delete workout[key];
-    }
-    return workout;
-  });
   await replaceAllData({
     exercises: snapshot.exercises,
-    workouts,
+    workouts: snapshot.workouts,
     sets: snapshot.sets,
   });
 
   return {
     exercises: snapshot.exercises.length,
-    workouts: workouts.length,
+    workouts: snapshot.workouts.length,
     sets: snapshot.sets.length,
   };
 }

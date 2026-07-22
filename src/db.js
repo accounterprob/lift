@@ -1,7 +1,7 @@
 const DB_NAME = 'lift';
-// Version 2 was used briefly by the removed health-integration build. Keep a
-// higher version so phones that opened that build can return to the original
-// three-store model without an IndexedDB VersionError or lost workouts.
+// Schema version. Must only ever INCREASE — opening with a number lower than a
+// device has already used makes IndexedDB refuse to open the database, so this
+// stays put even though the store layout is just the original three.
 const DB_VERSION = 3;
 
 let _db = null;
@@ -31,28 +31,6 @@ export function openDB() {
         s.createIndex('workoutId', 'workoutId', { unique: false });
         s.createIndex('exerciseId', 'exerciseId', { unique: false });
       }
-
-      for (const name of [
-        'wellbeingEntries', 'asthmaEvents', 'healthKitLinks',
-        'healthKitOutbox', 'migrationState', 'appSettings',
-      ]) {
-        if (db.objectStoreNames.contains(name)) db.deleteObjectStore(name);
-      }
-
-      // Remove integration-only metadata while retaining the original workout
-      // fields and every exercise/set relationship.
-      const workouts = req.transaction.objectStore('workouts');
-      const cursor = workouts.openCursor();
-      cursor.onsuccess = () => {
-        const row = cursor.result;
-        if (!row) return;
-        const workout = row.value;
-        for (const key of Object.keys(workout)) {
-          if (/^(healthKit|appleHealthShortcut)/.test(key) || key === 'localEffort') delete workout[key];
-        }
-        row.update(workout);
-        row.continue();
-      };
     };
   });
 }
