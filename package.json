@@ -1,0 +1,12 @@
+{
+  "name": "lift",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Offline-first workout tracker PWA. Build bundles src/ into dist/.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

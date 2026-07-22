@@ -9,3 +9,7 @@ lift-backup-*.json
 
 # (tools/ used to be ignored as machine-local; the generic keep-newest-N
 # prune script + LaunchAgent now live in the repo so they survive the Mac.)
+
+# Build tooling. node_modules is restored with `npm install`; dist/ IS
+# committed (GitHub Pages serves it), so it is NOT ignored here.
+node_modules/
