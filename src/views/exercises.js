@@ -2,7 +2,7 @@ import {
   getAll, get, del, getActiveWorkout, performedSets,
 } from '../db.js';
 import {
-  esc, formatLbs, formatDateShort, emit, showSheet, trashIcon, errorState,
+  esc, formatLbs, formatVolumeLbs, formatDateShort, emit, showSheet, trashIcon, errorState,
 } from '../utils.js';
 import { openExerciseForm } from './workout.js';
 import { openWorkoutDetailSheet } from './progress.js';
@@ -247,7 +247,7 @@ async function buildExerciseDetail(exerciseId) {
       <div class="section">Stats</div>
       <div class="form-section">
         <div class="stat-row"><div class="stat-label">Total Sets</div><div class="stat-value">${completed.length.toLocaleString()}</div></div>
-        <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${Math.round(totalVolume).toLocaleString()} lbs</div></div>
+        <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${formatVolumeLbs(totalVolume)}</div></div>
         ${bestSet ? `<div class="stat-row"><div class="stat-label">Best Set</div><div class="stat-value">${formatLbs(bestSet.weight)} × ${bestSet.reps}</div></div>` : ''}
       </div>
     ` : ''}

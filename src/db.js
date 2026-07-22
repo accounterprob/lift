@@ -69,6 +69,30 @@ async function txStore(name, mode = 'readonly') {
   return db.transaction(name, mode).objectStore(name);
 }
 
+/**
+ * Run a readwrite transaction over `stores`, invoking `fn(tx)` to queue the
+ * writes and resolving with its return value once the transaction commits.
+ * Consolidates the repeated oncomplete/onerror/onabort wiring. If `fn` throws
+ * synchronously (e.g. a bad record makes store.put throw during a restore),
+ * the transaction is aborted so a partial write can never commit.
+ */
+function runTx(db, stores, fn) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(stores, 'readwrite');
+    let result;
+    try {
+      result = fn(tx);
+    } catch (err) {
+      try { tx.abort(); } catch { /* already aborting/inactive */ }
+      reject(err);
+      return;
+    }
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
 export async function getAll(store) {
   return promisify((await txStore(store)).getAll());
 }
@@ -84,13 +108,9 @@ export async function put(store, value) {
 
 export async function putMany(store, values) {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, 'readwrite');
+  return runTx(db, store, (tx) => {
     const s = tx.objectStore(store);
     for (const v of values) s.put(v);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
   });
 }
 
@@ -102,13 +122,9 @@ export async function del(store, id) {
 export async function delMany(store, ids) {
   if (ids.length === 0) return;
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(store, 'readwrite');
+  return runTx(db, store, (tx) => {
     const s = tx.objectStore(store);
     for (const id of ids) s.delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
   });
 }
 
@@ -119,39 +135,25 @@ export async function getByIndex(store, indexName, value) {
 
 export async function clearAll() {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(['exercises', 'workouts', 'sets'], 'readwrite');
+  return runTx(db, ['exercises', 'workouts', 'sets'], (tx) => {
     tx.objectStore('exercises').clear();
     tx.objectStore('workouts').clear();
     tx.objectStore('sets').clear();
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
   });
 }
 
 /** Replace the complete Lift database in one transaction. If any restored
- * record is invalid or cannot be written, IndexedDB rolls the transaction
- * back so the existing workouts are never left half-erased. */
+ * record is invalid or cannot be written, runTx aborts the transaction so the
+ * existing workouts are never left half-erased. */
 export async function replaceAllData({ exercises, workouts, sets }) {
   const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(['exercises', 'workouts', 'sets'], 'readwrite');
-    const rowsByStore = { exercises, workouts, sets };
-    try {
-      for (const [name, rows] of Object.entries(rowsByStore)) {
-        const store = tx.objectStore(name);
-        store.clear();
-        for (const row of rows) store.put(row);
-      }
-    } catch (error) {
-      tx.abort();
-      reject(error);
-      return;
+  const rowsByStore = { exercises, workouts, sets };
+  return runTx(db, ['exercises', 'workouts', 'sets'], (tx) => {
+    for (const [name, rows] of Object.entries(rowsByStore)) {
+      const store = tx.objectStore(name);
+      store.clear();
+      for (const row of rows) store.put(row);
     }
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
   });
 }
 
@@ -308,14 +310,11 @@ const EQUIP_SUFFIX = /\s*\((barbell|dumbbell|machine|cable|bodyweight|kettlebell
 export async function mergeExercises(sourceId, targetId) {
   const db = await openDB();
   const sets = await getByIndex('sets', 'exerciseId', sourceId);
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(['sets', 'exercises'], 'readwrite');
+  return runTx(db, ['sets', 'exercises'], (tx) => {
     const setStore = tx.objectStore('sets');
     for (const s of sets) setStore.put({ ...s, exerciseId: targetId });
     tx.objectStore('exercises').delete(sourceId);
-    tx.oncomplete = () => resolve(sets.length);
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
+    return sets.length;
   });
 }
 
@@ -394,17 +393,13 @@ export async function purgeCardioData() {
   );
 
   const db = await openDB();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction(['exercises', 'sets', 'workouts'], 'readwrite');
+  await runTx(db, ['exercises', 'sets', 'workouts'], (tx) => {
     const exStore = tx.objectStore('exercises');
     const setStore = tx.objectStore('sets');
     const woStore = tx.objectStore('workouts');
     for (const id of cardioIds) exStore.delete(id);
     for (const s of setsToDelete) setStore.delete(s.id);
     for (const w of workoutsToDelete) woStore.delete(w.id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
   });
   return { exercises: cardioIds.size, sets: setsToDelete.length, workouts: workoutsToDelete.length };
 }
@@ -447,8 +442,7 @@ export async function reorganizeOtherExercises(classify) {
   );
 
   const db = await openDB();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction(['exercises', 'sets', 'workouts'], 'readwrite');
+  await runTx(db, ['exercises', 'sets', 'workouts'], (tx) => {
     const exStore = tx.objectStore('exercises');
     const setStore = tx.objectStore('sets');
     const woStore = tx.objectStore('workouts');
@@ -456,9 +450,6 @@ export async function reorganizeOtherExercises(classify) {
     for (const id of deleteIds) exStore.delete(id);
     for (const s of setsToDelete) setStore.delete(s.id);
     for (const w of workoutsToDelete) woStore.delete(w.id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
   });
   return { recategorized: toUpdate.length, deleted: deleteIds.size, workouts: workoutsToDelete.length };
 }
@@ -466,13 +457,9 @@ export async function reorganizeOtherExercises(classify) {
 export async function deleteWorkoutAndSets(workoutId) {
   const db = await openDB();
   const sets = await getByIndex('sets', 'workoutId', workoutId);
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(['workouts', 'sets'], 'readwrite');
+  return runTx(db, ['workouts', 'sets'], (tx) => {
     tx.objectStore('workouts').delete(workoutId);
     const setStore = tx.objectStore('sets');
     for (const s of sets) setStore.delete(s.id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
   });
 }

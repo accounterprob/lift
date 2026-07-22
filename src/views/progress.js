@@ -129,7 +129,7 @@ function renderOverview(ctx) {
   ctx.container.innerHTML = `
     <div class="section">Totals</div>
     <div class="form-section">
-      <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${Math.round(totalVolume).toLocaleString()} lbs</div></div>
+      <div class="stat-row"><div class="stat-label">Total Volume</div><div class="stat-value">${formatVolumeLbs(totalVolume)}</div></div>
       <div class="stat-row"><div class="stat-label">Total Sets</div><div class="stat-value">${totalSets.toLocaleString()}</div></div>
     </div>
 
