@@ -1,11 +1,9 @@
-import {
-  openDB, purgeCardioData, reorganizeOtherExercises, stripEquipmentFromNames,
-  mergeButterflyIntoChestFly,
-} from './db.js';
-import { seedIfNeeded, categoryFor } from './seed.js';
+import { openDB } from './db.js';
+import { seedIfNeeded } from './seed.js';
 import { on, showToast, esc } from './utils.js';
 import { setCurrentTab } from './state.js';
 import { refreshDayTheme } from './days.js';
+import { runDataMigrationsOnce } from './migrations.js';
 import { renderWorkoutTab } from './views/workout.js';
 import { renderExercisesTab } from './views/exercises.js';
 import { renderProgressTab } from './views/progress.js';
@@ -158,22 +156,9 @@ async function init() {
     await openDB();
     const seededCount = await seedIfNeeded();
     if (seededCount > 0) console.info(`Seeded ${seededCount} exercises.`);
-    const purged = await purgeCardioData();
-    if (purged.exercises > 0) {
-      console.info(`Removed ${purged.exercises} cardio exercise(s), ${purged.sets} set(s), ${purged.workouts} cardio-only workout(s).`);
-    }
-    const reorg = await reorganizeOtherExercises(categoryFor);
-    if (reorg.recategorized > 0 || reorg.deleted > 0) {
-      console.info(`Reorganized "Other": recategorized ${reorg.recategorized}, removed ${reorg.deleted} cardio, dropped ${reorg.workouts} empty workout(s).`);
-      const parts = [];
-      if (reorg.recategorized > 0) parts.push(`sorted ${reorg.recategorized} exercise${reorg.recategorized === 1 ? '' : 's'}`);
-      if (reorg.deleted > 0) parts.push(`removed ${reorg.deleted} cardio`);
-      showToast(`Cleaned up “Other”: ${parts.join(', ')}.`);
-    }
-    const stripped = await stripEquipmentFromNames();
-    if (stripped > 0) console.info(`Stripped equipment from ${stripped} exercise name(s).`);
-    const merged = await mergeButterflyIntoChestFly();
-    if (merged > 0) showToast(`Merged Butterfly into Chest Fly (${merged} sets moved).`);
+    // One-time data cleanups — skipped on later launches once they've run on
+    // this device (a restore re-runs them). See migrations.js.
+    await runDataMigrationsOnce();
     // Theme the app to today's rotation day before first paint.
     await refreshDayTheme();
     renderTab('workout');

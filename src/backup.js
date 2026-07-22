@@ -1,5 +1,6 @@
 import { getAll, replaceAllData } from './db.js';
 import { showSheet, showToast, emit } from './utils.js';
+import { runDataMigrations } from './migrations.js';
 
 export async function buildSnapshot() {
   const [exercises, workouts, sets] = await Promise.all([
@@ -57,6 +58,11 @@ export async function restoreFromFile(file) {
     workouts: snapshot.workouts,
     sets: snapshot.sets,
   });
+
+  // A restored backup can predate the one-time cleanups (old cardio/"Other"
+  // categories, equipment-in-name), so run them now rather than relying on the
+  // once-per-device launch gate.
+  await runDataMigrations();
 
   return {
     exercises: snapshot.exercises.length,
