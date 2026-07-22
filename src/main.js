@@ -159,9 +159,12 @@ async function init() {
     // One-time data cleanups — skipped on later launches once they've run on
     // this device (a restore re-runs them). See migrations.js.
     await runDataMigrationsOnce();
-    // Theme the app to today's rotation day before first paint.
-    await refreshDayTheme();
+    // Render immediately: the correct day accent was already applied before
+    // first paint by the inline bootstrap in index.html (from localStorage).
+    // refreshDayTheme then reconciles today's day in the background and caches
+    // it for next launch — no green→color flash, no theme read blocking paint.
     renderTab('workout');
+    refreshDayTheme();
   } catch (err) {
     console.error('Init failed:', err);
     viewContent.innerHTML = `

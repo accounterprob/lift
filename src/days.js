@@ -220,17 +220,28 @@ export function currentDayName(finishedWorkouts, activeWorkout) {
     : nextInRotation(last.normalized);
 }
 
+// The last computed day key, cached so the NEXT launch can paint the right
+// accent synchronously before any IndexedDB read (see the inline bootstrap in
+// index.html). Keeping this in sync here is what removes the green→day-color
+// flash on startup.
+export const THEME_DAY_KEY = 'lift-today-day';
+
 /**
  * Recomputes today's day and re-themes the app to its color by stamping
  * <html data-day="...">; styles.css maps each day key to its accent set.
- * Called on launch, whenever workout data changes, and when the app returns
- * to the foreground (so the theme rolls over past midnight).
+ * Also caches the key so the next launch themes instantly. Called on launch,
+ * whenever workout data changes, and when the app returns to the foreground
+ * (so the theme rolls over past midnight).
  */
 export async function refreshDayTheme() {
   try {
     const [finished, active] = await Promise.all([getFinishedWorkouts(), getActiveWorkout()]);
     const day = currentDayName(finished, active);
-    document.documentElement.dataset.day = DAYS[day].key;
+    const key = DAYS[day].key;
+    if (document.documentElement.dataset.day !== key) {
+      document.documentElement.dataset.day = key;
+    }
+    try { localStorage.setItem(THEME_DAY_KEY, key); } catch { /* private mode */ }
     return day;
   } catch {
     return null;  // storage not ready — keep whatever theme is showing

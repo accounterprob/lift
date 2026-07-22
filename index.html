@@ -11,10 +11,21 @@
 
   <title>Lift</title>
 
+  <script>
+    // Paint the last training-day accent BEFORE first render, so the app never
+    // flashes the default green for a frame while days.js recomputes today's
+    // day from IndexedDB. Key matches THEME_DAY_KEY in src/days.js.
+    try {
+      var d = localStorage.getItem('lift-today-day');
+      if (d) document.documentElement.dataset.day = d;
+    } catch (e) {}
+  </script>
+
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
   <link rel="apple-touch-icon" href="./icons/icon.svg" />
 
+  <link rel="modulepreload" href="./dist/app.js" />
   <link rel="stylesheet" href="./dist/app.css" />
 </head>
 <body>
