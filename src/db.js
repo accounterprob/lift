@@ -1,8 +1,14 @@
 const DB_NAME = 'lift';
 // Schema version. Must only ever INCREASE — opening with a number lower than a
-// device has already used makes IndexedDB refuse to open the database, so this
-// stays put even though the store layout is just the original three.
-const DB_VERSION = 3;
+// device has already used makes IndexedDB refuse to open the database.
+// v4 adds the read-only Apple Health import stores (see health.js).
+const DB_VERSION = 4;
+
+// Every object store, so clear/replace operations can't forget one.
+export const ALL_STORES = [
+  'exercises', 'workouts', 'sets',
+  'stateOfMind', 'medications', 'doseEvents',
+];
 
 let _db = null;
 
@@ -30,6 +36,20 @@ export function openDB() {
         const s = db.createObjectStore('sets', { keyPath: 'id' });
         s.createIndex('workoutId', 'workoutId', { unique: false });
         s.createIndex('exerciseId', 'exerciseId', { unique: false });
+      }
+      // Apple Health import stores (read-only mirror of Health data, brought in
+      // via the import bridge — the app never writes back to Health).
+      if (!db.objectStoreNames.contains('stateOfMind')) {
+        const s = db.createObjectStore('stateOfMind', { keyPath: 'id' });
+        s.createIndex('date', 'date', { unique: false });
+      }
+      if (!db.objectStoreNames.contains('medications')) {
+        db.createObjectStore('medications', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('doseEvents')) {
+        const s = db.createObjectStore('doseEvents', { keyPath: 'id' });
+        s.createIndex('medicationId', 'medicationId', { unique: false });
+        s.createIndex('date', 'date', { unique: false });
       }
     };
   });
@@ -113,24 +133,23 @@ export async function getByIndex(store, indexName, value) {
 
 export async function clearAll() {
   const db = await openDB();
-  return runTx(db, ['exercises', 'workouts', 'sets'], (tx) => {
-    tx.objectStore('exercises').clear();
-    tx.objectStore('workouts').clear();
-    tx.objectStore('sets').clear();
+  return runTx(db, ALL_STORES, (tx) => {
+    for (const name of ALL_STORES) tx.objectStore(name).clear();
   });
 }
 
-/** Replace the complete Lift database in one transaction. If any restored
- * record is invalid or cannot be written, runTx aborts the transaction so the
- * existing workouts are never left half-erased. */
-export async function replaceAllData({ exercises, workouts, sets }) {
+/** Replace the complete Lift database in one transaction. Every store is
+ * cleared and repopulated from `rowsByStore` (a store missing from the object
+ * is emptied), so restoring an older backup with no health data clears any
+ * health stores too. If any record is invalid, runTx aborts the transaction so
+ * the existing data is never left half-erased. */
+export async function replaceAllData(rowsByStore) {
   const db = await openDB();
-  const rowsByStore = { exercises, workouts, sets };
-  return runTx(db, ['exercises', 'workouts', 'sets'], (tx) => {
-    for (const [name, rows] of Object.entries(rowsByStore)) {
+  return runTx(db, ALL_STORES, (tx) => {
+    for (const name of ALL_STORES) {
       const store = tx.objectStore(name);
       store.clear();
-      for (const row of rows) store.put(row);
+      for (const row of rowsByStore[name] ?? []) store.put(row);
     }
   });
 }
