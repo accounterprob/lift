@@ -31,9 +31,24 @@
 //   }]
 // }
 
-import { getAll, putMany } from './db.js';
+import { getAll, putMany, put, del } from './db.js';
+import { uuid } from './utils.js';
 
 const toMs = (d) => (typeof d === 'number' ? d : Date.parse(d));
+
+// Vocabularies for manual entry, mirroring Apple's State of Mind pickers.
+export const EMOTION_LABELS = [
+  'Amazed', 'Excited', 'Happy', 'Joyful', 'Content', 'Calm', 'Grateful', 'Hopeful',
+  'Confident', 'Proud', 'Surprised', 'Indifferent', 'Anxious', 'Stressed', 'Overwhelmed',
+  'Frustrated', 'Angry', 'Irritated', 'Sad', 'Lonely', 'Discouraged', 'Drained', 'Worried', 'Embarrassed',
+];
+export const ASSOCIATION_LABELS = [
+  'Health', 'Fitness', 'Self-Care', 'Hobbies', 'Identity', 'Community',
+  'Family', 'Friends', 'Partner', 'Work', 'Education', 'Money', 'Weather', 'Tasks',
+];
+export const DOSE_STATUS_OPTIONS = [
+  ['taken', 'Taken'], ['skipped', 'Skipped'], ['snoozed', 'Snoozed'], ['notInteracted', 'Not interacted'],
+];
 
 /** Parse + import a health JSON file. Upserts by id (re-importing updates edited
  * rows). Returns per-store counts. Throws on a file that isn't our format. */
@@ -96,6 +111,52 @@ function clampValence(v) {
   const n = Number(v);
   if (!isFinite(n)) return 0;
   return Math.max(-1, Math.min(1, n));
+}
+
+// ---------- Manual entry (write) ----------
+
+export async function saveStateOfMind({ kind, valence, labels, associations, date }) {
+  const entry = {
+    id: uuid(),
+    kind: kind === 'dailyMood' ? 'dailyMood' : 'momentaryEmotion',
+    date: date || Date.now(),
+    valence: clampValence(valence),
+    labels: labels || [],
+    associations: associations || [],
+  };
+  await put('stateOfMind', entry);
+  return entry;
+}
+
+export async function saveMedication({ nickname, form, hasSchedule }) {
+  const name = (nickname || '').trim() || 'Medication';
+  const med = {
+    id: uuid(),
+    nickname: name,
+    isArchived: false,
+    hasSchedule: !!hasSchedule,
+    concept: { identifier: '', displayText: name, form: (form || '').trim(), rxnorm: [] },
+  };
+  await put('medications', med);
+  return med;
+}
+
+export async function saveDose({ medicationId, status, date, doseQuantity }) {
+  const dose = {
+    id: uuid(),
+    medicationId: String(medicationId),
+    status: DOSE_STATUSES.has(status) ? status : 'taken',
+    date: date || Date.now(),
+    scheduledQuantity: 0,
+    doseQuantity: Number(doseQuantity) || 0,
+  };
+  await put('doseEvents', dose);
+  return dose;
+}
+
+/** Delete a manually-entered (or imported) health record by id. */
+export async function deleteHealthRecord(store, id) {
+  await del(store, id);
 }
 
 // ---------- Loading + analysis for the UI ----------

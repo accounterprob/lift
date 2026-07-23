@@ -10,7 +10,7 @@ A self-contained, offline-first workout tracker that runs as a Progressive Web A
 - Progress tab with totals, a volume trend chart with one line per training day (Chest / Legs / Back/Bi), top exercises, and PRs.
 - The app accent color follows today's rotation day (Chest pink, Legs gold, Back/Bi blue), and each muscle group's volume-bar color is a shade of its day's color.
 - **Encrypted** JSON Export/Import via the Files picker — point at iCloud Drive for cross-device sync.
-- Apple Health import (read-only): State of Mind + Medications, with mood-vs-training correlation and dose adherence (Progress → Mental Health).
+- Mental Health (Progress → Mental Health): log State of Mind + Medications/doses in-app, or import an Apple Health file; mood-vs-training correlation and dose adherence.
 - iOS-style design with dark mode auto-detect.
 - Works fully offline once installed (service worker caches everything).
 
@@ -18,12 +18,14 @@ A self-contained, offline-first workout tracker that runs as a Progressive Web A
 
 ## Apple Health (mood & medications)
 
-Lift is a PWA, so it can't read HealthKit directly. Instead it **imports** a
-JSON file that an export tool or Shortcut produces from Apple Health, then does
-the correlations Apple's Health app doesn't (mood vs. training, dose adherence).
-Lift never writes back to Health — you keep logging there. The expected
-`health-import` file format is documented at the top of [`src/health.js`](src/health.js).
-Import via **Progress → Mental Health → Import Health data**.
+Log mood + medications/doses **directly in Lift** (Progress → Mental Health →
+Log State of Mind / Add Medication / Log a Dose), then get the correlations
+Apple's Health app doesn't (mood vs. training, dose adherence).
+
+Lift is a PWA, so it can't read HealthKit directly. As an alternative to manual
+entry it can also **import** a JSON file an export tool or Shortcut produces
+from Apple Health (format documented at the top of [`src/health.js`](src/health.js));
+Lift never writes back to Health.
 
 > **Privacy:** because this is sensitive data, all backups are AES-256-GCM
 > **encrypted** with a device passphrase (Progress → share icon → Backup
