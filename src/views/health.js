@@ -159,12 +159,15 @@ function avgValence(rows) {
 }
 
 /** Plain word for a valence in -1..1 — rendered in the surrounding text color
- * so it reads like every other stat value, not a colored badge. */
+ * so it reads like every other stat value, not a colored badge. Seven buckets
+ * matching Apple's State of Mind labels. */
 function valenceWord(v) {
-  return v >= 0.5 ? 'Very pleasant'
-    : v >= 0.15 ? 'Pleasant'
-    : v > -0.15 ? 'Neutral'
-    : v > -0.5 ? 'Unpleasant'
+  return v >= 0.7 ? 'Very pleasant'
+    : v >= 0.4 ? 'Pleasant'
+    : v >= 0.1 ? 'Slightly pleasant'
+    : v > -0.1 ? 'Neutral'
+    : v > -0.4 ? 'Slightly unpleasant'
+    : v > -0.7 ? 'Unpleasant'
     : 'Very unpleasant';
 }
 const valenceBadge = (v) => esc(valenceWord(v));
