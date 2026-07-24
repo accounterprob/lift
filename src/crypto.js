@@ -11,7 +11,18 @@ const PBKDF2_ITERATIONS = 250000;
 // Unambiguous alphabet (no 0/O/1/I/l) for a human-copyable recovery key.
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+// Base64-encode in 32 KB chunks. A naive String.fromCharCode(...bytes) spreads
+// the whole array into arguments and overflows the call-stack / argument limit
+// on Safari once a backup is more than ~64 KB — which real histories easily are.
+function b64(buf) {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
+}
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 /** A strong random recovery key, grouped for readability: XXXXX-XXXXX-XXXXX-XXXXX. */
