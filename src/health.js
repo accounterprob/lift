@@ -30,9 +30,9 @@ function clampValence(v) {
 
 // ---------- Manual entry (write) ----------
 
-export async function saveStateOfMind({ kind, valence, labels, associations, date }) {
+export async function saveStateOfMind({ id, kind, valence, labels, associations, date }) {
   const entry = {
-    id: uuid(),
+    id: id || uuid(),
     kind: kind === 'dailyMood' ? 'dailyMood' : 'momentaryEmotion',
     date: date || Date.now(),
     valence: clampValence(valence),
@@ -56,9 +56,9 @@ export async function saveMedication({ nickname, form, hasSchedule }) {
   return med;
 }
 
-export async function saveDose({ medicationId, status, date, doseQuantity }) {
+export async function saveDose({ id, medicationId, status, date, doseQuantity }) {
   const dose = {
-    id: uuid(),
+    id: id || uuid(),
     medicationId: String(medicationId),
     status: DOSE_STATUSES.has(status) ? status : 'taken',
     date: date || Date.now(),

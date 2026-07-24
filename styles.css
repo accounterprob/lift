@@ -845,13 +845,24 @@ button {
   font-size: 14px;
 }
 
-/* Inline delete for a logged mood/dose row — same muted ✕ as the exercise
-   header's remove control. */
-.hz-del {
+/* Tinted status pill — valence words, the "taken today" indicator. Same
+   translucent-wash pattern as the chart legend: a 16% wash of the pill color
+   behind the color itself, which stays legible on both light and dark cards.
+   Callers pass the color via the --pc custom property. */
+.hz-pill {
+  display: inline-block;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--pc, var(--text-secondary)) 16%, transparent);
+  color: var(--pc, var(--text-secondary));
+}
+.hz-pill.muted {
   color: var(--text-tertiary);
-  font-size: 18px;
-  padding: 4px 8px;
-  flex-shrink: 0;
+  background: var(--fill-2);
 }
 
 /* Mood pleasantness slider — same look as the chart's range slider (neutral
