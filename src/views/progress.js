@@ -11,7 +11,6 @@ import { mountTimeSeriesChart } from '../charts.js';
 import { openExerciseDetailSheet } from './exercises.js';
 import { displayName, exerciseRowMain, setCountLabel } from '../seed.js';
 import { ROTATION, DAYS, classifyWorkoutDays, dayColor } from '../days.js';
-import { renderHealthPage } from './health.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
 // from IndexedDB on every navigation.
@@ -161,13 +160,6 @@ function renderOverview(ctx) {
         </div>
         <div class="chevron">›</div>
       </button>
-      <button class="list-row" data-page="health">
-        <div class="row-main">
-          <div class="row-title">Mental Health</div>
-          <div class="row-subtitle">Mood &amp; medications from Apple Health</div>
-        </div>
-        <div class="chevron">›</div>
-      </button>
     </div>
   `;
 
@@ -182,7 +174,6 @@ function renderOverview(ctx) {
       if (page === 'trained') renderMostTrained(ctx);
       else if (page === 'prs') renderPRs(ctx);
       else if (page === 'history') renderHistoryList(ctx);
-      else if (page === 'health') renderHealthPage(ctx, () => renderOverview(ctx)).catch((err) => { ctx.container.innerHTML = errorState(err); });
     });
   }
 }

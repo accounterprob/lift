@@ -24,6 +24,7 @@ import {
 } from '../days.js';
 import { downloadBackup } from '../backup.js';
 import { renderExerciseDetailPage } from './exercises.js';
+import { renderStateOfMindPage, renderMedicationsPage } from './health.js';
 
 export function renderWorkoutTab(ctx) {
   let mounted = true;
@@ -78,9 +79,13 @@ async function renderStart(ctx) {
     </div>
     <div class="action-section">
       <button id="start-btn" class="btn-primary">Start Empty Workout</button>
+      <button id="nav-mind" class="btn-secondary">🧠&nbsp; State of Mind</button>
+      <button id="nav-meds" class="btn-secondary">💊&nbsp; Medications</button>
     </div>
   `;
   ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName, hintLabel));
+  ctx.container.querySelector('#nav-mind').addEventListener('click', () => renderStateOfMindPage(ctx, () => ctx.refresh()));
+  ctx.container.querySelector('#nav-meds').addEventListener('click', () => renderMedicationsPage(ctx, () => ctx.refresh()));
 }
 
 // Day rotation + normalization live in days.js (shared with the Progress

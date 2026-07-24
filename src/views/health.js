@@ -1,161 +1,51 @@
 import { getFinishedWorkouts } from '../db.js';
-import { esc, formatDateShort, showToast, emit, showSheet } from '../utils.js';
+import { esc, formatDateShort, showToast, showSheet } from '../utils.js';
 import {
-  importHealthFile, loadHealth, moodVsWorkouts, adherenceByMedication,
+  loadHealth, moodVsWorkouts, adherenceByMedication,
   saveStateOfMind, saveMedication, saveDose, deleteHealthRecord,
   EMOTION_LABELS, ASSOCIATION_LABELS, DOSE_STATUS_OPTIONS,
 } from '../health.js';
 
 const STATUS_WORD = Object.fromEntries(DOSE_STATUS_OPTIONS);
+const timeStr = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 
-/**
- * Mental Health page: manually log State of Mind + Medications/doses (or import
- * an Apple Health bridge file), with a first correlation (mood on workout vs.
- * rest days) and dose adherence. Reached from the Progress tab.
- */
-export async function renderHealthPage(ctx, onBack) {
-  ctx.setTitle('Mental Health');
+// ============================ State of Mind ============================
+
+export async function renderStateOfMindPage(ctx, onBack) {
+  ctx.setTitle('State of Mind');
   ctx.setBack(onBack);
   ctx.setAction(null);
 
-  const [{ stateOfMind, medications, doseEvents }, workouts] = await Promise.all([
-    loadHealth(), getFinishedWorkouts(),
-  ]);
-  const rerender = () => renderHealthPage(ctx, onBack);
+  const [{ stateOfMind }, workouts] = await Promise.all([loadHealth(), getFinishedWorkouts()]);
+  const rerender = () => renderStateOfMindPage(ctx, onBack);
+  const corr = moodVsWorkouts(stateOfMind, workouts);
 
-  const hasData = stateOfMind.length || medications.length;
   ctx.container.innerHTML = `
-    <div class="section">Log</div>
-    <div class="form-section">
-      <button class="list-row button" id="hz-log-mood">
-        <div class="row-main"><div class="row-title" style="color: var(--accent);">＋ Log State of Mind</div></div>
-      </button>
-      <button class="list-row button" id="hz-add-med">
-        <div class="row-main"><div class="row-title" style="color: var(--accent);">＋ Add Medication</div></div>
-      </button>
-      ${medications.length ? `
-      <button class="list-row button" id="hz-log-dose">
-        <div class="row-main"><div class="row-title" style="color: var(--accent);">＋ Log a Dose</div></div>
-      </button>` : ''}
+    <div class="action-section">
+      <button class="btn-primary" id="som-log">Log State of Mind</button>
     </div>
+    ${stateOfMind.length ? `
+      <div class="section">Summary</div>
+      <div class="form-section">
+        <div class="stat-row"><div class="stat-label">Entries</div><div class="stat-value">${stateOfMind.length.toLocaleString()}</div></div>
+        <div class="stat-row"><div class="stat-label">Range</div><div class="stat-value">${formatDateShort(stateOfMind[0].date)} – ${formatDateShort(stateOfMind[stateOfMind.length - 1].date)}</div></div>
+        <div class="stat-row"><div class="stat-label">Average mood</div><div class="stat-value">${valenceBadge(avgValence(stateOfMind))}</div></div>
+      </div>
 
-    ${hasData ? renderData(stateOfMind, medications, doseEvents, workouts) : renderEmpty()}
+      <div class="section">Mood vs. training</div>
+      <div class="form-section">
+        <div class="stat-row"><div class="stat-label">On workout days</div><div class="stat-value">${corr.onWorkout != null ? valenceBadge(corr.onWorkout) + ` <span style="color:var(--text-tertiary)">(${corr.onCount})</span>` : '—'}</div></div>
+        <div class="stat-row"><div class="stat-label">On rest days</div><div class="stat-value">${corr.offWorkout != null ? valenceBadge(corr.offWorkout) + ` <span style="color:var(--text-tertiary)">(${corr.offCount})</span>` : '—'}</div></div>
+        <div class="stat-row"><div class="stat-label">Difference</div><div class="stat-value">${corr.delta != null ? (corr.delta >= 0 ? '+' : '') + corr.delta.toFixed(2) : '—'}</div></div>
+      </div>
 
-    <div class="section">Apple Health</div>
-    <div class="form-section">
-      <button class="list-row button" id="hz-import">
-        <div class="row-main"><div class="row-title" style="color: var(--text-secondary);">Import Health data…</div></div>
-      </button>
-    </div>
-    <div class="section-footer">
-      Optional: import a <b>health-import</b> JSON file exported from Apple Health
-      (Lift can't read Health directly). Re-importing updates existing entries.
-    </div>
-    <input type="file" id="hz-file" accept=".json,application/json" style="display: none;" />
+      <div class="section">Recent entries</div>
+      <div class="list">${stateOfMind.slice(-30).reverse().map(moodRow).join('')}</div>
+    ` : emptyState('🧠', 'No entries yet. Tap <b>Log State of Mind</b> to start.')}
   `;
   ctx.container.scrollTop = 0;
-
-  ctx.container.querySelector('#hz-log-mood').addEventListener('click', () => openStateOfMindForm(rerender));
-  ctx.container.querySelector('#hz-add-med').addEventListener('click', () => openMedicationForm(rerender));
-  ctx.container.querySelector('#hz-log-dose')?.addEventListener('click', () => openDoseForm(medications, rerender));
-
-  const fileInput = ctx.container.querySelector('#hz-file');
-  ctx.container.querySelector('#hz-import').addEventListener('click', () => { fileInput.value = ''; fileInput.click(); });
-  fileInput.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const c = await importHealthFile(file);
-      showToast(`Imported ${c.stateOfMind} moods, ${c.medications} meds, ${c.doseEvents} doses`);
-      emit('data:changed');
-      rerender();
-    } catch (err) { showToast(`Import failed: ${err.message}`); }
-  });
-
-  for (const btn of ctx.container.querySelectorAll('[data-del-id]')) {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Delete this entry?')) return;
-      await deleteHealthRecord(btn.dataset.delStore, btn.dataset.delId);
-      emit('data:changed');
-      rerender();
-    });
-  }
-}
-
-function renderEmpty() {
-  return `
-    <div class="empty-state" style="padding: 32px 24px; min-height: auto;">
-      <div class="empty-icon">🧠</div>
-      <p style="color: var(--text-secondary); max-width: 300px;">
-        No entries yet. Tap <b>Log State of Mind</b> or <b>Add Medication</b> above to start.
-      </p>
-    </div>`;
-}
-
-function renderData(stateOfMind, medications, doseEvents, workouts) {
-  const corr = moodVsWorkouts(stateOfMind, workouts);
-  const adherence = adherenceByMedication(medications, doseEvents);
-  const recentDoses = doseEvents.slice(-15).reverse();
-  const medName = new Map(medications.map((m) => [m.id, m.nickname || m.concept.displayText]));
-
-  const moodSummary = stateOfMind.length ? `
-    <div class="section">State of Mind</div>
-    <div class="form-section">
-      <div class="stat-row"><div class="stat-label">Entries</div><div class="stat-value">${stateOfMind.length.toLocaleString()}</div></div>
-      <div class="stat-row"><div class="stat-label">Range</div><div class="stat-value">${formatDateShort(stateOfMind[0].date)} – ${formatDateShort(stateOfMind[stateOfMind.length - 1].date)}</div></div>
-      <div class="stat-row"><div class="stat-label">Average mood</div><div class="stat-value">${valenceBadge(avgValence(stateOfMind))}</div></div>
-    </div>
-
-    <div class="section">Mood vs. training</div>
-    <div class="form-section">
-      <div class="stat-row"><div class="stat-label">On workout days</div><div class="stat-value">${corr.onWorkout != null ? valenceBadge(corr.onWorkout) + ` <span style="color:var(--text-tertiary)">(${corr.onCount})</span>` : '—'}</div></div>
-      <div class="stat-row"><div class="stat-label">On rest days</div><div class="stat-value">${corr.offWorkout != null ? valenceBadge(corr.offWorkout) + ` <span style="color:var(--text-tertiary)">(${corr.offCount})</span>` : '—'}</div></div>
-      <div class="stat-row"><div class="stat-label">Difference</div><div class="stat-value">${corr.delta != null ? (corr.delta >= 0 ? '+' : '') + corr.delta.toFixed(2) : '—'}</div></div>
-    </div>
-
-    <div class="section">Recent entries</div>
-    <div class="list">
-      ${stateOfMind.slice(-20).reverse().map(moodRow).join('')}
-    </div>
-  ` : '';
-
-  const medSummary = medications.length ? `
-    <div class="section">Medications</div>
-    <div class="list">
-      ${adherence.map((a) => `
-        <div class="list-row">
-          <div class="row-main">
-            <div class="row-title">${esc(a.medication.nickname || a.medication.concept.displayText)}${a.medication.isArchived ? ' <span style="color:var(--text-tertiary)">(archived)</span>' : ''}</div>
-            <div class="row-subtitle">${esc([a.medication.concept.form].filter(Boolean).join(' · ')) || 'No form set'}</div>
-          </div>
-          <div class="row-trailing">${a.pct != null ? Math.round(a.pct * 100) + '%' : '—'}<br><span style="font-size:12px;color:var(--text-tertiary)">${a.taken}/${a.total} taken</span></div>
-          ${delBtn('medications', a.medication.id)}
-        </div>
-      `).join('')}
-    </div>
-    <div class="section-footer">Adherence = taken ÷ (taken + skipped).</div>
-
-    ${recentDoses.length ? `
-    <div class="section">Recent doses</div>
-    <div class="list">
-      ${recentDoses.map((d) => `
-        <div class="list-row">
-          <div class="row-main">
-            <div class="row-title">${esc(medName.get(d.medicationId) || 'Medication')}</div>
-            <div class="row-subtitle">${formatDateShort(d.date)}</div>
-          </div>
-          <div class="row-trailing">${esc(STATUS_WORD[d.status] || d.status)}</div>
-          ${delBtn('doseEvents', d.id)}
-        </div>
-      `).join('')}
-    </div>` : ''}
-  ` : '';
-
-  return moodSummary + medSummary;
-}
-
-function delBtn(store, id) {
-  return `<button data-del-store="${store}" data-del-id="${esc(id)}" aria-label="Delete" style="color: var(--text-tertiary); font-size: 18px; padding: 4px 8px; flex-shrink: 0;">✕</button>`;
+  ctx.container.querySelector('#som-log').addEventListener('click', () => openStateOfMindForm(rerender));
+  wireDeletes(ctx, rerender);
 }
 
 function moodRow(m) {
@@ -164,11 +54,109 @@ function moodRow(m) {
     <div class="list-row">
       <div class="row-main">
         <div class="row-title">${esc(labels)}</div>
-        <div class="row-subtitle">${formatDateShort(m.date)}${m.associations.length ? ' · ' + esc(m.associations.join(', ')) : ''}</div>
+        <div class="row-subtitle">${formatDateShort(m.date)} · ${timeStr(m.date)}${m.associations.length ? ' · ' + esc(m.associations.join(', ')) : ''}</div>
       </div>
       <div class="row-trailing">${valenceBadge(m.valence)}</div>
       ${delBtn('stateOfMind', m.id)}
     </div>`;
+}
+
+// ============================ Medications ============================
+
+export async function renderMedicationsPage(ctx, onBack) {
+  ctx.setTitle('Medications');
+  ctx.setBack(onBack);
+  ctx.setAction(null);
+
+  const { medications, doseEvents } = await loadHealth();
+  const rerender = () => renderMedicationsPage(ctx, onBack);
+  const adherence = adherenceByMedication(medications, doseEvents);
+  const medName = new Map(medications.map((m) => [m.id, m.nickname || m.concept.displayText]));
+  const recentDoses = doseEvents.slice(-20).reverse();
+
+  ctx.container.innerHTML = `
+    <div class="action-section">
+      <button class="btn-primary" id="med-add">Add Medication</button>
+    </div>
+    ${medications.length ? `
+      <div class="section">Your medications</div>
+      ${adherence.map(medCard).join('')}
+      ${recentDoses.length ? `
+        <div class="section">Recent doses</div>
+        <div class="list">${recentDoses.map((d) => doseRow(d, medName)).join('')}</div>
+      ` : ''}
+    ` : emptyState('💊', 'No medications yet. Tap <b>Add Medication</b>, then log each dose as you take it.')}
+  `;
+  ctx.container.scrollTop = 0;
+
+  ctx.container.querySelector('#med-add').addEventListener('click', () => openMedicationForm(rerender));
+  for (const btn of ctx.container.querySelectorAll('[data-take]')) {
+    btn.addEventListener('click', async () => {
+      await saveDose({ medicationId: btn.dataset.take, status: btn.dataset.status, date: Date.now(), doseQuantity: 1 });
+      showToast(btn.dataset.status === 'taken' ? 'Logged as taken' : 'Logged as skipped');
+      rerender();
+    });
+  }
+  for (const btn of ctx.container.querySelectorAll('[data-logat]')) {
+    btn.addEventListener('click', () => openDoseForm(medications, rerender, btn.dataset.logat));
+  }
+  wireDeletes(ctx, rerender);
+}
+
+function medCard(a) {
+  const m = a.medication;
+  const sub = [m.concept.form || 'No form set', a.pct != null ? `${Math.round(a.pct * 100)}% taken (${a.taken}/${a.total})` : 'no doses yet'].join(' · ');
+  return `
+    <div class="exercise-section">
+      <div class="exercise-section-header">
+        <div class="row-main">
+          <div class="row-title" style="font-weight:600">${esc(m.nickname || m.concept.displayText)}</div>
+          <div class="row-subtitle">${esc(sub)}</div>
+        </div>
+        <button class="menu" data-del-store="medications" data-del-id="${esc(m.id)}" aria-label="Delete">✕</button>
+      </div>
+      <div class="med-actions">
+        <button class="btn-secondary" data-take="${esc(m.id)}" data-status="taken">Taken now</button>
+        <button class="btn-secondary" data-take="${esc(m.id)}" data-status="skipped">Skip</button>
+        <button class="btn-secondary" data-logat="${esc(m.id)}">Log at time…</button>
+      </div>
+    </div>`;
+}
+
+function doseRow(d, medName) {
+  return `
+    <div class="list-row">
+      <div class="row-main">
+        <div class="row-title">${esc(medName.get(d.medicationId) || 'Medication')}</div>
+        <div class="row-subtitle">${formatDateShort(d.date)} · ${timeStr(d.date)}</div>
+      </div>
+      <div class="row-trailing">${esc(STATUS_WORD[d.status] || d.status)}</div>
+      ${delBtn('doseEvents', d.id)}
+    </div>`;
+}
+
+// ============================ Shared ============================
+
+function emptyState(icon, text) {
+  return `
+    <div class="empty-state" style="padding: 40px 24px; min-height: auto;">
+      <div class="empty-icon">${icon}</div>
+      <p style="color: var(--text-secondary); max-width: 300px;">${text}</p>
+    </div>`;
+}
+
+function delBtn(store, id) {
+  return `<button class="hz-del" data-del-store="${store}" data-del-id="${esc(id)}" aria-label="Delete">✕</button>`;
+}
+
+function wireDeletes(ctx, rerender) {
+  for (const btn of ctx.container.querySelectorAll('[data-del-id]')) {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this entry?')) return;
+      await deleteHealthRecord(btn.dataset.delStore, btn.dataset.delId);
+      rerender();
+    });
+  }
 }
 
 function avgValence(rows) {
@@ -186,7 +174,7 @@ function valenceBadge(v) {
   return `<span style="color: hsl(${hue} 65% 42%); font-weight: 600;">${word}</span>`;
 }
 
-// ---------- Entry forms ----------
+// ============================ Entry forms ============================
 
 const VALENCE_STEPS = ['Very Unpleasant', 'Unpleasant', 'Slightly Unpleasant', 'Neutral', 'Slightly Pleasant', 'Pleasant', 'Very Pleasant'];
 
@@ -228,11 +216,9 @@ function openStateOfMindForm(onSaved) {
           <button type="button" class="chip" data-chip="dailyMood">Daily mood</button>
         </div>
         <div class="section">How pleasant?</div>
-        <div class="form-section">
-          <div class="form-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-            <div id="som-val-label" style="text-align: center; font-weight: 600;"></div>
-            <input type="range" class="chart-range" id="som-val" min="-3" max="3" step="1" value="1" />
-          </div>
+        <div class="form-section" style="padding: 6px 18px 18px;">
+          <div id="som-val-label" style="text-align: center; font-weight: 600; padding: 10px 0;"></div>
+          <input type="range" class="mood-slider" id="som-val" min="-3" max="3" step="1" value="1" />
         </div>
         <div class="section">Emotions (optional)</div>
         <div class="chip-row" id="som-emotions" style="flex-wrap: wrap;">${chips(EMOTION_LABELS)}</div>
@@ -269,7 +255,6 @@ function openStateOfMindForm(onSaved) {
           date: parseLocal(sheet.querySelector('#som-date').value),
         });
         dismiss();
-        emit('data:changed');
         showToast('Logged State of Mind');
         onSaved?.();
       });
@@ -305,7 +290,6 @@ function openMedicationForm(onSaved) {
         if (!name.value.trim()) return;
         await saveMedication({ nickname: name.value, form: sheet.querySelector('#med-form').value });
         dismiss();
-        emit('data:changed');
         showToast('Medication added');
         onSaved?.();
       });
@@ -314,7 +298,7 @@ function openMedicationForm(onSaved) {
   });
 }
 
-function openDoseForm(medications, onSaved) {
+function openDoseForm(medications, onSaved, presetMedId) {
   const active = medications.filter((m) => !m.isArchived);
   const list = active.length ? active : medications;
   const dismiss = showSheet({
@@ -329,7 +313,7 @@ function openDoseForm(medications, onSaved) {
         <div class="form-section">
           <div class="form-row">
             <select id="dose-med" style="text-align: left;">
-              ${list.map((m) => `<option value="${esc(m.id)}">${esc(m.nickname || m.concept.displayText)}</option>`).join('')}
+              ${list.map((m) => `<option value="${esc(m.id)}"${m.id === presetMedId ? ' selected' : ''}>${esc(m.nickname || m.concept.displayText)}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -354,7 +338,6 @@ function openDoseForm(medications, onSaved) {
           doseQuantity: 1,
         });
         dismiss();
-        emit('data:changed');
         showToast('Dose logged');
         onSaved?.();
       });

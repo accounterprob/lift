@@ -10,22 +10,26 @@ A self-contained, offline-first workout tracker that runs as a Progressive Web A
 - Progress tab with totals, a volume trend chart with one line per training day (Chest / Legs / Back/Bi), top exercises, and PRs.
 - The app accent color follows today's rotation day (Chest pink, Legs gold, Back/Bi blue), and each muscle group's volume-bar color is a shade of its day's color.
 - **Encrypted** JSON Export/Import via the Files picker — point at iCloud Drive for cross-device sync.
-- Mental Health (Progress → Mental Health): log State of Mind + Medications/doses in-app, or import an Apple Health file; mood-vs-training correlation and dose adherence.
+- State of Mind + Medications (from the Workout start screen): log moods and per-medication doses in-app, with mood-vs-training correlation and dose adherence.
 - iOS-style design with dark mode auto-detect.
 - Works fully offline once installed (service worker caches everything).
 
 ---
 
-## Apple Health (mood & medications)
+## Mood & medications
 
-Log mood + medications/doses **directly in Lift** (Progress → Mental Health →
-Log State of Mind / Add Medication / Log a Dose), then get the correlations
-Apple's Health app doesn't (mood vs. training, dose adherence).
+Logged **directly in Lift**, from two buttons on the Workout start screen:
 
-Lift is a PWA, so it can't read HealthKit directly. As an alternative to manual
-entry it can also **import** a JSON file an export tool or Shortcut produces
-from Apple Health (format documented at the top of [`src/health.js`](src/health.js));
-Lift never writes back to Health.
+- **State of Mind** — momentary/daily kind, a pleasantness slider (Apple's
+  scale, stored as a −1..1 valence), optional emotion + context labels, and a
+  time. Shows average mood and a mood-vs-training correlation (mood on workout
+  vs. rest days).
+- **Medications** — add a medication, then log each dose per-med (Taken now /
+  Skip / Log at time), with adherence % and a timestamped dose history.
+
+This data lives only in Lift (nothing syncs to or from Apple Health); the model
+mirrors HealthKit's fields (valence, emotion labels, dose status). Logic in
+[`src/health.js`](src/health.js), UI in `src/views/health.js`.
 
 > **Privacy:** because this is sensitive data, all backups are AES-256-GCM
 > **encrypted** with a device passphrase (Progress → share icon → Backup
