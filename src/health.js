@@ -3,7 +3,7 @@
 // model mirrors Apple's HealthKit fields (valence, emotion labels, dose status)
 // so it reads naturally, but Lift owns it — nothing syncs to or from Health.
 
-import { getAll, put, del, putMany } from './db.js';
+import { getAll, put, del } from './db.js';
 import { uuid } from './utils.js';
 
 // Vocabularies for entry, mirroring Apple's State of Mind pickers.
@@ -26,54 +26,6 @@ function clampValence(v) {
   const n = Number(v);
   if (!isFinite(n)) return 0;
   return Math.max(-1, Math.min(1, n));
-}
-
-const toMs = (d) => (typeof d === 'number' ? d : Date.parse(d));
-
-/**
- * Merge-import a health-import JSON file. Rows are upserted by id into the
- * existing stores, so it ADDS to the current dataset — it never clears
- * anything or touches workouts. Used to bring Apple Health history into Lift.
- * Valence is stored on Lift's −1..1 scale (Apple's Health app shows it ×100).
- * Returns per-store counts.
- */
-export async function importHealthFile(file) {
-  const payload = JSON.parse(await file.text());
-  if (!payload || payload.lift !== 'health-import') {
-    throw new Error('Not a Lift health-import file.');
-  }
-  const som = (payload.stateOfMind ?? []).filter((r) => r && r.id != null).map((r) => ({
-    id: String(r.id),
-    kind: r.kind === 'dailyMood' ? 'dailyMood' : 'momentaryEmotion',
-    date: toMs(r.date) || Date.now(),
-    valence: clampValence(r.valence),
-    labels: Array.isArray(r.labels) ? r.labels : [],
-    associations: Array.isArray(r.associations) ? r.associations : [],
-  }));
-  const meds = (payload.medications ?? []).filter((r) => r && r.id != null).map((r) => ({
-    id: String(r.id),
-    nickname: r.nickname ?? '',
-    isArchived: !!r.isArchived,
-    hasSchedule: !!r.hasSchedule,
-    concept: {
-      identifier: r.concept?.identifier ?? '',
-      displayText: r.concept?.displayText ?? r.nickname ?? 'Medication',
-      form: r.concept?.form ?? '',
-      rxnorm: Array.isArray(r.concept?.rxnorm) ? r.concept.rxnorm : [],
-    },
-  }));
-  const doses = (payload.doseEvents ?? []).filter((r) => r && r.id != null).map((r) => ({
-    id: String(r.id),
-    medicationId: r.medicationId != null ? String(r.medicationId) : '',
-    status: DOSE_STATUSES.has(r.status) ? r.status : 'notInteracted',
-    date: toMs(r.date) || Date.now(),
-    scheduledQuantity: Number(r.scheduledQuantity) || 0,
-    doseQuantity: Number(r.doseQuantity) || 0,
-  }));
-  if (som.length) await putMany('stateOfMind', som);
-  if (meds.length) await putMany('medications', meds);
-  if (doses.length) await putMany('doseEvents', doses);
-  return { stateOfMind: som.length, medications: meds.length, doseEvents: doses.length };
 }
 
 // ---------- Manual entry (write) ----------

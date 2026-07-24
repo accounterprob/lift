@@ -1,7 +1,6 @@
 import { getAll, replaceAllData } from './db.js';
 import { showSheet, showToast, emit, esc } from './utils.js';
 import { runDataMigrations } from './migrations.js';
-import { importHealthFile } from './health.js';
 import {
   getOrCreatePassphrase, getStoredPassphrase, setStoredPassphrase,
   encryptSnapshot, decryptSnapshot, isEncryptedBackup,
@@ -146,18 +145,7 @@ export function openBackupSheet() {
           <b>Replaces</b> all current data with the chosen backup. Encrypted files prompt for the password (unless this device already has it).
         </div>
 
-        <div class="section">Apple Health</div>
-        <div class="form-section">
-          <button class="list-row button" id="bk-health">
-            <div class="row-main"><div class="row-title" style="color: var(--accent);">Import health data…</div></div>
-          </button>
-        </div>
-        <div class="section-footer">
-          <b>Merges</b> a health-import file (moods &amp; medications) into your existing data — nothing is replaced or removed.
-        </div>
-
         <input type="file" id="bk-file" accept=".json,application/json" style="display: none;" />
-        <input type="file" id="bk-health-file" accept=".json,application/json" style="display: none;" />
       </div>
     `,
     onMount(sheet, dismiss) {
@@ -194,24 +182,6 @@ export function openBackupSheet() {
           emit('data:changed');
         } catch (err) {
           showToast(`Restore failed: ${err.message}`);
-        }
-      });
-
-      const healthInput = sheet.querySelector('#bk-health-file');
-      sheet.querySelector('#bk-health').addEventListener('click', () => {
-        healthInput.value = '';
-        healthInput.click();
-      });
-      healthInput.addEventListener('change', async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        try {
-          const c = await importHealthFile(file);
-          dismiss();
-          showToast(`Imported ${c.stateOfMind} moods, ${c.medications} meds${c.doseEvents ? `, ${c.doseEvents} doses` : ''}`);
-          emit('data:changed');
-        } catch (err) {
-          showToast(`Import failed: ${err.message}`);
         }
       });
     },
