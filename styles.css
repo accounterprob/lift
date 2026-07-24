@@ -845,22 +845,31 @@ button {
   font-size: 14px;
 }
 
-/* Mood pleasantness slider — a visible red→neutral→green (valence) track, so
-   the thumb clearly slides along a line. */
+/* Inline delete for a logged mood/dose row — same muted ✕ as the exercise
+   header's remove control. */
+.hz-del {
+  color: var(--text-tertiary);
+  font-size: 18px;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+/* Mood pleasantness slider — same look as the chart's range slider (neutral
+   track, accent thumb); the word above it names the value. */
 .mood-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: linear-gradient(to right, #d9534f, #9a9aa0, #3aa657);
+  height: 4px;
+  border-radius: 2px;
+  background: var(--fill-1);
   outline: none;
 }
 .mood-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--accent);
   border: 3px solid var(--card);
@@ -868,8 +877,8 @@ button {
   cursor: pointer;
 }
 .mood-slider::-moz-range-thumb {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--accent);
   border: 3px solid var(--card);

@@ -79,13 +79,25 @@ async function renderStart(ctx) {
     </div>
     <div class="action-section">
       <button id="start-btn" class="btn-primary">Start Empty Workout</button>
-      <button id="nav-mind" class="btn-secondary">🧠&nbsp; State of Mind</button>
-      <button id="nav-meds" class="btn-secondary">💊&nbsp; Medications</button>
+    </div>
+    <div class="list">
+      <button class="list-row" data-nav="mind">
+        <div class="row-main"><div class="row-title">State of Mind</div></div>
+        <div class="chevron">›</div>
+      </button>
+      <button class="list-row" data-nav="meds">
+        <div class="row-main"><div class="row-title">Medications</div></div>
+        <div class="chevron">›</div>
+      </button>
     </div>
   `;
   ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName, hintLabel));
-  ctx.container.querySelector('#nav-mind').addEventListener('click', () => renderStateOfMindPage(ctx, () => ctx.refresh()));
-  ctx.container.querySelector('#nav-meds').addEventListener('click', () => renderMedicationsPage(ctx, () => ctx.refresh()));
+  for (const row of ctx.container.querySelectorAll('[data-nav]')) {
+    row.addEventListener('click', () => {
+      if (row.dataset.nav === 'mind') renderStateOfMindPage(ctx, () => ctx.refresh());
+      else renderMedicationsPage(ctx, () => ctx.refresh());
+    });
+  }
 }
 
 // Day rotation + normalization live in days.js (shared with the Progress

@@ -8,22 +8,21 @@ import {
 
 const STATUS_WORD = Object.fromEntries(DOSE_STATUS_OPTIONS);
 const timeStr = (ms) => new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+// Same "+" nav-bar action the Exercises tab uses for adding.
+const PLUS = '<span style="font-size: 24px;">+</span>';
 
 // ============================ State of Mind ============================
 
 export async function renderStateOfMindPage(ctx, onBack) {
+  const rerender = () => renderStateOfMindPage(ctx, onBack);
   ctx.setTitle('State of Mind');
   ctx.setBack(onBack);
-  ctx.setAction(null);
+  ctx.setAction({ html: PLUS, onClick: () => openStateOfMindForm(rerender) });
 
   const [{ stateOfMind }, workouts] = await Promise.all([loadHealth(), getFinishedWorkouts()]);
-  const rerender = () => renderStateOfMindPage(ctx, onBack);
   const corr = moodVsWorkouts(stateOfMind, workouts);
 
   ctx.container.innerHTML = `
-    <div class="action-section">
-      <button class="btn-primary" id="som-log">Log State of Mind</button>
-    </div>
     ${stateOfMind.length ? `
       <div class="section">Summary</div>
       <div class="form-section">
@@ -34,17 +33,16 @@ export async function renderStateOfMindPage(ctx, onBack) {
 
       <div class="section">Mood vs. training</div>
       <div class="form-section">
-        <div class="stat-row"><div class="stat-label">On workout days</div><div class="stat-value">${corr.onWorkout != null ? valenceBadge(corr.onWorkout) + ` <span style="color:var(--text-tertiary)">(${corr.onCount})</span>` : '—'}</div></div>
-        <div class="stat-row"><div class="stat-label">On rest days</div><div class="stat-value">${corr.offWorkout != null ? valenceBadge(corr.offWorkout) + ` <span style="color:var(--text-tertiary)">(${corr.offCount})</span>` : '—'}</div></div>
+        <div class="stat-row"><div class="stat-label">On workout days</div><div class="stat-value">${corr.onWorkout != null ? valenceBadge(corr.onWorkout) + ` (${corr.onCount})` : '—'}</div></div>
+        <div class="stat-row"><div class="stat-label">On rest days</div><div class="stat-value">${corr.offWorkout != null ? valenceBadge(corr.offWorkout) + ` (${corr.offCount})` : '—'}</div></div>
         <div class="stat-row"><div class="stat-label">Difference</div><div class="stat-value">${corr.delta != null ? (corr.delta >= 0 ? '+' : '') + corr.delta.toFixed(2) : '—'}</div></div>
       </div>
 
       <div class="section">Recent entries</div>
       <div class="list">${stateOfMind.slice(-30).reverse().map(moodRow).join('')}</div>
-    ` : emptyState('🧠', 'No entries yet. Tap <b>Log State of Mind</b> to start.')}
+    ` : emptyState('🧠', 'No mood entries', 'Tap ＋ to log how you\'re feeling.')}
   `;
   ctx.container.scrollTop = 0;
-  ctx.container.querySelector('#som-log').addEventListener('click', () => openStateOfMindForm(rerender));
   wireDeletes(ctx, rerender);
 }
 
@@ -64,20 +62,17 @@ function moodRow(m) {
 // ============================ Medications ============================
 
 export async function renderMedicationsPage(ctx, onBack) {
+  const rerender = () => renderMedicationsPage(ctx, onBack);
   ctx.setTitle('Medications');
   ctx.setBack(onBack);
-  ctx.setAction(null);
+  ctx.setAction({ html: PLUS, onClick: () => openMedicationForm(rerender) });
 
   const { medications, doseEvents } = await loadHealth();
-  const rerender = () => renderMedicationsPage(ctx, onBack);
   const adherence = adherenceByMedication(medications, doseEvents);
   const medName = new Map(medications.map((m) => [m.id, m.nickname || m.concept.displayText]));
   const recentDoses = doseEvents.slice(-20).reverse();
 
   ctx.container.innerHTML = `
-    <div class="action-section">
-      <button class="btn-primary" id="med-add">Add Medication</button>
-    </div>
     ${medications.length ? `
       <div class="section">Your medications</div>
       ${adherence.map(medCard).join('')}
@@ -85,11 +80,10 @@ export async function renderMedicationsPage(ctx, onBack) {
         <div class="section">Recent doses</div>
         <div class="list">${recentDoses.map((d) => doseRow(d, medName)).join('')}</div>
       ` : ''}
-    ` : emptyState('💊', 'No medications yet. Tap <b>Add Medication</b>, then log each dose as you take it.')}
+    ` : emptyState('💊', 'No medications', 'Tap ＋ to add one, then log each dose as you take it.')}
   `;
   ctx.container.scrollTop = 0;
 
-  ctx.container.querySelector('#med-add').addEventListener('click', () => openMedicationForm(rerender));
   for (const btn of ctx.container.querySelectorAll('[data-take]')) {
     btn.addEventListener('click', async () => {
       await saveDose({ medicationId: btn.dataset.take, status: btn.dataset.status, date: Date.now(), doseQuantity: 1 });
@@ -137,11 +131,12 @@ function doseRow(d, medName) {
 
 // ============================ Shared ============================
 
-function emptyState(icon, text) {
+function emptyState(icon, title, text) {
   return `
-    <div class="empty-state" style="padding: 40px 24px; min-height: auto;">
+    <div class="empty-state" style="padding: 48px 24px; min-height: auto;">
       <div class="empty-icon">${icon}</div>
-      <p style="color: var(--text-secondary); max-width: 300px;">${text}</p>
+      <h2>${esc(title)}</h2>
+      <p>${esc(text)}</p>
     </div>`;
 }
 
@@ -163,16 +158,16 @@ function avgValence(rows) {
   return rows.reduce((a, r) => a + r.valence, 0) / rows.length;
 }
 
-/** A colored word for a valence in -1..1 (green pleasant → red unpleasant). */
-function valenceBadge(v) {
-  const word = v >= 0.5 ? 'Very pleasant'
+/** Plain word for a valence in -1..1 — rendered in the surrounding text color
+ * so it reads like every other stat value, not a colored badge. */
+function valenceWord(v) {
+  return v >= 0.5 ? 'Very pleasant'
     : v >= 0.15 ? 'Pleasant'
     : v > -0.15 ? 'Neutral'
     : v > -0.5 ? 'Unpleasant'
     : 'Very unpleasant';
-  const hue = Math.round((v + 1) / 2 * 140);  // 0 red at -1 → 140 green at +1
-  return `<span style="color: hsl(${hue} 65% 42%); font-weight: 600;">${word}</span>`;
 }
+const valenceBadge = (v) => esc(valenceWord(v));
 
 // ============================ Entry forms ============================
 
@@ -234,12 +229,7 @@ function openStateOfMindForm(onSaved) {
     onMount(sheet) {
       const slider = sheet.querySelector('#som-val');
       const label = sheet.querySelector('#som-val-label');
-      const paint = () => {
-        const i = Number(slider.value) + 3;
-        const v = Number(slider.value) / 3;
-        const hue = Math.round((v + 1) / 2 * 140);
-        label.innerHTML = `<span style="color: hsl(${hue} 65% 42%)">${VALENCE_STEPS[i]}</span>`;
-      };
+      const paint = () => { label.textContent = VALENCE_STEPS[Number(slider.value) + 3]; };
       paint();
       slider.addEventListener('input', paint);
       wireChips(sheet, '#som-kind', { single: true });
