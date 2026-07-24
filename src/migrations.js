@@ -1,13 +1,13 @@
 import {
   purgeCardioData, reorganizeOtherExercises, stripEquipmentFromNames,
-  mergeButterflyIntoChestFly,
+  mergeButterflyIntoChestFly, backfillCreatineDose,
 } from './db.js';
 import { categoryFor } from './seed.js';
 import { showToast } from './utils.js';
 
 // Marks that the one-time data cleanups have finished on THIS device. Bump the
 // suffix when a new cleanup is added so it runs once more everywhere.
-const MIGRATIONS_KEY = 'lift-migrations-done-v1';
+const MIGRATIONS_KEY = 'lift-migrations-done-v2';
 
 /**
  * The one-time data cleanups: purge the retired Cardio category, re-home the
@@ -34,6 +34,8 @@ export async function runDataMigrations() {
   if (stripped > 0) console.info(`Stripped equipment from ${stripped} exercise name(s).`);
   const merged = await mergeButterflyIntoChestFly();
   if (merged > 0) showToast(`Merged Butterfly into Chest Fly (${merged} sets moved).`);
+  const dosed = await backfillCreatineDose();
+  if (dosed > 0) console.info(`Set a per-dose amount on ${dosed} medication(s).`);
 }
 
 /**

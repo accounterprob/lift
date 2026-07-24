@@ -451,6 +451,27 @@ export async function reorganizeOtherExercises(classify) {
   return { recategorized: toUpdate.length, deleted: deleteIds.size, workouts: workoutsToDelete.length };
 }
 
+/**
+ * One-time backfill: the Creatine entry imported from Apple Health is a daily
+ * serving of four 1.25 g capsules, but was stored with no per-dose amount, so
+ * each log counted as a single generic "dose". Give it an explicit amount (4)
+ * and unit (capsule) and drop the now-redundant "(4×/day)" note from the form.
+ * Idempotent: only touches a Creatine med that has no doseAmount set yet.
+ */
+export async function backfillCreatineDose() {
+  const meds = await getAll('medications');
+  const toUpdate = [];
+  for (const m of meds) {
+    if (m.doseAmount != null) continue;
+    const name = m.nickname || m.concept?.displayText || '';
+    if (!/creatine/i.test(name)) continue;
+    const form = (m.concept?.form || '').replace(/\s*\(4\s*[×x]\s*\/?\s*day\)\s*/i, '').trim();
+    toUpdate.push({ ...m, doseAmount: 4, doseUnit: 'capsule', concept: { ...m.concept, form } });
+  }
+  if (toUpdate.length > 0) await putMany('medications', toUpdate);
+  return toUpdate.length;
+}
+
 export async function deleteWorkoutAndSets(workoutId) {
   const db = await openDB();
   const sets = await getByIndex('sets', 'workoutId', workoutId);

@@ -3,7 +3,7 @@
 // model mirrors Apple's HealthKit fields (valence, emotion labels, dose status)
 // so it reads naturally, but Lift owns it — nothing syncs to or from Health.
 
-import { getAll, put, del } from './db.js';
+import { getAll, get, put, del } from './db.js';
 import { uuid } from './utils.js';
 
 // Vocabularies for entry, mirroring Apple's State of Mind pickers.
@@ -43,14 +43,25 @@ export async function saveStateOfMind({ id, kind, valence, labels, associations,
   return entry;
 }
 
-export async function saveMedication({ nickname, form, hasSchedule }) {
+export async function saveMedication({ id, nickname, form, hasSchedule, doseAmount, doseUnit }) {
   const name = (nickname || '').trim() || 'Medication';
+  // On edit, preserve fields the form doesn't touch (identifier, rxnorm, the
+  // formal displayText) by merging over the stored record.
+  const prev = id ? await get('medications', id) : null;
+  const amt = Number(doseAmount);
   const med = {
-    id: uuid(),
+    id: id || uuid(),
     nickname: name,
-    isArchived: false,
+    isArchived: prev ? !!prev.isArchived : false,
     hasSchedule: !!hasSchedule,
-    concept: { identifier: '', displayText: name, form: (form || '').trim(), rxnorm: [] },
+    doseAmount: amt > 0 ? amt : 1,
+    doseUnit: (doseUnit || '').trim(),
+    concept: {
+      identifier: prev?.concept?.identifier || '',
+      displayText: prev?.concept?.displayText || name,
+      form: (form || '').trim(),
+      rxnorm: prev?.concept?.rxnorm || [],
+    },
   };
   await put('medications', med);
   return med;

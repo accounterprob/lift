@@ -645,6 +645,11 @@ button {
   padding: 14px 16px;
   border-bottom: 0.5px solid var(--separator);
 }
+/* Medication card header doubles as the "edit this medication" button. */
+button.exercise-section-header {
+  width: 100%;
+  text-align: left;
+}
 
 .exercise-section-header .exercise-name-btn {
   flex: 1;

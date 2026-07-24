@@ -81,7 +81,7 @@ export async function renderMedicationsPage(ctx, onBack) {
 
   const { medications, doseEvents } = await loadHealth();
   const adherence = adherenceByMedication(medications, doseEvents);
-  const medName = new Map(medications.map((m) => [m.id, m.nickname || m.concept.displayText]));
+  const medById = new Map(medications.map((m) => [m.id, m]));
   const recentDoses = doseEvents.slice(-20).reverse();
 
   // Count "taken" doses logged today (local day) per medication, so daily meds
@@ -100,7 +100,7 @@ export async function renderMedicationsPage(ctx, onBack) {
       ${adherence.map((a) => medCard(a, takenToday.get(a.medication.id) || 0)).join('')}
       ${recentDoses.length ? `
         <div class="section">Recent doses</div>
-        <div class="list">${recentDoses.map((d) => doseRow(d, medName)).join('')}</div>
+        <div class="list">${recentDoses.map((d) => doseRow(d, medById)).join('')}</div>
       ` : ''}
     ` : emptyState('💊', 'No medications', 'Tap ＋ to add one, then log each dose as you take it.')}
   `;
@@ -108,7 +108,7 @@ export async function renderMedicationsPage(ctx, onBack) {
 
   for (const btn of ctx.container.querySelectorAll('[data-take]')) {
     btn.addEventListener('click', async () => {
-      await saveDose({ medicationId: btn.dataset.take, status: btn.dataset.status, date: Date.now(), doseQuantity: 1 });
+      await saveDose({ medicationId: btn.dataset.take, status: btn.dataset.status, date: Date.now(), doseQuantity: doseAmountOf(medById.get(btn.dataset.take)) });
       showToast(btn.dataset.status === 'taken' ? 'Logged as taken' : 'Logged as skipped');
       rerender();
     });
@@ -120,7 +120,10 @@ export async function renderMedicationsPage(ctx, onBack) {
     const d = doseEvents.find((x) => x.id === btn.dataset.editDose);
     if (d) btn.addEventListener('click', () => openDoseForm(medications, rerender, null, d));
   }
-  wireDeletes(ctx, rerender);
+  for (const btn of ctx.container.querySelectorAll('[data-edit-med]')) {
+    const m = medById.get(btn.dataset.editMed);
+    if (m) btn.addEventListener('click', () => openMedicationForm(rerender, m));
+  }
 }
 
 function medCard(a, takenToday) {
@@ -134,14 +137,14 @@ function medCard(a, takenToday) {
     : '';
   return `
     <div class="exercise-section">
-      <div class="exercise-section-header">
+      <button class="exercise-section-header" data-edit-med="${esc(m.id)}">
         <div class="row-main">
           <div class="row-title" style="font-weight:600">${esc(m.nickname || m.concept.displayText)}</div>
           <div class="row-subtitle">${esc(sub)}</div>
           ${todayBadge ? `<div style="margin-top: 8px;">${todayBadge}</div>` : ''}
         </div>
-        <button class="menu" data-del-store="medications" data-del-id="${esc(m.id)}" aria-label="Delete">✕</button>
-      </div>
+        <div class="chevron">›</div>
+      </button>
       <div class="med-actions">
         <button class="btn-secondary" data-take="${esc(m.id)}" data-status="taken">Taken now</button>
         <button class="btn-secondary" data-take="${esc(m.id)}" data-status="skipped">Skip</button>
@@ -150,16 +153,29 @@ function medCard(a, takenToday) {
     </div>`;
 }
 
-function doseRow(d, medName) {
+// Per-dose amount for a medication, defaulting to 1 for entries that predate the
+// field (so a quick "Taken now" still logs a sensible amount).
+const doseAmountOf = (m) => (Number(m?.doseAmount) > 0 ? Number(m.doseAmount) : 1);
+
+/** "4 capsules", "1 tablet", "5 mg", or "1 dose" — plain measurement units
+ * (mg/ml/g…) don't pluralize; countable units (capsule, tablet) do. */
+function doseLabel(qty, unit) {
+  const u = (unit || '').trim() || 'dose';
+  const plural = qty === 1 || /^(mg|mcg|ml|cc|g|kg|l|oz|iu|puff|puffs)$/i.test(u) || u.endsWith('s') ? u : `${u}s`;
+  return `${formatQty(qty)} ${plural}`;
+}
+
+function doseRow(d, medById) {
+  const med = medById.get(d.medicationId);
   const qty = Number(d.doseQuantity) || 0;
   const sub = [
     formatDateShort(d.date), timeStr(d.date),
-    ...(qty > 0 ? [`${formatQty(qty)} ${qty === 1 ? 'dose' : 'doses'}`] : []),
+    ...(qty > 0 ? [doseLabel(qty, med?.doseUnit)] : []),
   ].join(' · ');
   return `
     <button class="list-row" data-edit-dose="${esc(d.id)}">
       <div class="row-main">
-        <div class="row-title">${esc(medName.get(d.medicationId) || 'Medication')}</div>
+        <div class="row-title">${esc(med ? (med.nickname || med.concept.displayText) : 'Medication')}</div>
         <div class="row-subtitle">${esc(sub)}</div>
       </div>
       <div class="row-trailing">${esc(STATUS_WORD[d.status] || d.status)}</div>
@@ -176,16 +192,6 @@ function emptyState(icon, title, text) {
       <h2>${esc(title)}</h2>
       <p>${esc(text)}</p>
     </div>`;
-}
-
-function wireDeletes(ctx, rerender) {
-  for (const btn of ctx.container.querySelectorAll('[data-del-id]')) {
-    btn.addEventListener('click', async () => {
-      if (!confirm('Delete this entry?')) return;
-      await deleteHealthRecord(btn.dataset.delStore, btn.dataset.delId);
-      rerender();
-    });
-  }
 }
 
 function avgValence(rows) {
@@ -316,29 +322,42 @@ function openStateOfMindForm(onSaved, entry = null) {
   });
 }
 
-function openMedicationForm(onSaved) {
+function openMedicationForm(onSaved, med = null) {
+  const editing = !!med;
+  const daily = editing ? !!med.hasSchedule : true;
   const dismiss = showSheet({
     html: `
       <div class="sheet-header">
         <button class="btn-text" id="med-cancel">Cancel</button>
-        <div class="title">Add Medication</div>
-        <button class="btn-text primary" id="med-save" disabled>Save</button>
+        <div class="title">${editing ? 'Edit Medication' : 'Add Medication'}</div>
+        <button class="btn-text primary" id="med-save"${editing ? '' : ' disabled'}>Save</button>
       </div>
       <div class="sheet-content">
         <div class="section">Name</div>
         <div class="form-section">
-          <div class="form-row"><input id="med-name" placeholder="e.g. Sertraline" style="text-align: left;" /></div>
+          <div class="form-row"><input id="med-name" placeholder="e.g. Sertraline" value="${editing ? esc(med.nickname || med.concept.displayText) : ''}" style="text-align: left;" /></div>
         </div>
         <div class="section">Form (optional)</div>
         <div class="form-section">
-          <div class="form-row"><input id="med-form" placeholder="e.g. tablet, 50 mg" style="text-align: left;" /></div>
+          <div class="form-row"><input id="med-form" placeholder="e.g. tablet, 50 mg" value="${editing ? esc(med.concept?.form || '') : ''}" style="text-align: left;" /></div>
         </div>
+        <div class="section">Amount per dose</div>
+        <div class="form-section">
+          <div class="form-row"><input type="number" id="med-amount" inputmode="decimal" min="0" step="0.25" value="${editing ? esc(String(doseAmountOf(med))) : '1'}" style="text-align: left;" /></div>
+          <div class="form-row"><input id="med-unit" placeholder="unit — e.g. capsule, tablet, mg" value="${editing ? esc(med.doseUnit || '') : ''}" style="text-align: left;" /></div>
+        </div>
+        <div class="section-footer">How many you take at once. Creatine, for example, is 4 capsules — one “Taken now” then logs all four.</div>
         <div class="section">Type</div>
         <div class="chip-row" id="med-type">
-          <button type="button" class="chip active" data-chip="daily">Daily</button>
-          <button type="button" class="chip" data-chip="asneeded">As needed</button>
+          <button type="button" class="chip${daily ? ' active' : ''}" data-chip="daily">Daily</button>
+          <button type="button" class="chip${daily ? '' : ' active'}" data-chip="asneeded">As needed</button>
         </div>
         <div class="section-footer">Daily medications show whether you've taken them today.</div>
+        ${editing ? `
+        <div class="form-section">
+          <button class="list-row button destructive" id="med-delete"><div class="row-main"><div class="row-title" style="color: var(--red);">Delete Medication</div></div></button>
+        </div>` : ''}
+        <div style="height: 16px;"></div>
       </div>
     `,
     onMount(sheet) {
@@ -350,15 +369,25 @@ function openMedicationForm(onSaved) {
       save.addEventListener('click', async () => {
         if (!name.value.trim()) return;
         await saveMedication({
+          id: med?.id,
           nickname: name.value,
           form: sheet.querySelector('#med-form').value,
           hasSchedule: (selectedChips(sheet, '#med-type')[0] || 'daily') === 'daily',
+          doseAmount: sheet.querySelector('#med-amount').value,
+          doseUnit: sheet.querySelector('#med-unit').value,
         });
         dismiss();
-        showToast('Medication added');
+        showToast(editing ? 'Medication updated' : 'Medication added');
         onSaved?.();
       });
-      setTimeout(() => name.focus(), 50);
+      sheet.querySelector('#med-delete')?.addEventListener('click', async () => {
+        if (!confirm('Delete this medication? Its logged doses stay in your history.')) return;
+        await deleteHealthRecord('medications', med.id);
+        dismiss();
+        showToast('Medication deleted');
+        onSaved?.();
+      });
+      if (!editing) setTimeout(() => name.focus(), 50);
     },
   });
 }
@@ -369,7 +398,9 @@ function openDoseForm(medications, onSaved, presetMedId, dose = null) {
   const list = active.length ? active : medications;
   const selMedId = editing ? dose.medicationId : presetMedId;
   const initialStatus = editing ? dose.status : 'taken';
-  const initialQty = editing ? (Number(dose.doseQuantity) || 1) : 1;
+  // A new dose defaults its amount to the selected med's per-dose amount (e.g.
+  // creatine = 4); an edited dose keeps whatever was logged.
+  const initialQty = editing ? (Number(dose.doseQuantity) || 1) : doseAmountOf(list.find((m) => m.id === selMedId) || list[0]);
   const dismiss = showSheet({
     html: `
       <div class="sheet-header">
@@ -408,6 +439,13 @@ function openDoseForm(medications, onSaved, presetMedId, dose = null) {
     `,
     onMount(sheet) {
       wireChips(sheet, '#dose-status', { single: true });
+      // When adding a dose, switching medication resets the amount to that med's
+      // per-dose default; when editing, the logged amount is left alone.
+      if (!editing) {
+        const sel = sheet.querySelector('#dose-med');
+        const qty = sheet.querySelector('#dose-qty');
+        sel.addEventListener('change', () => { qty.value = String(doseAmountOf(medications.find((m) => m.id === sel.value))); });
+      }
       sheet.querySelector('#dose-cancel').addEventListener('click', () => dismiss());
       sheet.querySelector('#dose-save').addEventListener('click', async () => {
         await saveDose({
