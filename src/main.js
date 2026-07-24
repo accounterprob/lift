@@ -136,6 +136,38 @@ navAction.addEventListener('click', () => {
   if (activeActionHandler) activeActionHandler();
 });
 
+// Tap feedback, app-wide. :active is unreliable in iOS standalone PWAs, so
+// mirror the calculator keys' approach for every control: toggle a .pressed
+// class on pointer down/up so buttons visibly react for the duration of a tap
+// (the .pressed CSS rules decide how each control looks). The calculator keys
+// keep their own bespoke handling and opt out here.
+(function initPressFeedback() {
+  const SELECTOR = 'button, [role="button"], a[href]';
+  let pressed = null;
+  let startX = 0;
+  let startY = 0;
+  const release = () => {
+    if (pressed) { pressed.classList.remove('pressed'); pressed = null; }
+  };
+  document.addEventListener('pointerdown', (e) => {
+    const el = e.target.closest?.(SELECTOR);
+    if (pressed && pressed !== el) release();
+    if (!el || el.disabled || el.classList.contains('calc-key')) return;
+    pressed = el;
+    startX = e.clientX;
+    startY = e.clientY;
+    el.classList.add('pressed');
+  }, { passive: true });
+  // A few px of movement means a scroll/drag, not a tap — drop the highlight so
+  // a flicked list never leaves a row stuck looking pressed.
+  document.addEventListener('pointermove', (e) => {
+    if (pressed && (Math.abs(e.clientX - startX) > 8 || Math.abs(e.clientY - startY) > 8)) release();
+  }, { passive: true });
+  document.addEventListener('pointerup', release, { passive: true });
+  document.addEventListener('pointercancel', release, { passive: true });
+  window.addEventListener('scroll', release, { passive: true, capture: true });
+})();
+
 on('data:changed', () => {
   refreshDayTheme();
   renderTab(currentTab);

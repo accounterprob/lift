@@ -219,8 +219,6 @@ function valencePill(v) {
 
 // ============================ Entry forms ============================
 
-const VALENCE_STEPS = ['Very Unpleasant', 'Unpleasant', 'Slightly Unpleasant', 'Neutral', 'Slightly Pleasant', 'Pleasant', 'Very Pleasant'];
-
 function toLocalValue(ms) {
   const d = new Date(ms);
   const pad = (n) => String(n).padStart(2, '0');
@@ -291,7 +289,9 @@ function openStateOfMindForm(onSaved, entry = null) {
     onMount(sheet) {
       const slider = sheet.querySelector('#som-val');
       const label = sheet.querySelector('#som-val-label');
-      const paint = () => { label.textContent = VALENCE_STEPS[Number(slider.value) + 3]; };
+      // Derive the label from the same buckets as the recent-entry pills so the
+      // wording always matches (e.g. "Very pleasant", not "Very Pleasant").
+      const paint = () => { label.textContent = valenceInfo(Number(slider.value) / 3)[0]; };
       paint();
       slider.addEventListener('input', () => { currentValence = Number(slider.value) / 3; paint(); });
       wireChips(sheet, '#som-kind', { single: true });

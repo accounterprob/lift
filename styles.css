@@ -322,6 +322,27 @@ button {
   display: inline-flex;
 }
 
+/* ---------- Tap feedback ----------
+   :active is unreliable in iOS standalone PWAs, so a global handler (main.js)
+   toggles .pressed on pointer down/up. Each control type gets whichever press
+   look reads best; the shared default is a quick iOS-style dim. */
+button, [role="button"] {
+  transition: opacity 0.1s ease, background-color 0.1s ease, filter 0.1s ease, transform 0.1s ease;
+}
+.pressed { opacity: 0.5; }
+
+/* Tappable rows / card headers highlight like an iOS table selection. */
+.list-row.pressed,
+button.stat-row.pressed,
+button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); }
+
+/* Secondary + icon buttons tint on press rather than fade. */
+.btn-secondary.pressed { opacity: 1; background: var(--fill-1); }
+.menu.pressed { opacity: 1; background: var(--fill-1); border-radius: 8px; }
+
+/* Chips give a quick squeeze (they also flip to .active on release). */
+.chip.pressed { transform: scale(0.94); }
+
 /* ---------- Buttons ---------- */
 .btn-primary {
   display: block;
@@ -335,7 +356,8 @@ button {
   text-align: center;
 }
 
-.btn-primary:active {
+.btn-primary:active,
+.btn-primary.pressed {
   opacity: 0.85;
 }
 
@@ -475,7 +497,8 @@ button {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   z-index: 50;
 }
-.calc-fab:active { transform: scale(0.94); }
+.calc-fab:active,
+.calc-fab.pressed { transform: scale(0.94); }
 
 /* Calculator sheet */
 .calc-screen {
