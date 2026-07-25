@@ -82,7 +82,9 @@ export async function renderMedicationsPage(ctx, onBack) {
   const { medications, doseEvents } = await loadHealth();
   const adherence = adherenceByMedication(medications, doseEvents);
   const medById = new Map(medications.map((m) => [m.id, m]));
-  const recentDoses = doseEvents.slice(-20).reverse();
+  // A short preview here; the full log lives behind "Dose History", the same
+  // shape as Progress → Workout History.
+  const recentDoses = doseEvents.slice(-10).reverse();
 
   // Count "taken" doses logged today (local day) per medication, so daily meds
   // can show whether they've been taken yet.
@@ -101,10 +103,23 @@ export async function renderMedicationsPage(ctx, onBack) {
       ${recentDoses.length ? `
         <div class="section">Recent doses</div>
         <div class="list">${recentDoses.map((d) => doseRow(d, medById)).join('')}</div>
+        <div class="list">
+          <button class="list-row" data-dose-history>
+            <div class="row-main">
+              <div class="row-title">Dose History</div>
+              <div class="row-subtitle">${doseEvents.length.toLocaleString()} dose${doseEvents.length === 1 ? '' : 's'}</div>
+            </div>
+            <div class="chevron">›</div>
+          </button>
+        </div>
       ` : ''}
     ` : emptyState('💊', 'No medications', 'Tap ＋ to add one, then log each dose as you take it.')}
   `;
   ctx.container.scrollTop = 0;
+
+  ctx.container.querySelector('[data-dose-history]')?.addEventListener('click', () => {
+    renderDoseHistoryPage(ctx, rerender);
+  });
 
   for (const btn of ctx.container.querySelectorAll('[data-take]')) {
     btn.addEventListener('click', async () => {
@@ -124,6 +139,68 @@ export async function renderMedicationsPage(ctx, onBack) {
     const m = medById.get(btn.dataset.editMed);
     if (m) btn.addEventListener('click', () => openMedicationForm(rerender, m));
   }
+}
+
+/** Every dose ever logged, newest first, grouped under a heading per day so a
+ * long log stays scannable. Rows open the same edit sheet as the preview list. */
+async function renderDoseHistoryPage(ctx, onBack) {
+  const rerender = () => renderDoseHistoryPage(ctx, onBack);
+  ctx.setTitle('Dose History');
+  ctx.setBack(onBack);
+  ctx.setAction(null);
+
+  const { medications, doseEvents } = await loadHealth();
+  const medById = new Map(medications.map((m) => [m.id, m]));
+  const newestFirst = [...doseEvents].reverse();
+
+  // Group into days, preserving newest-first order.
+  const days = [];
+  let current = null;
+  for (const d of newestFirst) {
+    const key = dayKey(d.date);
+    if (!current || current.key !== key) {
+      current = { key, date: d.date, doses: [] };
+      days.push(current);
+    }
+    current.doses.push(d);
+  }
+
+  const taken = doseEvents.filter((d) => d.status === 'taken').length;
+  ctx.container.innerHTML = newestFirst.length ? `
+    <div class="section">Summary</div>
+    <div class="form-section">
+      <div class="stat-row"><div class="stat-label">Doses logged</div><div class="stat-value">${doseEvents.length.toLocaleString()}</div></div>
+      <div class="stat-row"><div class="stat-label">Taken</div><div class="stat-value">${taken.toLocaleString()}</div></div>
+      <div class="stat-row"><div class="stat-label">Range</div><div class="stat-value">${formatDateShort(doseEvents[0].date)} – ${formatDateShort(doseEvents[doseEvents.length - 1].date)}</div></div>
+    </div>
+    ${days.map((day) => `
+      <div class="section">${esc(dayHeading(day.date))}</div>
+      <div class="list">${day.doses.map((d) => doseRow(d, medById, { showDate: false })).join('')}</div>
+    `).join('')}
+  ` : emptyState('💊', 'No doses yet', 'Log a dose from the Medications page and it will show up here.');
+  ctx.container.scrollTop = 0;
+
+  for (const btn of ctx.container.querySelectorAll('[data-edit-dose]')) {
+    const d = doseEvents.find((x) => x.id === btn.dataset.editDose);
+    if (d) btn.addEventListener('click', () => openDoseForm(medications, rerender, null, d));
+  }
+}
+
+const dayKey = (ms) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+};
+
+/** "Today" / "Yesterday" / "Mon, Jul 21" for a day heading. */
+function dayHeading(ms) {
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86400000);
+  if (dayKey(ms) === dayKey(today.getTime())) return 'Today';
+  if (dayKey(ms) === dayKey(yesterday.getTime())) return 'Yesterday';
+  return new Date(ms).toLocaleDateString(undefined, {
+    weekday: 'short', month: 'short', day: 'numeric',
+    year: new Date(ms).getFullYear() === today.getFullYear() ? undefined : 'numeric',
+  });
 }
 
 function medCard(a, takenToday) {
@@ -165,11 +242,12 @@ function doseLabel(qty, unit) {
   return `${formatQty(qty)} ${plural}`;
 }
 
-function doseRow(d, medById) {
+function doseRow(d, medById, { showDate = true } = {}) {
   const med = medById.get(d.medicationId);
   const qty = Number(d.doseQuantity) || 0;
   const sub = [
-    formatDateShort(d.date), timeStr(d.date),
+    ...(showDate ? [formatDateShort(d.date)] : []),
+    timeStr(d.date),
     ...(qty > 0 ? [doseLabel(qty, med?.doseUnit)] : []),
   ].join(' · ');
   return `
