@@ -63,20 +63,63 @@ export function matchMedication(displayText, medications) {
   return best;
 }
 
+/** Does this row look like a logged dose? Used to locate the dose array in an
+ * export whose wrapping differs from the shape we know. */
+const looksLikeDose = (r) =>
+  !!r && typeof r === 'object' && !Array.isArray(r)
+  && (r.displayText || r.name)
+  && (r.start || r.scheduledDate || r.date || r.end);
+
+/** Find the dose array anywhere in the file. Health Auto Export has shipped
+ * more than one wrapping (and exports differ per app version), so check the
+ * known paths first, then fall back to scanning for an array whose entries
+ * look like doses rather than failing on an unfamiliar envelope. */
+function findDoseRows(parsed, depth = 0) {
+  if (depth === 0) {
+    for (const known of [parsed?.data?.medications, parsed?.medications, parsed?.data?.medication]) {
+      if (Array.isArray(known) && known.some(looksLikeDose)) return known;
+    }
+  }
+  if (depth > 4 || !parsed || typeof parsed !== 'object') return null;
+  if (Array.isArray(parsed)) return parsed.some(looksLikeDose) ? parsed : null;
+  for (const value of Object.values(parsed)) {
+    const hit = findDoseRows(value, depth + 1);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** Describe what the file actually holds, so a failed import can say why
+ * instead of just "no data". */
+function describeShape(parsed) {
+  if (!parsed || typeof parsed !== 'object') return 'not a JSON object';
+  if (Array.isArray(parsed)) return `a list of ${parsed.length} item(s)`;
+  const inner = parsed.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data) ? parsed.data : null;
+  const describe = (obj) => Object.entries(obj)
+    .map(([k, v]) => (Array.isArray(v) ? `${k}[${v.length}]` : k))
+    .join(', ');
+  const top = describe(parsed);
+  return inner ? `data → ${describe(inner) || 'empty'}` : (top || 'empty');
+}
+
 /** Pull the dose rows out of a parsed Health Auto Export file. Throws if the
  * file isn't one. Pure — no database access, so it's directly testable. */
 export function parseHealthAutoExport(parsed) {
-  const rows = parsed?.data?.medications;
-  if (!Array.isArray(rows)) {
-    throw new Error('No medication data in this file. Export "Medications" from Health Auto Export as JSON.');
+  const rows = findDoseRows(parsed);
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error(
+      `No medication doses found — this file has ${describeShape(parsed)}. `
+      + 'In Health Auto Export, pick Medications (not Health Metrics), set the date range, and export as JSON.'
+    );
   }
   const doses = [];
   let skipped = 0;
   for (const r of rows) {
-    const date = parseHaeDate(r.start || r.scheduledDate || r.end);
-    if (!isFinite(date) || !r.displayText) { skipped += 1; continue; }
+    const date = parseHaeDate(r.start || r.scheduledDate || r.date || r.end);
+    const name = r.displayText || r.name;
+    if (!isFinite(date) || !name) { skipped += 1; continue; }
     doses.push({
-      displayText: String(r.displayText),
+      displayText: String(name),
       date,
       status: mapStatus(r.status),
       // A dose that was never acted on has no `dosage` — only what was scheduled.
@@ -86,6 +129,9 @@ export function parseHealthAutoExport(parsed) {
       units: String(r.units || ''),
       rxnorm: (r.codings || []).map((c) => c?.code).filter(Boolean),
     });
+  }
+  if (doses.length === 0) {
+    throw new Error(`Found ${rows.length} record(s) but none had a readable name and date. The export format may have changed.`);
   }
   doses.sort((a, b) => a.date - b.date);
   return { doses, skipped };
