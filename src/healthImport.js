@@ -28,12 +28,12 @@ const STATUS_MAP = {
 };
 const mapStatus = (s) => STATUS_MAP[String(s || '').toLowerCase().replace(/[^a-z]/g, '')] || 'taken';
 
-/** Names compare loosely: Health exports "Montelukast Sodium 10mg Oral tablet"
- * where Lift stores "Montelukast". */
+/** Names compare loosely: Health exports a full formal name like "Amoxicillin
+ * Trihydrate 500mg Oral capsule" where Lift stores just "Amoxicillin". */
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 /** Split a Health display name into a short nickname + the dose/form remainder,
- * e.g. "Montelukast Sodium 10mg Oral tablet" → ["Montelukast Sodium", "10mg Oral tablet"]. */
+ * e.g. "Ibuprofen Sodium 200mg Oral tablet" → ["Ibuprofen Sodium", "200mg Oral tablet"]. */
 export function splitDisplayName(displayText) {
   const full = String(displayText || '').trim();
   const m = full.match(/\s\d+(\.\d+)?\s*(mg|mcg|g|ml|iu|%)\b/i);
@@ -42,8 +42,8 @@ export function splitDisplayName(displayText) {
 }
 
 /** Find the medication an imported name refers to, comparing against both the
- * nickname and the formal display text and preferring the longest match (so
- * "Montelukast" can't win a row that a more specific name also matches). */
+ * nickname and the formal display text and preferring the longest match (so a
+ * short name can't win a row that a more specific name also matches). */
 export function matchMedication(displayText, medications) {
   const target = norm(displayText);
   if (!target) return null;

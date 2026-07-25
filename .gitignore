@@ -6,6 +6,11 @@
 lift-hevy-import.json
 lift-backup-*.json
 *.csv
+# Health exports (Apple Health / Health Auto Export) and any scratch copy of
+# them. Import these from Files on the device; never check one in.
+HealthAutoExport*.json
+_import_test.json
+*-health-import.json
 
 # (tools/ used to be ignored as machine-local; the generic keep-newest-N
 # prune script + LaunchAgent now live in the repo so they survive the Mac.)
