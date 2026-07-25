@@ -6,6 +6,8 @@
 // another device). All crypto is the browser's built-in SubtleCrypto — no
 // libraries, works offline, requires a secure context (https / localhost).
 
+import { getMeta, setMeta } from './db.js';
+
 const PASSPHRASE_KEY = 'lift-backup-passphrase';
 const PBKDF2_ITERATIONS = 250000;
 // Unambiguous alphabet (no 0/O/1/I/l) for a human-copyable recovery key.
@@ -32,29 +34,75 @@ export function generatePassphrase() {
   return [0, 5, 10, 15].map((i) => chars.slice(i, i + 5).join('')).join('-');
 }
 
+// Resolved passphrase for this session. Populated by ensurePassphrase() at
+// launch so the synchronous accessors below can't be caught without a value.
+let cached = null;
+
+const readLocal = () => {
+  try { return localStorage.getItem(PASSPHRASE_KEY); } catch { return null; }
+};
+const writeLocal = (p) => {
+  try { localStorage.setItem(PASSPHRASE_KEY, p); } catch { /* private mode */ }
+};
+
 /**
- * The device's backup passphrase, generated and cached on first use so daily
- * backups encrypt silently. Its durable home is the user's Passwords app; this
- * cached copy is only for convenience and is never written into a backup.
+ * Settle this device's backup passphrase, once, at launch.
+ *
+ * The passphrase is generated only when the device genuinely has none — it is
+ * never rotated on its own, because a silent change would leave every existing
+ * backup decryptable only by a password the user no longer sees.
+ *
+ * It is kept in TWO places: localStorage (fast, synchronous) and the appMeta
+ * store in IndexedDB (durable). localStorage alone was not enough — Safari can
+ * evict or clear it independently of IndexedDB, and a device that still had all
+ * its data would then quietly start encrypting new backups under a new key.
+ * Whichever copy survives repopulates the other.
+ */
+export async function ensurePassphrase() {
+  if (cached) return cached;
+  const local = readLocal();
+  let stored = null;
+  try { stored = await getMeta(PASSPHRASE_KEY); } catch { /* DB unavailable */ }
+
+  // localStorage wins when both exist: it is what this device has been
+  // encrypting with. Otherwise adopt whichever copy survived, and only mint a
+  // new passphrase when neither does.
+  cached = local || stored || generatePassphrase();
+
+  if (cached !== local) writeLocal(cached);
+  if (cached !== stored) {
+    try { await setMeta(PASSPHRASE_KEY, cached); } catch { /* stays in localStorage */ }
+  }
+  return cached;
+}
+
+/**
+ * The device's backup passphrase. Synchronous for callers that render it
+ * directly; ensurePassphrase() has normally already resolved it at launch.
  */
 export function getOrCreatePassphrase() {
-  let p = null;
-  try { p = localStorage.getItem(PASSPHRASE_KEY); } catch { /* private mode */ }
+  if (cached) return cached;
+  let p = readLocal();
   if (!p) {
     p = generatePassphrase();
-    try { localStorage.setItem(PASSPHRASE_KEY, p); } catch { /* not persisted; still usable this session */ }
+    writeLocal(p);
   }
+  cached = p;
+  // Mirror into the durable store without blocking the caller.
+  setMeta(PASSPHRASE_KEY, p).catch(() => { /* localStorage copy still stands */ });
   return p;
 }
 
-/** Read the cached passphrase without creating one (null if none yet). */
+/** Read the stored passphrase without creating one (null if none yet). */
 export function getStoredPassphrase() {
-  try { return localStorage.getItem(PASSPHRASE_KEY); } catch { return null; }
+  return cached || readLocal();
 }
 
 /** Adopt a passphrase as this device's key (e.g. after restoring on a new device). */
 export function setStoredPassphrase(passphrase) {
-  try { localStorage.setItem(PASSPHRASE_KEY, passphrase); } catch { /* ignore */ }
+  cached = passphrase;
+  writeLocal(passphrase);
+  setMeta(PASSPHRASE_KEY, passphrase).catch(() => { /* localStorage copy still stands */ });
 }
 
 async function deriveKey(passphrase, salt) {

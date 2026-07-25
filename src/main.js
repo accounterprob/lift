@@ -4,6 +4,7 @@ import { on, showToast, esc } from './utils.js';
 import { setCurrentTab } from './state.js';
 import { refreshDayTheme } from './days.js';
 import { runDataMigrationsOnce } from './migrations.js';
+import { ensurePassphrase } from './crypto.js';
 import { renderWorkoutTab } from './views/workout.js';
 import { renderExercisesTab } from './views/exercises.js';
 import { renderProgressTab } from './views/progress.js';
@@ -186,6 +187,9 @@ document.addEventListener('visibilitychange', () => {
 async function init() {
   try {
     await openDB();
+    // Settle the backup passphrase before anything can write a backup, and
+    // repair it if one of its two homes was cleared. See crypto.js.
+    await ensurePassphrase().catch((err) => console.warn('Passphrase check failed:', err));
     const seededCount = await seedIfNeeded();
     if (seededCount > 0) console.info(`Seeded ${seededCount} exercises.`);
     // One-time data cleanups — skipped on later launches once they've run on

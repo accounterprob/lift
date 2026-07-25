@@ -2,9 +2,13 @@ const DB_NAME = 'lift';
 // Schema version. Must only ever INCREASE — opening with a number lower than a
 // device has already used makes IndexedDB refuse to open the database.
 // v4 adds the read-only Apple Health import stores (see health.js).
-const DB_VERSION = 4;
+// v5 adds appMeta, device settings that are deliberately NOT user data.
+const DB_VERSION = 5;
 
-// Every object store, so clear/replace operations can't forget one.
+// Every object store holding user data, so clear/replace operations can't
+// forget one. Deliberately excludes appMeta: the backup passphrase lives there
+// and must survive a restore rather than be replaced by the backup's own copy
+// (and must never be written into a backup beside the data it encrypts).
 export const ALL_STORES = [
   'exercises', 'workouts', 'sets',
   'stateOfMind', 'medications', 'doseEvents',
@@ -50,6 +54,11 @@ export function openDB() {
         const s = db.createObjectStore('doseEvents', { keyPath: 'id' });
         s.createIndex('medicationId', 'medicationId', { unique: false });
         s.createIndex('date', 'date', { unique: false });
+      }
+      // Device-local settings (currently just the backup passphrase). Kept out
+      // of ALL_STORES so backup/restore never touches it.
+      if (!db.objectStoreNames.contains('appMeta')) {
+        db.createObjectStore('appMeta', { keyPath: 'key' });
       }
     };
   });
@@ -124,6 +133,17 @@ export async function delMany(store, ids) {
     const s = tx.objectStore(store);
     for (const id of ids) s.delete(id);
   });
+}
+
+/** Device-local setting (appMeta store). Returns null when unset. */
+export async function getMeta(key) {
+  const row = await get('appMeta', key);
+  return row ? row.value : null;
+}
+
+export async function setMeta(key, value) {
+  await put('appMeta', { key, value });
+  return value;
 }
 
 export async function getByIndex(store, indexName, value) {
