@@ -1,6 +1,7 @@
 import { getAll, replaceAllData } from './db.js';
 import { showSheet, showToast, emit, esc } from './utils.js';
 import { runDataMigrations } from './migrations.js';
+import { importHealthAutoExport } from './healthImport.js';
 import {
   getOrCreatePassphrase, getStoredPassphrase, setStoredPassphrase,
   encryptSnapshot, decryptSnapshot, isEncryptedBackup,
@@ -145,7 +146,18 @@ export function openBackupSheet() {
           <b>Replaces</b> all current data with the chosen backup. Encrypted files prompt for the password (unless this device already has it).
         </div>
 
+        <div class="section">Import medication history</div>
+        <div class="form-section">
+          <button class="list-row button" id="bk-health">
+            <div class="row-main"><div class="row-title" style="color: var(--accent);">Import Health Auto Export…</div></div>
+          </button>
+        </div>
+        <div class="section-footer">
+          <b>Adds</b> dose history from a Health Auto Export JSON file — nothing is replaced. Doses attach to your existing medications, and importing the same file twice won't duplicate anything.
+        </div>
+
         <input type="file" id="bk-file" accept=".json,application/json" style="display: none;" />
+        <input type="file" id="bk-health-file" accept=".json,application/json" style="display: none;" />
       </div>
     `,
     onMount(sheet, dismiss) {
@@ -182,6 +194,28 @@ export function openBackupSheet() {
           emit('data:changed');
         } catch (err) {
           showToast(`Restore failed: ${err.message}`);
+        }
+      });
+
+      const healthInput = sheet.querySelector('#bk-health-file');
+      sheet.querySelector('#bk-health').addEventListener('click', () => {
+        healthInput.value = '';
+        healthInput.click();
+      });
+
+      healthInput.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const r = await importHealthAutoExport(file);
+          dismiss();
+          const parts = [`Imported ${r.doses} dose${r.doses === 1 ? '' : 's'}`];
+          if (r.medications) parts.push(`added ${r.medications} medication${r.medications === 1 ? '' : 's'}`);
+          if (r.duplicates) parts.push(`skipped ${r.duplicates} already logged`);
+          showToast(parts.join(', '));
+          emit('data:changed');
+        } catch (err) {
+          showToast(`Import failed: ${err.message}`);
         }
       });
     },
