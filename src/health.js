@@ -1,7 +1,10 @@
-// Mental-health data logged directly in Lift: State of Mind (moods) and
-// Medications + dose events, stored in Lift's own IndexedDB stores. The data
-// model mirrors Apple's HealthKit fields (valence, emotion labels, dose status)
-// so it reads naturally, but Lift owns it — nothing syncs to or from Health.
+// Mental-health data logged directly in Lift: State of Mind (moods) and a
+// reference list of medications, stored in Lift's own IndexedDB stores. The
+// data model mirrors Apple's HealthKit fields (valence, emotion labels) so it
+// reads naturally, but Lift owns it — nothing syncs to or from Health.
+//
+// Medications are a standing list, not a log: the same doses are taken daily,
+// so there is nothing to record per-day and no dose history to keep.
 
 import { getAll, get, put, del } from './db.js';
 import { uuid } from './utils.js';
@@ -16,12 +19,6 @@ export const ASSOCIATION_LABELS = [
   'Health', 'Fitness', 'Self-Care', 'Hobbies', 'Identity', 'Community',
   'Family', 'Friends', 'Partner', 'Work', 'Education', 'Money', 'Weather', 'Tasks',
 ];
-export const DOSE_STATUS_OPTIONS = [
-  ['taken', 'Taken'], ['skipped', 'Skipped'], ['snoozed', 'Snoozed'], ['notInteracted', 'Not interacted'],
-];
-
-const DOSE_STATUSES = new Set(['taken', 'skipped', 'snoozed', 'notInteracted']);
-
 function clampValence(v) {
   const n = Number(v);
   if (!isFinite(n)) return 0;
@@ -67,20 +64,7 @@ export async function saveMedication({ id, nickname, form, hasSchedule, doseAmou
   return med;
 }
 
-export async function saveDose({ id, medicationId, status, date, doseQuantity }) {
-  const dose = {
-    id: id || uuid(),
-    medicationId: String(medicationId),
-    status: DOSE_STATUSES.has(status) ? status : 'taken',
-    date: date || Date.now(),
-    scheduledQuantity: 0,
-    doseQuantity: Number(doseQuantity) || 0,
-  };
-  await put('doseEvents', dose);
-  return dose;
-}
-
-/** Delete a manually-entered (or imported) health record by id. */
+/** Delete a manually-entered health record by id. */
 export async function deleteHealthRecord(store, id) {
   await del(store, id);
 }
@@ -88,12 +72,12 @@ export async function deleteHealthRecord(store, id) {
 // ---------- Loading + analysis for the UI ----------
 
 export async function loadHealth() {
-  const [stateOfMind, medications, doseEvents] = await Promise.all([
-    getAll('stateOfMind'), getAll('medications'), getAll('doseEvents'),
+  const [stateOfMind, medications] = await Promise.all([
+    getAll('stateOfMind'), getAll('medications'),
   ]);
   stateOfMind.sort((a, b) => a.date - b.date);
-  doseEvents.sort((a, b) => a.date - b.date);
-  return { stateOfMind, medications, doseEvents };
+  medications.sort((a, b) => (a.nickname || '').localeCompare(b.nickname || ''));
+  return { stateOfMind, medications };
 }
 
 const dayKey = (ms) => {
@@ -125,19 +109,3 @@ export function moodVsWorkouts(stateOfMind, workouts) {
   };
 }
 
-/** Dose adherence per medication: taken / (taken + skipped). Snoozed and
- * never-interacted reminders are excluded (they're not decisions). */
-export function adherenceByMedication(medications, doseEvents) {
-  const byMed = new Map();
-  for (const d of doseEvents) {
-    if (d.status !== 'taken' && d.status !== 'skipped') continue;
-    const cur = byMed.get(d.medicationId) ?? { taken: 0, total: 0 };
-    cur.total += 1;
-    if (d.status === 'taken') cur.taken += 1;
-    byMed.set(d.medicationId, cur);
-  }
-  return medications.map((m) => {
-    const s = byMed.get(m.id) ?? { taken: 0, total: 0 };
-    return { medication: m, taken: s.taken, total: s.total, pct: s.total ? s.taken / s.total : null };
-  });
-}

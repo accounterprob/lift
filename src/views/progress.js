@@ -7,6 +7,7 @@ import {
   formatLbs, emit, shareIcon, trashIcon, errorState, showSheet,
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
+import { renderMedicationsPage } from './health.js';
 import { mountTimeSeriesChart } from '../charts.js';
 import { openExerciseDetailSheet } from './exercises.js';
 import { displayName, exerciseRowMain, setCountLabel } from '../seed.js';
@@ -113,14 +114,24 @@ function renderOverview(ctx) {
   });
   ctx.container.scrollTop = 0;
 
+  // Medications are a standing reference list, not workout stats — they stay
+  // reachable even before the first workout is logged.
+  const medsRow = `
+    <button class="list-row" data-page="meds">
+      <div class="row-main"><div class="row-title">Medications</div></div>
+      <div class="chevron">›</div>
+    </button>`;
+
   if (!snapshot || snapshot.workouts.length === 0) {
     ctx.container.innerHTML = `
-      <div class="empty-state">
+      <div class="empty-state" style="padding: 48px 24px; min-height: auto;">
         <div class="empty-icon">📈</div>
         <h2>No data yet</h2>
         <p>Finish a workout and your stats and trends will show up here.</p>
       </div>
+      <div class="list">${medsRow}</div>
     `;
+    wirePageLinks(ctx);
     return;
   }
 
@@ -160,6 +171,7 @@ function renderOverview(ctx) {
         </div>
         <div class="chevron">›</div>
       </button>
+      ${medsRow}
     </div>
   `;
 
@@ -168,12 +180,19 @@ function renderOverview(ctx) {
     mountTimeSeriesChart(chartMount, volumeSeries, { unit: 'lbs' });
   }
 
+  wirePageLinks(ctx);
+}
+
+/** Wire the overview's sub-page rows. Shared by both the populated overview and
+ * the no-workouts-yet empty state, which still lists Medications. */
+function wirePageLinks(ctx) {
   for (const row of ctx.container.querySelectorAll('[data-page]')) {
     row.addEventListener('click', () => {
       const page = row.dataset.page;
       if (page === 'trained') renderMostTrained(ctx);
       else if (page === 'prs') renderPRs(ctx);
       else if (page === 'history') renderHistoryList(ctx);
+      else if (page === 'meds') renderMedicationsPage(ctx, () => renderOverview(ctx));
     });
   }
 }

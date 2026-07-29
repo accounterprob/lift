@@ -3,7 +3,8 @@ const DB_NAME = 'lift';
 // device has already used makes IndexedDB refuse to open the database.
 // v4 adds the read-only Apple Health import stores (see health.js).
 // v5 adds appMeta, device settings that are deliberately NOT user data.
-const DB_VERSION = 5;
+// v6 drops doseEvents: medications are a standing list, not a per-day log.
+const DB_VERSION = 6;
 
 // Every object store holding user data, so clear/replace operations can't
 // forget one. Deliberately excludes appMeta: the backup passphrase lives there
@@ -11,7 +12,7 @@ const DB_VERSION = 5;
 // (and must never be written into a backup beside the data it encrypts).
 export const ALL_STORES = [
   'exercises', 'workouts', 'sets',
-  'stateOfMind', 'medications', 'doseEvents',
+  'stateOfMind', 'medications',
 ];
 
 let _db = null;
@@ -50,15 +51,15 @@ export function openDB() {
       if (!db.objectStoreNames.contains('medications')) {
         db.createObjectStore('medications', { keyPath: 'id' });
       }
-      if (!db.objectStoreNames.contains('doseEvents')) {
-        const s = db.createObjectStore('doseEvents', { keyPath: 'id' });
-        s.createIndex('medicationId', 'medicationId', { unique: false });
-        s.createIndex('date', 'date', { unique: false });
-      }
       // Device-local settings (currently just the backup passphrase). Kept out
       // of ALL_STORES so backup/restore never touches it.
       if (!db.objectStoreNames.contains('appMeta')) {
         db.createObjectStore('appMeta', { keyPath: 'key' });
+      }
+      // Dose logging was removed — medications are a standing list, so the
+      // per-dose history is dropped outright rather than left orphaned.
+      if (db.objectStoreNames.contains('doseEvents')) {
+        db.deleteObjectStore('doseEvents');
       }
     };
   });

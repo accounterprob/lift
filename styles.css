@@ -859,19 +859,6 @@ button.exercise-section-header {
 }
 
 /* ---------- Mental health ---------- */
-/* Per-medication quick-log row: Taken now / Skip / Log at time, sized to sit
-   three-across inside a medication card. */
-.med-actions {
-  display: flex;
-  gap: 8px;
-  padding: 10px 14px 14px;
-}
-.med-actions .btn-secondary {
-  flex: 1;
-  width: auto;
-  padding: 10px 6px;
-  font-size: 14px;
-}
 
 /* Tinted status pill — valence words, the "taken today" indicator. Same
    translucent-wash pattern as the chart legend: a 16% wash of the pill color

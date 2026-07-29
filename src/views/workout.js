@@ -24,7 +24,7 @@ import {
 } from '../days.js';
 import { downloadBackup } from '../backup.js';
 import { renderExerciseDetailPage } from './exercises.js';
-import { renderStateOfMindPage, renderMedicationsPage } from './health.js';
+import { renderStateOfMindPage } from './health.js';
 
 export function renderWorkoutTab(ctx) {
   let mounted = true;
@@ -85,18 +85,11 @@ async function renderStart(ctx) {
         <div class="row-main"><div class="row-title">State of Mind</div></div>
         <div class="chevron">›</div>
       </button>
-      <button class="list-row" data-nav="meds">
-        <div class="row-main"><div class="row-title">Medications</div></div>
-        <div class="chevron">›</div>
-      </button>
     </div>
   `;
   ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName, hintLabel));
   for (const row of ctx.container.querySelectorAll('[data-nav]')) {
-    row.addEventListener('click', () => {
-      if (row.dataset.nav === 'mind') renderStateOfMindPage(ctx, () => ctx.refresh());
-      else renderMedicationsPage(ctx, () => ctx.refresh());
-    });
+    row.addEventListener('click', () => renderStateOfMindPage(ctx, () => ctx.refresh()));
   }
 }
 

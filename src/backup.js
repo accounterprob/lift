@@ -7,15 +7,17 @@ import {
 } from './crypto.js';
 
 export async function buildSnapshot() {
-  const [exercises, workouts, sets, stateOfMind, medications, doseEvents] = await Promise.all([
+  const [exercises, workouts, sets, stateOfMind, medications] = await Promise.all([
     getAll('exercises'), getAll('workouts'), getAll('sets'),
-    getAll('stateOfMind'), getAll('medications'), getAll('doseEvents'),
+    getAll('stateOfMind'), getAll('medications'),
   ]);
   return {
-    version: 2,  // v2 adds the Apple Health stores
+    // v2 added the mood + medication stores; v3 drops doseEvents, which older
+    // backups may still carry (restore simply ignores them).
+    version: 3,
     exportedAt: new Date().toISOString(),
     exercises, workouts, sets,
-    stateOfMind, medications, doseEvents,
+    stateOfMind, medications,
   };
 }
 
@@ -88,7 +90,7 @@ export async function restoreFromFile(file) {
     sets: snapshot.sets,
     stateOfMind: snapshot.stateOfMind ?? [],
     medications: snapshot.medications ?? [],
-    doseEvents: snapshot.doseEvents ?? [],
+    // snapshot.doseEvents from a pre-v3 backup is intentionally dropped.
   });
 
   // A restored backup can predate the one-time cleanups (old cardio/"Other"
