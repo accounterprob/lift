@@ -1226,6 +1226,7 @@ function openExerciseForm(existing, onSaved) {
 
 function openCalculator() {
   const KEYS = [
+    ['(', 'open', 'paren'], [')', 'close', 'paren'],
     ['AC', 'clear', 'fn'], ['±', 'sign', 'fn'], ['⌫', 'back', 'fn'], ['÷', 'op', 'op'],
     ['7', 'digit'], ['8', 'digit'], ['9', 'digit'], ['×', 'op', 'op'],
     ['4', 'digit'], ['5', 'digit'], ['6', 'digit'], ['−', 'op', 'op'],
@@ -1255,7 +1256,60 @@ function openCalculator() {
       const exprEl = sheet.querySelector('#calc-expr');
       const resultEl = sheet.querySelector('#calc-result');
       const OPS = { '+': (a, b) => a + b, '−': (a, b) => a - b, '×': (a, b) => a * b, '÷': (a, b) => b === 0 ? NaN : a / b };
+      const PREC = { '+': 1, '−': 1, '×': 2, '÷': 2 };
       const isOp = (t) => t === '+' || t === '−' || t === '×' || t === '÷';
+      // A token a value can't directly follow — after these, a number or "("
+      // starts a new operand rather than extending one.
+      const isValueEnd = (t) => t != null && !isOp(t) && t !== '(';
+
+      /**
+       * Evaluate a token list with the usual precedence (× ÷ before + −) and
+       * parentheses, via shunting-yard into RPN. Returns NaN for anything
+       * malformed, which surfaces as "Error" the same as a divide by zero.
+       */
+      function evaluate(input) {
+        const out = [];
+        const ops = [];
+        for (const tok of input) {
+          if (tok === '(') {
+            ops.push(tok);
+          } else if (tok === ')') {
+            while (ops.length && ops[ops.length - 1] !== '(') out.push(ops.pop());
+            if (!ops.length) return NaN;  // unbalanced
+            ops.pop();
+          } else if (isOp(tok)) {
+            // All four operators are left-associative, so equal precedence pops.
+            while (ops.length && isOp(ops[ops.length - 1]) && PREC[ops[ops.length - 1]] >= PREC[tok]) {
+              out.push(ops.pop());
+            }
+            ops.push(tok);
+          } else {
+            const n = parseFloat(tok);
+            if (!isFinite(n)) return NaN;
+            out.push(n);
+          }
+        }
+        while (ops.length) {
+          const op = ops.pop();
+          if (op === '(') return NaN;  // unclosed
+          out.push(op);
+        }
+        const stack = [];
+        for (const item of out) {
+          if (typeof item === 'number') { stack.push(item); continue; }
+          const b = stack.pop();
+          const a = stack.pop();
+          if (a === undefined || b === undefined) return NaN;
+          stack.push(OPS[item](a, b));
+        }
+        return stack.length === 1 ? stack[0] : NaN;
+      }
+
+      /** "(2 + 3) × 4" — tight against the brackets, spaced around operators. */
+      const renderExpr = (t) => t.reduce(
+        (s, tok, i) => (i === 0 ? tok : s + (t[i - 1] === '(' || tok === ')' ? '' : ' ') + tok),
+        ''
+      );
 
       const fmt = (n) => {
         if (!isFinite(n)) return 'Error';
@@ -1274,7 +1328,7 @@ function openCalculator() {
 
       function render() {
         exprEl.textContent = error ? '' : prevEq;
-        resultEl.textContent = error ? 'Error' : tokens.join(' ');
+        resultEl.textContent = error ? 'Error' : renderExpr(tokens);
         const pending = !error && isOp(last()) ? last() : null;
         for (const k of sheet.querySelectorAll('.calc-op')) {
           k.classList.toggle('selected', k.dataset.key === pending);
@@ -1284,27 +1338,51 @@ function openCalculator() {
       function inputDigit(d) {
         if (error) { tokens = ['0']; error = false; }
         if (justEval) { tokens = [d]; justEval = false; return render(); }
-        if (isOp(last())) tokens.push(d);
+        // A digit straight after ")" means multiplication — make it explicit
+        // rather than swallowing the tap.
+        if (last() === ')') tokens.push('×', d);
+        else if (isOp(last()) || last() === '(') tokens.push(d);
         else tokens[tokens.length - 1] = last() === '0' ? d : last() + d;
         render();
       }
       function inputDot() {
         if (error) { tokens = ['0']; error = false; }
         if (justEval) { tokens = ['0.']; justEval = false; return render(); }
-        if (isOp(last())) tokens.push('0.');
+        if (last() === ')') tokens.push('×', '0.');
+        else if (isOp(last()) || last() === '(') tokens.push('0.');
         else if (!last().includes('.')) tokens[tokens.length - 1] = last() + '.';
         render();
       }
       function inputOp(sym) {
         if (error) return;
         justEval = false;
-        if (isOp(last())) tokens[tokens.length - 1] = sym;  // swap operator
+        if (last() === '(') return;                         // no operator can open a group
+        if (isOp(last())) tokens[tokens.length - 1] = sym;   // swap operator
         else tokens.push(sym);
+        render();
+      }
+      const openCount = () => tokens.filter((t) => t === '(').length - tokens.filter((t) => t === ')').length;
+      function openParen() {
+        if (error) { tokens = ['0']; error = false; }
+        if (justEval) { tokens = ['(']; justEval = false; return render(); }
+        // The untouched leading "0" is a placeholder, not an operand — a group
+        // opened first replaces it rather than multiplying against it.
+        if (tokens.length === 1 && last() === '0') tokens = ['('];
+        // "2(" reads as "2 × (", same implicit multiply as after ")".
+        else if (isValueEnd(last())) tokens.push('×', '(');
+        else tokens.push('(');
+        render();
+      }
+      function closeParen() {
+        if (error || justEval) return;
+        // Only close a group that's open and has something in it.
+        if (openCount() <= 0 || !isValueEnd(last())) return;
+        tokens.push(')');
         render();
       }
       function clearAll() { tokens = ['0']; justEval = false; error = false; render(); }
       function toggleSign() {
-        if (error || isOp(last())) return;
+        if (error || isOp(last()) || last() === '(' || last() === ')') return;
         const v = last();
         tokens[tokens.length - 1] = v.startsWith('-') ? v.slice(1) : (v === '0' ? '0' : '-' + v);
         render();
@@ -1312,7 +1390,11 @@ function openCalculator() {
       function backspace() {
         if (error) return clearAll();
         justEval = false;
-        if (isOp(last())) { tokens.pop(); return render(); }
+        if (isOp(last()) || last() === '(' || last() === ')') {
+          tokens.pop();
+          if (tokens.length === 0) tokens = ['0'];
+          return render();
+        }
         const trimmed = last().slice(0, -1);
         if (trimmed === '' || trimmed === '-') {
           if (tokens.length > 1) tokens.pop();  // drop the number, keep the operator before it
@@ -1325,14 +1407,13 @@ function openCalculator() {
       function equals() {
         if (error) return;
         const t = tokens.slice();
-        if (isOp(t[t.length - 1])) t.pop();  // ignore a dangling operator
-        if (t.length < 3) return;            // nothing to evaluate yet
-        let result = parseFloat(t[0]);
-        for (let i = 1; i < t.length; i += 2) {
-          result = OPS[t[i]](result, parseFloat(t[i + 1]));
-          if (!isFinite(result)) { error = true; return render(); }
-        }
-        prevEq = `${t.join(' ')} =`;  // keep the equation visible above the result
+        while (t.length && (isOp(t[t.length - 1]) || t[t.length - 1] === '(')) t.pop();  // drop dangling input
+        if (!t.some(isOp)) return;  // a bare number (or group) has nothing to solve
+        // Close any groups still open, so "=" doesn't need a tidy expression.
+        for (let i = t.filter((x) => x === '(').length - t.filter((x) => x === ')').length; i > 0; i--) t.push(')');
+        const result = evaluate(t);
+        if (!isFinite(result)) { error = true; return render(); }
+        prevEq = `${renderExpr(t)} =`;  // keep the equation visible above the result
         tokens = [fmt(result)];
         justEval = true;
         render();
@@ -1343,6 +1424,8 @@ function openCalculator() {
         // Any fresh input clears the previous equation shown above the result.
         if (action !== 'equals') prevEq = '';
         if (action === 'digit') inputDigit(key);
+        else if (action === 'open') openParen();
+        else if (action === 'close') closeParen();
         else if (action === 'dot') inputDot();
         else if (action === 'clear') clearAll();
         else if (action === 'sign') toggleSign();

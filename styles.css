@@ -556,13 +556,23 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
 .calc-key.calc-fn { background: var(--fill-1); color: var(--accent); font-weight: 600; }
 .calc-key.calc-op { background: var(--accent); color: #fff; font-weight: 600; }
 .calc-key.calc-zero { grid-column: span 2; }
+/* Parentheses sit on their own row above the keypad, each half its width, so
+   the digit grid below keeps the positions your thumb already knows. */
+.calc-key.calc-paren {
+  grid-column: span 2;
+  height: 52px;
+  background: var(--fill-1);
+  color: var(--accent);
+  font-weight: 600;
+}
 
 /* Press feedback is driven by a .pressed class (pointerdown) since :active is
    unreliable in iOS standalone PWAs. Number keys brighten + depress; function
    keys fill with accent; operators invert to white. The selected operator
    stays inverted until the equation continues. */
 .calc-key.pressed { background: var(--fill-1); transform: scale(0.95); }
-.calc-key.calc-fn.pressed { background: var(--accent); color: #fff; }
+.calc-key.calc-fn.pressed,
+.calc-key.calc-paren.pressed { background: var(--accent); color: #fff; }
 .calc-key.calc-op.pressed,
 .calc-key.calc-op.selected { background: #fff; color: var(--accent); transform: none; }
 .vol-bars {

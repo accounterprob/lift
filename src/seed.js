@@ -24,8 +24,11 @@ export function sortMuscles(names) {
   );
 }
 
+// "Machine" is a selectorized pin-stack machine; "Machine Plates" is a
+// plate-loaded one (Hammer Strength and the like), which tracks differently
+// because the working weight excludes the carriage.
 export const EQUIPMENT = [
-  'Barbell', 'Dumbbell', 'Machine', 'Cable', 'Bodyweight', 'Other',
+  'Barbell', 'Dumbbell', 'Machine', 'Machine Plates', 'Cable', 'Bodyweight',
 ];
 
 /**
@@ -161,7 +164,7 @@ const SEEDS = [
   ['Hanging Leg Raise', 'Core', 'Bodyweight'],
   ['Cable Crunch', 'Core', 'Cable'],
   ['Russian Twist', 'Core', 'Bodyweight'],
-  ['Ab Wheel Rollout', 'Core', 'Other'],
+  ['Ab Wheel Rollout', 'Core', 'Bodyweight'],
 
   // Forearms
   ['Wrist Curl', 'Forearms', 'Dumbbell'],

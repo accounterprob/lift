@@ -1,13 +1,13 @@
 import {
   purgeCardioData, reorganizeOtherExercises, stripEquipmentFromNames,
-  mergeButterflyIntoChestFly, backfillCreatineDose,
+  mergeButterflyIntoChestFly, backfillCreatineDose, reassignOtherEquipment,
 } from './db.js';
 import { categoryFor } from './seed.js';
 import { showToast } from './utils.js';
 
 // Marks that the one-time data cleanups have finished on THIS device. Bump the
 // suffix when a new cleanup is added so it runs once more everywhere.
-const MIGRATIONS_KEY = 'lift-migrations-done-v2';
+const MIGRATIONS_KEY = 'lift-migrations-done-v3';
 
 /**
  * The one-time data cleanups: purge the retired Cardio category, re-home the
@@ -36,6 +36,13 @@ export async function runDataMigrations() {
   if (merged > 0) showToast(`Merged Butterfly into Chest Fly (${merged} sets moved).`);
   const dosed = await backfillCreatineDose();
   if (dosed > 0) console.info(`Set a per-dose amount on ${dosed} medication(s).`);
+  // Named individually in the log: "Other" was a catch-all, so the inferred
+  // equipment is worth being able to eyeball and correct by hand.
+  const requipped = await reassignOtherEquipment();
+  if (requipped.length > 0) {
+    console.info(`Moved ${requipped.length} exercise(s) off "Other" equipment:\n  ${requipped.join('\n  ')}`);
+    showToast(`Sorted ${requipped.length} exercise${requipped.length === 1 ? '' : 's'} out of “Other” equipment.`);
+  }
 }
 
 /**

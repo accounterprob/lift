@@ -493,6 +493,33 @@ export async function backfillCreatineDose() {
   return toUpdate.length;
 }
 
+/**
+ * One-time cleanup for the retired "Other" equipment category. Most movements
+ * name their own equipment, so infer from the name first ("Landmine Press" →
+ * Barbell); anything left is bodyweight-driven with an implement, which is
+ * where the ab wheel lands. Idempotent — a no-op once nothing is under "Other".
+ * Returns the remapped exercises so the caller can report what moved.
+ */
+const OTHER_EQUIPMENT_HINTS = [
+  [/\b(barbell|landmine|ez[- ]?bar|smith)\b/i, 'Barbell'],
+  [/\b(dumbbell|db)\b/i, 'Dumbbell'],
+  [/\b(cable|pulley|rope)\b/i, 'Cable'],
+  [/\b(plate[- ]?loaded|hammer strength)\b/i, 'Machine Plates'],
+  [/\b(machine|sled|press)\b/i, 'Machine'],
+];
+
+export async function reassignOtherEquipment() {
+  const exercises = await getAll('exercises');
+  const others = exercises.filter((e) => (e.equipment || '') === 'Other');
+  if (others.length === 0) return [];
+  const toUpdate = others.map((e) => {
+    const hit = OTHER_EQUIPMENT_HINTS.find(([re]) => re.test(e.name || ''));
+    return { ...e, equipment: hit ? hit[1] : 'Bodyweight' };
+  });
+  await putMany('exercises', toUpdate);
+  return toUpdate.map((e) => `${e.name} → ${e.equipment}`);
+}
+
 export async function deleteWorkoutAndSets(workoutId) {
   const db = await openDB();
   const sets = await getByIndex('sets', 'workoutId', workoutId);
