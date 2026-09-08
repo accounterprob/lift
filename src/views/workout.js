@@ -904,15 +904,18 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
 
 /**
  * When a set is marked complete, pull any later sets of the same exercise that
- * are lighter up to match the just-completed set — across set types, so a
- * heavier warmup can lift a lighter following set too. Later sets that already
- * meet or exceed the completed volume keep their previous-workout target, and
- * already-logged (completed) later sets are never rewritten. Each bumped set
+ * fall short up to match the just-completed set — across set types, so a
+ * heavier warmup can lift a lighter following set too. A later set has to hold
+ * its own on BOTH counts to keep its previous-workout target: going heavier
+ * bumps later sets even when their volume is higher (100×5 pulls up a planned
+ * 95×10), and more total volume bumps them even at the same weight.
+ * Already-logged (completed) later sets are never rewritten. Each bumped set
  * remembers its pre-bump weight/reps and which set bumped it, so the change can
  * be undone (see revertBumpsFrom). Returns true if any set was changed.
  */
 async function bumpSucceedingSets(completedSet, allSets, prevTargetFor) {
-  const completedVol = (completedSet.weight || 0) * (completedSet.reps || 0);
+  const completedWeight = completedSet.weight || 0;
+  const completedVol = completedWeight * (completedSet.reps || 0);
   if (completedVol <= 0) return false;
   let changed = false;
   for (const s of allSets) {
@@ -920,7 +923,9 @@ async function bumpSucceedingSets(completedSet, allSets, prevTargetFor) {
     if (s.id === completedSet.id) continue;
     if ((s.order ?? 0) <= (completedSet.order ?? 0)) continue;
     if (s.completed) continue;
-    if ((s.weight || 0) * (s.reps || 0) < completedVol) {
+    const behind = (s.weight || 0) * (s.reps || 0) < completedVol
+      || (s.weight || 0) < completedWeight;
+    if (behind) {
       if (s.bumpedBy == null) {
         // Revert target is the previous-workout value for this slot (what PREV
         // shows) so unchecking restores the original, not an interim bump.
