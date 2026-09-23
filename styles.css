@@ -35,6 +35,8 @@
   --day-chest: #db2777;
   --day-leg: #d97706;
   --day-back: #2563eb;
+  /* Neutral for the all-days average line, so it reads as "every day". */
+  --day-avg: var(--text);
   color-scheme: light;
 }
 
@@ -1097,7 +1099,7 @@ button.exercise-section-header {
 .chip {
   flex-shrink: 0;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 9px;
   border: 4px solid transparent;
   background-clip: padding-box;
   box-shadow: inset 0 0 0 1px var(--border-strong);
@@ -1170,6 +1172,7 @@ button.stat-row:active { background: var(--press); }
 .chart-axis-label { fill: var(--text-secondary); font-size: 10px; }
 .chart-line { stroke: var(--accent); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .chart-point { fill: var(--accent); }
+.chart-line-dashed { stroke-dasharray: 5 4; }
 
 /* One pill per series (rotation day) above a multi-line chart. Each pill
    carries its day color via --dcolor (set inline): a dot + label at rest,
@@ -1178,8 +1181,8 @@ button.stat-row:active { background: var(--press); }
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 0 4px;
-  padding: 0 16px 4px;
+  gap: 0 2px;
+  padding: 0 8px 4px;
   font-size: 13px;
   font-weight: 700;
 }
@@ -1188,7 +1191,7 @@ button.stat-row:active { background: var(--press); }
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 9px;
   border: 5px solid transparent;
   background-clip: padding-box;
   border-radius: 9999px;
@@ -1208,6 +1211,10 @@ button.stat-row:active { background: var(--press); }
   color: #ffffff;
 }
 .chart-legend .legend-item[aria-pressed="true"]::before { background: #ffffff; }
+/* The average's pill is text-colored, so its pressed label flips to the page
+   background to stay readable in both themes. */
+.chart-legend .legend-dashed[aria-pressed="true"] { color: var(--bg); }
+.chart-legend .legend-dashed[aria-pressed="true"]::before { background: var(--bg); }
 /* Another day is isolated — fade the rest to show they're hidden. */
 .chart-legend .legend-item.dimmed {
   opacity: 0.35;

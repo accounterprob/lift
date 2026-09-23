@@ -47,6 +47,7 @@ async function loadSnapshot() {
   let totalVolume = 0;
   let totalSets = 0;
   const volumeByDay = new Map();  // rotation day → volume points
+  const allVolumes = [];          // every workout's volume, for the average line
   const exerciseCounts = new Map();
   const bestByExercise = new Map();
 
@@ -66,6 +67,7 @@ async function loadSnapshot() {
       const day = dayById.get(w.id);
       if (!volumeByDay.has(day)) volumeByDay.set(day, []);
       volumeByDay.get(day).push({ date: w.startedAt, value: vol });
+      allVolumes.push({ date: w.startedAt, value: vol });
     }
 
     for (const s of completed) {
@@ -100,6 +102,26 @@ async function loadSnapshot() {
       color: dayColor(day),
       points: volumeByDay.get(day),
     }));
+
+  // Aggregate line across every day: the rolling average of the last full
+  // rotation (one Chest + Legs + Back/Bi), so it tracks overall volume
+  // without zig-zagging between days. Dashed alongside the day lines, solid
+  // when isolated on its own.
+  if (volumeSeries.length > 0) {
+    const chrono = allVolumes.sort((a, b) => a.date - b.date);
+    // Start once a full rotation exists (partial windows would just echo
+    // whichever day came first); with fewer workouts, average what's there.
+    const n = Math.min(ROTATION.length, chrono.length);
+    volumeSeries.push({
+      label: 'Avg',
+      color: 'var(--day-avg)',
+      dashed: true,
+      points: chrono.slice(n - 1).map((p, i) => {
+        const window = chrono.slice(i, i + n);
+        return { date: p.date, value: window.reduce((sum, x) => sum + x.value, 0) / n };
+      }),
+    });
+  }
 
   return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, volumeSeries, topExercises, prs };
 }

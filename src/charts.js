@@ -42,6 +42,7 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
     .map((s) => ({
       label: s.label ?? '',
       color: s.color || 'var(--accent)',
+      dashed: !!s.dashed,  // drawn dashed unless it's the only line shown
       points: collapseByDay(s.points),
     }))
     .filter((s) => s.points.length > 0);
@@ -68,7 +69,7 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
   // slider). Dragging the slider only re-renders the chart body.
   const legendHtml = isMulti && series.some((s) => s.label)
     ? `<div class="chart-legend">${series.map((s, i) =>
-        `<button class="legend-item" data-i="${i}" style="--dcolor: ${s.color};" aria-pressed="false">${s.label}</button>`
+        `<button class="legend-item${s.dashed ? ' legend-dashed' : ''}" data-i="${i}" style="--dcolor: ${s.color};" aria-pressed="false">${s.label}</button>`
       ).join('')}</div>`
     : '';
   container.innerHTML = `
@@ -95,7 +96,7 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
 
   function update() {
     const perSeries = filtered();
-    const built = buildChart(perSeries, series, unit);
+    const built = buildChart(perSeries, series, unit, isolatedIdx !== null);
     chartEl.innerHTML = built.html;
     geom = built.geom;
     const all = perSeries.flat();
@@ -197,8 +198,10 @@ function fmtDate(ms) {
  *
  * @param {Array<Array<{date,value}>>} perSeries  period-filtered points, one
  *        array per entry in `series` (same order)
+ * @param {boolean} isolated  one line is shown on its own — draw it solid
+ *        even if its series is normally dashed
  */
-function buildChart(perSeries, series, unit) {
+function buildChart(perSeries, series, unit, isolated) {
   const W = 400, H = 200;
   const pad = { top: 16, right: 14, bottom: 14, left: 52 };  // room for full y labels like 12,500
   const innerW = W - pad.left - pad.right;
@@ -251,7 +254,8 @@ function buildChart(perSeries, series, unit) {
     if (pixelPts.length === 1) {
       return `<circle cx="${pixelPts[0].x}" cy="${pixelPts[0].y}" r="3.5" class="chart-point" style="fill: ${s.color};"/>`;
     }
-    return `<path d="${smoothPath(pixelPts)}" class="chart-line" style="stroke: ${s.color};"/>`;
+    const dashCls = s.dashed && !isolated ? ' chart-line-dashed' : '';
+    return `<path d="${smoothPath(pixelPts)}" class="chart-line${dashCls}" style="stroke: ${s.color};"/>`;
   }).join('');
 
   const html = `

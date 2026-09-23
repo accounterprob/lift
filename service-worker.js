@@ -1,7 +1,7 @@
 // TEMPLATE — do not edit service-worker.js directly; edit this file and run
 // `npm run build`, which stamps the content-hash cache version and the
 // precache list into the two declarations below and writes service-worker.js.
-const CACHE_VERSION = 'lift-b8b053265dd4';
+const CACHE_VERSION = 'lift-595d23df168a';
 const ASSETS = [
   "./",
   "./index.html",
