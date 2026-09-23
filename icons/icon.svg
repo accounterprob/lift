@@ -1,21 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <style>
-    /* Neutral monochrome: the in-app theme changes with the training day,
-       so the icon stays colorless in both modes. DARK-FIRST on purpose:
-       iOS rasterizes the home-screen icon once from the base styles and
-       ignores media queries, then its dark appearance blackens light tiles
-       while keeping the glyph — a black-glyph base turns invisible there.
-       A white-barbell-on-black base stays legible everywhere; browsers
-       that evaluate media queries still get the light version live. */
-    .bg { fill: #000000; }
-    .bar { fill: #ffffff; }
-    @media (prefers-color-scheme: light) {
-      .bg { fill: #ffffff; }
-      .bar { fill: #000000; }
-    }
-  </style>
-  <rect class="bg" width="1024" height="1024" rx="220"/>
-  <g class="bar" transform="translate(512 512)">
+  <!-- X-style mark: white barbell on black, in every mode. The in-app accent
+       changes with the training day, so the icon stays colorless. iOS ignores
+       SVG touch icons — apple-touch-icon.png is the 180px raster of this. -->
+  <rect width="1024" height="1024" rx="220" fill="#000000"/>
+  <g fill="#ffffff" transform="translate(512 512)">
     <rect x="-280" y="-32" width="560" height="64" rx="12"/>
     <rect x="-340" y="-112" width="56" height="224" rx="14"/>
     <rect x="-396" y="-152" width="56" height="304" rx="14"/>

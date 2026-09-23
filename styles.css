@@ -1,56 +1,70 @@
+/* Lift — X-style theme (2026-09-23), matching LectureLab.
+   Pure white / pure black, hairline dividers instead of shaded cards,
+   edge-to-edge rows, pill buttons, bold headings. Colour is reserved for
+   small signals, and the one accent is today's rotation-day colour (see Day
+   theming below). Follows the phone's light/dark setting. */
+
 :root {
-  --bg: #f2f2f7;
-  --card: #ffffff;
-  --card-2: #f7f7fa;
-  --text: #1c1c1e;
-  --text-secondary: #636366;
-  --text-tertiary: #aeaeb2;
-  --separator: rgba(60, 60, 67, 0.12);
+  --bg: #ffffff;
+  --bar-bg: rgba(255, 255, 255, 0.85);
+  --press: rgba(15, 20, 25, 0.06);
+  /* Input / search / calculator key fill — the only grey surface left. */
+  --field: #eff3f4;
+  --text: #0f1419;
+  --text-secondary: #536471;
+  --text-tertiary: #8b98a5;
+  --separator: #eff3f4;
+  --border-strong: #cfd9de;
+  --inverse-bg: #0f1419;
+  --inverse-text: #ffffff;
   --accent: #1aa459;
-  --accent-2: #7c5cff;
   --green: #2bbd63;
-  --red: #ff453a;
+  --red: #f4212e;
   --orange: #ff9500;
-  --yellow: #ffcc00;
-  --fill-1: rgba(120, 120, 128, 0.16);
-  --fill-2: rgba(120, 120, 128, 0.09);
-  --shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
-  --nav-height: 52px;
-  --tab-height: 56px;
+  --backdrop: rgba(91, 112, 131, 0.4);
+  /* Old surface names, kept so nothing that still says var(--card) breaks. */
+  --card: var(--bg);
+  --card-2: var(--field);
+  --fill-1: var(--border-strong);
+  --fill-2: var(--field);
+  --nav-height: 53px;
+  --tab-height: 50px;
   /* Rotation-day identity colors (chart lines, legend, day picker). Chest
      pink / Legs gold / Back-Bi blue — validated to stay apart under
-     red-green colorblindness on both light and dark cards. */
+     red-green colorblindness on both light and dark backgrounds. */
   --day-chest: #db2777;
   --day-leg: #d97706;
   --day-back: #2563eb;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #000000;
-    --card: #1c1c1e;
-    --card-2: #2c2c2e;
-    --text: #f2f2f7;
-    --text-secondary: #aeaeb2;
-    --text-tertiary: #8e8e93;
-    --separator: rgba(84, 84, 88, 0.6);
+    --bar-bg: rgba(0, 0, 0, 0.65);
+    --press: rgba(231, 233, 234, 0.08);
+    --field: #202327;
+    --text: #e7e9ea;
+    --text-secondary: #71767b;
+    --text-tertiary: #536471;
+    --separator: #2f3336;
+    --border-strong: #536471;
+    --inverse-bg: #eff3f4;
+    --inverse-text: #0f1419;
     --accent: #2fd07f;
-    --accent-2: #9d88ff;
     --green: #34d97a;
-    --fill-1: rgba(120, 120, 128, 0.24);
-    --fill-2: rgba(120, 120, 128, 0.14);
-    --shadow: none;
     --day-chest: #ec4899;
     --day-leg: #d97706;
     --day-back: #3b82f6;
+    color-scheme: dark;
   }
 }
 
 /* ---------- Day theming ----------
    days.js stamps <html data-day="chest|leg|back"> with today's rotation day
-   (based on the last finished day / the active workout), and the whole app
-   accent follows that day's color: nav actions, tab bar, buttons, chips,
-   completed sets, the Finish button — everything that was always-green. */
+   (based on the last finished day / the active workout). That day's color is
+   the app's single accent, used the way X uses its blue: active tab, the
+   calculator button, completed sets, key numbers, chart lines. */
 :root[data-day="chest"] { --accent: #db2777; --green: #ec4899; }
 :root[data-day="leg"]   { --accent: #d97706; --green: #f59e0b; }
 :root[data-day="back"]  { --accent: #2563eb; --green: #3b82f6; }
@@ -116,25 +130,31 @@ button {
   height: var(--app-height, 100dvh);
 }
 
-/* ---------- Nav bar ---------- */
+/* ---------- Nav bar ----------
+   Floats over the scrolling view (translucent + blur, like X's header), so
+   .view-content pads its top by the same height. */
 .nav-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  height: var(--nav-height);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   padding: 0 12px;
   padding-top: env(safe-area-inset-top);
   height: calc(var(--nav-height) + env(safe-area-inset-top));
-  background: var(--bg);
-  border-bottom: 0.5px solid var(--separator);
-  flex-shrink: 0;
+  background: var(--bar-bg);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--separator);
   z-index: 10;
 }
 
 .nav-title {
   font-size: 17px;
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   margin: 0;
   text-align: center;
   flex: 1;
@@ -142,24 +162,28 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
 }
 
 .nav-back, .nav-action {
   position: absolute;
-  top: calc(env(safe-area-inset-top) + 8px);
+  top: calc(env(safe-area-inset-top) + 4px);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 2px;
-  color: var(--accent);
+  color: var(--text);
   font-size: 17px;
-  padding: 4px 8px;
-  min-width: 36px;
-  min-height: 36px;
+  padding: 0 8px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 9999px;
   font-weight: 400;
 }
+.nav-back:active, .nav-action:active { background: var(--press); }
 
-.nav-back { left: 8px; }
-.nav-action { right: 8px; font-weight: 600; }
+.nav-back { left: 6px; }
+.nav-action { right: 6px; font-weight: 700; }
 
 .nav-back[hidden], .nav-action[hidden] { display: none; }
 
@@ -169,19 +193,23 @@ button {
 
 /* ---------- Tab bar ---------- */
 .tab-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
   display: flex;
   align-items: stretch;
   justify-content: space-around;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-top: 0.5px solid var(--separator);
-  /* Each .tab is self-sized by its own padding. We add the home indicator
-     safe area below that, plus extra px so the icons sit clear of the screen
-     bottom — iOS standalone slightly overshoots the app height, so without
-     this the icons get clipped now that there are no labels below them. */
+  background: var(--bar-bg);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--separator);
+  /* Each .tab is self-sized. We add the home indicator safe area below that,
+     plus extra px so the icons sit clear of the screen bottom — iOS
+     standalone slightly overshoots the app height, so without this the icons
+     get clipped now that there are no labels below them. */
   padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
-  flex-shrink: 0;
 }
 
 .tab {
@@ -190,12 +218,8 @@ button {
   align-items: center;
   justify-content: center;
   flex: 1;
-  padding: 10px 0;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.1px;
-  line-height: 1.2;
+  min-height: var(--tab-height);
+  color: var(--text-secondary);
 }
 
 .tab[aria-selected="true"] {
@@ -213,17 +237,22 @@ button {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 8px;
+  /* Content scrolls under the translucent nav and tab bars. */
+  padding-top: calc(var(--nav-height) + env(safe-area-inset-top));
+  padding-bottom: calc(var(--tab-height) + env(safe-area-inset-bottom) + 16px + 16px);
+  scroll-padding-top: calc(var(--nav-height) + env(safe-area-inset-top) + 8px);
+  scroll-padding-bottom: calc(var(--tab-height) + env(safe-area-inset-bottom) + 32px);
 }
 
-/* ---------- Section / list ---------- */
+/* ---------- Section / list ----------
+   Lists run edge to edge like X's feed: a hairline above and below the
+   group and between rows, no card fill. */
 .section {
-  margin: 28px 16px 8px;
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
+  margin: 28px 16px 10px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text);
 }
 
 .section:first-child {
@@ -235,43 +264,44 @@ button {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-height: 44px;
+  margin-top: 16px;
+  margin-bottom: 0;
   background: none;
   border: 0;
   text-align: left;
 }
 .section-link .name-chevron {
   color: var(--text-tertiary);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 400;
-  text-transform: none;
 }
 
 .list {
-  background: var(--card);
-  margin: 0 16px 16px;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: var(--shadow);
+  margin: 0 0 16px;
+  border-top: 1px solid var(--separator);
+  border-bottom: 1px solid var(--separator);
 }
 
 .list-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  background: var(--card);
-  border-bottom: 0.5px solid var(--separator);
-  min-height: 44px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--separator);
+  min-height: 52px;
   width: 100%;
   text-align: left;
 }
+button.list-row:active { background: var(--press); }
 
 .list-row:last-child {
   border-bottom: 0;
 }
 
 .list-row.button {
-  color: var(--accent);
+  color: var(--text);
   font-weight: 400;
   text-align: left;
   width: 100%;
@@ -291,23 +321,24 @@ button {
 
 .row-title {
   font-size: 16px;
+  font-weight: 700;
   color: var(--text);
 }
 
 .row-subtitle {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .row-trailing {
   color: var(--text-secondary);
-  font-size: 16px;
+  font-size: 15px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-/* Trailing slot that stacks a set-count badge over a checkmark/chevron. */
+/* Trailing slot that stacks a set-count label over a checkmark/chevron. */
 .trailing-stack {
   display: flex;
   flex-direction: column;
@@ -324,35 +355,40 @@ button {
 
 /* ---------- Tap feedback ----------
    :active is unreliable in iOS standalone PWAs, so a global handler (main.js)
-   toggles .pressed on pointer down/up. Each control type gets whichever press
-   look reads best; the shared default is a quick iOS-style dim. */
+   toggles .pressed on pointer down/up. The shared default is a quick dim;
+   rows and outline controls take X's faint press wash instead. */
 button, [role="button"] {
   transition: opacity 0.1s ease, background-color 0.1s ease, filter 0.1s ease, transform 0.1s ease;
 }
 .pressed { opacity: 0.5; }
 
-/* Tappable rows / card headers highlight like an iOS table selection. */
 .list-row.pressed,
 button.stat-row.pressed,
-button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); }
-
-/* Secondary + icon buttons tint on press rather than fade. */
-.btn-secondary.pressed { opacity: 1; background: var(--fill-1); }
-.menu.pressed { opacity: 1; background: var(--fill-1); border-radius: 8px; }
+button.exercise-section-header.pressed,
+.btn-secondary.pressed,
+.add-set-btn.pressed,
+.menu.pressed,
+.nav-back.pressed,
+.nav-action.pressed { opacity: 1; background: var(--press); }
 
 /* Chips give a quick squeeze (they also flip to .active on release). */
-.chip.pressed { transform: scale(0.94); }
+.chip.pressed { opacity: 1; transform: scale(0.94); }
 
-/* ---------- Buttons ---------- */
+/* ---------- Buttons ----------
+   Pills. Primary is inverted (black on light, white on dark); secondary is a
+   hairline outline. Colour stays out of buttons. */
 .btn-primary {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  padding: 14px 20px;
-  background: var(--accent);
-  color: white;
+  min-height: 52px;
+  padding: 0 24px;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
   font-size: 17px;
-  font-weight: 600;
-  border-radius: 14px;
+  font-weight: 700;
+  border-radius: 9999px;
   text-align: center;
 }
 
@@ -362,28 +398,37 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
 }
 
 .btn-primary:disabled {
-  background: var(--fill-1);
-  color: var(--text-tertiary);
+  opacity: 0.5;
 }
 
 .btn-primary.green {
-  background: var(--green);
+  background: var(--inverse-bg);
 }
 .btn-primary.red {
   background: var(--red);
+  color: #ffffff;
 }
 
 .btn-secondary {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  padding: 12px 20px;
-  background: var(--fill-2);
-  color: var(--accent);
+  min-height: 48px;
+  padding: 0 20px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
   font-size: 16px;
-  font-weight: 600;
-  border-radius: 14px;
+  font-weight: 700;
+  border-radius: 9999px;
   text-align: center;
 }
+.btn-secondary:active { background: var(--press); }
+
+/* Discard sits under Finish: red text, no outline, so it reads as the
+   quieter of the two. */
+#discard-btn { border-color: transparent; }
 
 /* ---------- Empty state ---------- */
 .empty-state {
@@ -397,15 +442,17 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
 }
 
 .empty-state .empty-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
+  font-size: 40px;
+  font-weight: 800;
+  margin-bottom: 12px;
   color: var(--text-tertiary);
   line-height: 1;
 }
 
 .empty-state h2 {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   margin: 0 0 8px;
 }
 
@@ -421,50 +468,42 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px;
-  flex: 1;
-}
-
-.workout-start .icon {
-  font-size: 80px;
-  margin-bottom: 24px;
+  text-align: center;
+  padding: 72px 24px 24px;
 }
 
 .workout-start h2 {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 31px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
   margin: 0 0 8px;
 }
 
 .workout-start p {
   color: var(--text-secondary);
-  margin: 0 0 24px;
+  margin: 0 0 20px;
 }
 
 .last-workout-hint {
-  margin-top: 12px;
-  padding: 8px 14px;
-  background: var(--fill-2);
+  margin-top: 4px;
   color: var(--text-secondary);
-  border-radius: 999px;
-  font-size: 14px;
+  font-size: 15px;
 }
 .last-workout-hint strong {
   color: var(--text);
-  font-weight: 600;
+  font-weight: 700;
 }
 
+/* Today's rotation day — the one coloured line on the start screen. */
 .next-workout-hint {
-  margin-top: 8px;
-  padding: 9px 16px;
-  background: var(--accent);
-  color: #ffffff;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 600;
+  margin-top: 6px;
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 700;
 }
 .next-workout-hint strong {
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .active-workout {
@@ -472,21 +511,21 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
 }
 
 .active-workout .workout-header {
-  padding: 16px 16px 4px;
+  padding: 16px 16px 8px;
 }
 
 .workout-progress {
-  padding: 4px 16px 12px;
+  padding: 4px 16px 16px;
 }
 .workout-progress:empty { display: none; }
 
 /* Floating calculator button, anchored above the bottom tab bar. */
 .calc-fab {
   position: fixed;
-  right: 18px;
-  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
-  width: 52px;
-  height: 52px;
+  right: 16px;
+  bottom: calc(var(--tab-height) + env(safe-area-inset-bottom) + 16px + 14px);
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   border: 0;
   background: var(--accent);
@@ -494,19 +533,19 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   z-index: 50;
 }
 .calc-fab:active,
-.calc-fab.pressed { transform: scale(0.94); }
+.calc-fab.pressed { opacity: 1; transform: scale(0.94); }
 
 /* Calculator sheet */
 .calc-screen {
-  margin: 4px 0 14px;
+  margin: 12px 12px 14px;
   padding: 10px 18px 14px;
   min-height: 84px;
-  border-radius: 12px;
-  background: var(--fill-2);
+  border-radius: 16px;
+  border: 1px solid var(--separator);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -524,9 +563,9 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
 }
 .calc-result {
   color: var(--text);
-  font-size: 36px;
+  font-size: 40px;
   line-height: 1.2;
-  font-weight: 300;
+  font-weight: 700;
   text-align: right;
   font-variant-numeric: tabular-nums;
   /* Right-aligned + clipped keeps the most-recently typed end in view. */
@@ -537,44 +576,43 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
-  padding-bottom: 12px;
+  padding: 0 12px 12px;
 }
 .calc-key {
   height: 64px;
   border: 0;
-  border-radius: 14px;
-  background: var(--card-2);
+  border-radius: 9999px;
+  background: var(--field);
   color: var(--text);
   font-size: 24px;
-  font-weight: 500;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;  /* no double-tap-zoom delay → taps never get dropped */
   user-select: none;
   transition: background-color 0.06s ease, color 0.06s ease, transform 0.06s ease;
 }
-.calc-key.calc-fn { background: var(--fill-1); color: var(--accent); font-weight: 600; }
-.calc-key.calc-op { background: var(--accent); color: #fff; font-weight: 600; }
+.calc-key.calc-fn { background: transparent; box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text); font-weight: 700; }
+.calc-key.calc-op { background: var(--inverse-bg); color: var(--inverse-text); font-weight: 700; }
 .calc-key.calc-zero { grid-column: span 2; }
 /* Parentheses sit on their own row above the keypad, each half its width, so
    the digit grid below keeps the positions your thumb already knows. */
 .calc-key.calc-paren {
   grid-column: span 2;
   height: 52px;
-  background: var(--fill-1);
-  color: var(--accent);
-  font-weight: 600;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  font-weight: 700;
 }
 
 /* Press feedback is driven by a .pressed class (pointerdown) since :active is
-   unreliable in iOS standalone PWAs. Number keys brighten + depress; function
-   keys fill with accent; operators invert to white. The selected operator
-   stays inverted until the equation continues. */
-.calc-key.pressed { background: var(--fill-1); transform: scale(0.95); }
+   unreliable in iOS standalone PWAs. Keys darken + depress; the selected
+   operator takes the day accent until the equation continues. */
+.calc-key.pressed { background: var(--border-strong); transform: scale(0.95); }
 .calc-key.calc-fn.pressed,
-.calc-key.calc-paren.pressed { background: var(--accent); color: #fff; }
+.calc-key.calc-paren.pressed { background: var(--press); }
 .calc-key.calc-op.pressed,
-.calc-key.calc-op.selected { background: #fff; color: var(--accent); transform: none; }
+.calc-key.calc-op.selected { background: var(--accent); color: #fff; transform: none; }
 .vol-bars {
   display: flex;
   flex-direction: column;
@@ -589,14 +627,13 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
   min-width: 0;
   overflow: hidden;
   border-radius: 8px;
-  background: var(--fill-2);
 }
 .vol-muscle::before {
   content: '';
   position: absolute;
   inset: 0;
   background: var(--mcolor);
-  opacity: 0.16;
+  opacity: 0.14;
 }
 .vol-fill {
   position: absolute;
@@ -643,17 +680,18 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
   white-space: nowrap;
 }
 .vol-label {
-  margin-top: 8px;
+  margin-top: 10px;
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
-.vol-label strong { color: var(--text); font-weight: 700; }
+.vol-label strong { color: var(--accent); font-weight: 800; }
 
 .workout-name-input {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   width: 100%;
   background: transparent;
   border: 0;
@@ -662,12 +700,12 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
   outline: none;
 }
 
+/* Exercises stack edge to edge, one hairline between each. */
+#exercise-sections:not(:empty) { border-top: 1px solid var(--separator); }
+
 .exercise-section {
-  margin: 12px 16px;
-  background: var(--card);
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: var(--shadow);
+  border-bottom: 1px solid var(--separator);
+  padding-bottom: 12px;
 }
 
 .exercise-section-header {
@@ -675,53 +713,55 @@ button.exercise-section-header.pressed { opacity: 1; background: var(--fill-1); 
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 14px 16px;
-  border-bottom: 0.5px solid var(--separator);
+  padding: 10px 6px 4px 16px;
 }
+
 /* Medication card header doubles as the "edit this medication" button. */
 button.exercise-section-header {
   width: 100%;
+  min-height: 52px;
+  padding-right: 16px;
   text-align: left;
 }
 
 .exercise-section-header .exercise-name-btn {
   flex: 1;
   min-width: 0;
+  min-height: 44px;
   text-align: left;
 }
-.exercise-section-header .row-title { font-weight: 600; }
+.exercise-section-header .row-title { font-size: 17px; font-weight: 800; }
 
 .exercise-section-header .menu {
-  color: var(--text-tertiary);
-  font-size: 20px;
-  padding: 4px 8px;
+  color: var(--text-secondary);
+  font-size: 22px;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  flex-shrink: 0;
 }
+.exercise-section-header .menu:active { background: var(--press); }
 
 .set-table-header {
   display: grid;
-  grid-template-columns: 26px 64px 1fr 1fr 36px;
+  grid-template-columns: 30px 64px 1fr 1fr 44px;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 4px 12px 2px;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
+  font-weight: 700;
+  color: var(--text-secondary);
   letter-spacing: 0.5px;
   text-transform: uppercase;
   text-align: center;
 }
 
-.set-table-header .col-set { text-align: left; }
+.set-table-header .col-set { text-align: center; }
 
 .set-row-wrap {
   position: relative;
   overflow: hidden;
-  /* No background: the translucent separator would tint red over one. The
-     swipe reveal is fully painted by .set-swipe-delete, whose width is grown
-     in JS to stay flush behind the sliding row. */
-  border-bottom: 0.5px solid var(--separator);
-}
-.set-row-wrap:last-of-type {
-  border-bottom: 0;
+  /* The swipe reveal is fully painted by .set-swipe-delete, whose width is
+     grown in JS to stay flush behind the sliding row. */
 }
 
 .set-swipe-delete {
@@ -738,7 +778,7 @@ button.exercise-section-header {
   background: var(--red);
   color: white;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   border: 0;
   letter-spacing: 0.2px;
 }
@@ -749,11 +789,11 @@ button.exercise-section-header {
 
 .set-row {
   display: grid;
-  grid-template-columns: 26px 64px 1fr 1fr 36px;
+  grid-template-columns: 30px 64px 1fr 1fr 44px;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 3px 12px;
   align-items: center;
-  background: var(--card);  /* covers the Delete button until swiped */
+  background: var(--bg);  /* covers the Delete button until swiped */
   transition: background 0.15s ease;
   position: relative;
   will-change: transform;
@@ -762,67 +802,61 @@ button.exercise-section-header {
 
 .set-row .prev {
   font-size: 13px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
   text-align: center;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  opacity: 0.7;
-}
-
-.set-row:last-of-type {
-  border-bottom: 0;
 }
 
 .set-row.completed {
-  /* Solid green-tinted bg so the swipe action stays hidden underneath */
-  background: color-mix(in srgb, var(--green) 18%, var(--card));
+  /* Opaque day-tinted bg so the swipe action stays hidden underneath */
+  background: color-mix(in srgb, var(--green) 12%, var(--bg));
 }
 
 .set-row .set-number {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 800;
   color: var(--text-secondary);
-  background: var(--fill-2);
-  border: 0;
-  padding: 4px 0;
-  border-radius: 8px;
-  min-width: 28px;
+  height: 44px;
+  width: 100%;
+  border-radius: 9999px;
   text-align: center;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
 
 .set-row.type-warmup .set-number {
-  background: var(--orange);
-  color: white;
+  color: var(--orange);
 }
 
 .set-row.type-warmup .weight-input,
 .set-row.type-warmup .reps-input {
-  background: color-mix(in srgb, var(--orange) 12%, var(--fill-2));
+  background: color-mix(in srgb, var(--orange) 12%, var(--field));
 }
 
 .workout-hint {
   margin: -4px 16px 8px;
-  font-size: 12px;
-  color: var(--text-tertiary);
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 .set-row input {
   width: 100%;
+  height: 44px;
   text-align: center;
-  font-size: 16px;
-  font-weight: 500;
-  background: var(--fill-2);
+  font-size: 17px;
+  font-weight: 700;
+  background: var(--field);
   border: 0;
-  border-radius: 8px;
-  padding: 8px 4px;
+  border-radius: 10px;
+  padding: 0 4px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
   -moz-appearance: textfield;
 }
+.set-row input::placeholder { color: var(--text-tertiary); font-weight: 400; }
 
 .set-row input::-webkit-outer-spin-button,
 .set-row input::-webkit-inner-spin-button {
@@ -832,16 +866,17 @@ button.exercise-section-header {
 
 .set-row input:focus {
   outline: 2px solid var(--accent);
-  background: var(--card-2);
+  outline-offset: -2px;
+  background: var(--bg);
 }
 
 .set-row .complete-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 18px;
+  width: 44px;
+  height: 44px;
+  border-radius: 9999px;
   color: var(--text-tertiary);
   margin: 0 auto;
 }
@@ -850,47 +885,53 @@ button.exercise-section-header {
   color: var(--green);
 }
 
+/* Outline pill, inset to the row's content edges. */
 .add-set-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  width: 100%;
-  padding: 12px 16px;
-  color: var(--accent);
+  width: calc(100% - 32px);
+  min-height: 44px;
+  margin: 8px 16px 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 9999px;
+  color: var(--text);
   font-size: 15px;
-  font-weight: 500;
+  font-weight: 700;
 }
+.add-set-btn:active { background: var(--press); }
 
 .action-section {
-  padding: 8px 16px 16px;
+  padding: 16px 16px 8px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 /* ---------- Mental health ---------- */
 
-/* Tinted status pill — valence words, the "taken today" indicator. Same
-   translucent-wash pattern as the chart legend: a 16% wash of the pill color
-   behind the color itself, which stays legible on both light and dark cards.
-   Callers pass the color via the --pc custom property. */
+/* Tinted status pill — valence words, the "taken today" indicator. A small
+   signal, so it keeps its colour: a 14% wash of the pill color behind the
+   color itself. Callers pass the color via the --pc custom property. */
 .hz-pill {
   display: inline-block;
   padding: 3px 11px;
-  border-radius: 999px;
+  border-radius: 9999px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.35;
   white-space: nowrap;
-  background: color-mix(in srgb, var(--pc, var(--text-secondary)) 16%, transparent);
+  background: color-mix(in srgb, var(--pc, var(--text-secondary)) 14%, transparent);
   color: var(--pc, var(--text-secondary));
 }
 .hz-pill.muted {
-  color: var(--text-tertiary);
-  background: var(--fill-2);
+  color: var(--text-secondary);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
-/* Mood pleasantness slider — same look as the chart's range slider (neutral
+/* Mood pleasantness slider — same look as the chart's range slider (hairline
    track, accent thumb); the word above it names the value. */
 .mood-slider {
   -webkit-appearance: none;
@@ -898,27 +939,27 @@ button.exercise-section-header {
   width: 100%;
   height: 4px;
   border-radius: 2px;
-  background: var(--fill-1);
+  background: var(--separator);
   outline: none;
 }
 .mood-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--accent);
-  border: 3px solid var(--card);
-  box-shadow: var(--shadow);
+  border: 3px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--separator);
   cursor: pointer;
 }
 .mood-slider::-moz-range-thumb {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--accent);
-  border: 3px solid var(--card);
-  box-shadow: var(--shadow);
+  border: 3px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--separator);
   cursor: pointer;
 }
 
@@ -926,7 +967,7 @@ button.exercise-section-header {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--backdrop);
   z-index: 100;
   display: flex;
   align-items: flex-end;
@@ -940,7 +981,7 @@ button.exercise-section-header {
   max-width: 768px;
   max-height: calc(100vh - env(safe-area-inset-top) - 12px);
   max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
-  border-radius: 14px 14px 0 0;
+  border-radius: 16px 16px 0 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -952,8 +993,9 @@ button.exercise-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 0.5px solid var(--separator);
+  min-height: 53px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--separator);
   background: var(--bg);
   position: sticky;
   top: 0;
@@ -961,10 +1003,34 @@ button.exercise-section-header {
   flex-shrink: 0;
 }
 
-.sheet-header .title { font-size: 17px; font-weight: 600; }
-.sheet-header .btn-text { color: var(--accent); font-size: 17px; padding: 4px 8px; }
-.sheet-header .btn-text.primary { font-weight: 600; }
-.sheet-header .btn-text:disabled { color: var(--text-tertiary); }
+.sheet-header .title { font-size: 17px; font-weight: 800; }
+.sheet-header .btn-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 60px;
+  color: var(--text);
+  font-size: 16px;
+  padding: 0 8px;
+}
+/* Save / Add / Done: a small inverted pill with a 44px hit area around it. */
+.sheet-header .btn-text.primary {
+  position: relative;
+  min-height: 34px;
+  padding: 0 16px;
+  border-radius: 9999px;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+.sheet-header .btn-text.primary::after {
+  content: '';
+  position: absolute;
+  inset: -5px -4px;
+}
+.sheet-header .btn-text:disabled { opacity: 0.5; }
 
 .sheet-content {
   flex: 1;
@@ -991,50 +1057,61 @@ button.exercise-section-header {
 
 .search-input {
   width: 100%;
+  height: 44px;
   font-size: 16px;
-  padding: 9px 12px 9px 32px;
-  background: var(--fill-2);
-  border: 0;
-  border-radius: 10px;
+  padding: 0 16px 0 40px;
+  background: var(--field);
+  border: 1px solid transparent;
+  border-radius: 9999px;
   color: var(--text);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%238e8e93'><path d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23536471'><path d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/></svg>");
   background-repeat: no-repeat;
-  background-position: 9px center;
-  background-size: 16px 16px;
+  background-position: 14px center;
+  background-size: 18px 18px;
   outline: none;
 }
+.search-input::placeholder { color: var(--text-secondary); }
 
 .search-input:focus {
-  background-color: var(--card-2);
+  background-color: var(--bg);
+  border-color: var(--accent);
 }
 
 .chip-row {
   display: flex;
-  gap: 8px;
-  padding: 4px 16px 12px;
+  gap: 4px;
+  padding: 0 12px 6px;
   overflow-x: auto;
   overflow-y: visible;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--separator);
 }
 
 .chip-row::-webkit-scrollbar { display: none; }
 
+/* A 36px pill inside a 44px tap target: the transparent border is part of
+   the button but not painted (background-clip), the hairline is an inset
+   shadow on the visible pill. */
 .chip {
   flex-shrink: 0;
-  padding: 6px 14px;
-  background: var(--fill-2);
-  border-radius: 999px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 4px solid transparent;
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  border-radius: 9999px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 700;
   color: var(--text);
   white-space: nowrap;
 }
 
 .chip.active {
-  background: var(--accent);
-  color: white;
+  background-color: var(--inverse-bg);
+  color: var(--inverse-text);
+  box-shadow: none;
 }
 
 /* ---------- Stat rows / charts ---------- */
@@ -1042,13 +1119,16 @@ button.exercise-section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-bottom: 0.5px solid var(--separator);
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--separator);
 }
 
 .stat-row:last-child { border-bottom: 0; }
 /* Recent-set rows are buttons that link to their workout. */
 button.stat-row { width: 100%; text-align: left; }
+button.stat-row:active { background: var(--press); }
 
 /* Editable weight/reps in a past workout's set list. */
 .hist-edit {
@@ -1057,26 +1137,26 @@ button.stat-row { width: 100%; text-align: left; }
   gap: 6px;
 }
 .hist-input {
-  width: 60px;
-  padding: 6px 8px;
+  width: 64px;
+  height: 40px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 8px;
-  background: var(--fill-2);
+  border-radius: 10px;
+  background: var(--field);
   color: var(--text);
   font: inherit;
+  font-weight: 700;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
+.hist-input:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--bg); }
 
 .stat-row .stat-label { color: var(--text); }
-.stat-row .stat-value { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.stat-row .stat-value { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .chart-container {
-  padding: 16px;
-  background: var(--card);
-  margin: 0 16px 16px;
-  border-radius: 16px;
-  box-shadow: var(--shadow);
+  padding: 8px 12px 4px;
+  margin: 0;
 }
 
 .chart-container svg {
@@ -1085,37 +1165,49 @@ button.stat-row { width: 100%; text-align: left; }
   display: block;
 }
 
+/* Thin lines, faint gridlines, no fills. */
 .chart-axis-line { stroke: var(--separator); stroke-width: 1; }
-.chart-axis-label { fill: var(--text-tertiary); font-size: 10px; }
-.chart-line { stroke: var(--accent); stroke-width: 2.5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.chart-axis-label { fill: var(--text-secondary); font-size: 10px; }
+.chart-line { stroke: var(--accent); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .chart-point { fill: var(--accent); }
 
 /* One pill per series (rotation day) above a multi-line chart. Each pill
-   carries its day color via --dcolor (set inline): tinted at rest, solid
-   while that day is isolated, faded while another day is. */
+   carries its day color via --dcolor (set inline): a dot + label at rest,
+   solid while that day is isolated, faded while another day is. */
 .chart-legend {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px 8px;
-  padding: 0 16px 8px;
-  font-size: 12px;
-  font-weight: 600;
+  gap: 0 4px;
+  padding: 0 16px 4px;
+  font-size: 13px;
+  font-weight: 700;
 }
 .chart-legend .legend-item {
   display: inline-flex;
   align-items: center;
-  padding: 5px 13px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--dcolor) 14%, transparent);
-  color: var(--dcolor);
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 5px solid transparent;
+  background-clip: padding-box;
+  border-radius: 9999px;
+  color: var(--text);
   line-height: 1.2;
   transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
-.chart-legend .legend-item[aria-pressed="true"] {
+.chart-legend .legend-item::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   background: var(--dcolor);
+}
+.chart-legend .legend-item[aria-pressed="true"] {
+  background-color: var(--dcolor);
   color: #ffffff;
 }
+.chart-legend .legend-item[aria-pressed="true"]::before { background: #ffffff; }
 /* Another day is isolated — fade the rest to show they're hidden. */
 .chart-legend .legend-item.dimmed {
   opacity: 0.35;
@@ -1127,8 +1219,8 @@ button.stat-row { width: 100%; text-align: left; }
   min-height: 20px;
   padding: 2px 0 2px;
   text-align: center;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 800;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -1139,7 +1231,7 @@ button.stat-row { width: 100%; text-align: left; }
 }
 .chart-scrub-dot {
   fill: var(--accent);
-  stroke: var(--card);
+  stroke: var(--bg);
   stroke-width: 2;
 }
 
@@ -1148,7 +1240,7 @@ button.stat-row { width: 100%; text-align: left; }
   justify-content: space-between;
   margin: 4px 28px 0;
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
 }
 
 /* Time-range slider below interactive charts */
@@ -1161,7 +1253,7 @@ button.stat-row { width: 100%; text-align: left; }
   width: 100%;
   height: 4px;
   border-radius: 2px;
-  background: var(--fill-2);
+  background: var(--separator);
   outline: none;
   margin: 0 0 4px;
 }
@@ -1172,8 +1264,8 @@ button.stat-row { width: 100%; text-align: left; }
   height: 24px;
   border-radius: 50%;
   background: var(--accent);
-  border: 3px solid var(--card);
-  box-shadow: var(--shadow);
+  border: 3px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--separator);
   cursor: pointer;
 }
 .chart-range::-moz-range-thumb {
@@ -1181,8 +1273,8 @@ button.stat-row { width: 100%; text-align: left; }
   height: 24px;
   border-radius: 50%;
   background: var(--accent);
-  border: 3px solid var(--card);
-  box-shadow: var(--shadow);
+  border: 3px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--separator);
   cursor: pointer;
 }
 .chart-slider-ticks {
@@ -1190,8 +1282,8 @@ button.stat-row { width: 100%; text-align: left; }
   justify-content: space-between;
   margin-top: 2px;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--text-tertiary);
+  font-weight: 700;
+  color: var(--text-secondary);
 }
 .chart-slider-ticks span.active {
   color: var(--accent);
@@ -1199,20 +1291,18 @@ button.stat-row { width: 100%; text-align: left; }
 
 /* ---------- Form ---------- */
 .form-section {
-  background: var(--card);
-  margin: 8px 16px;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: var(--shadow);
+  margin: 0 0 8px;
+  border-top: 1px solid var(--separator);
+  border-bottom: 1px solid var(--separator);
 }
 
 .form-row {
   display: flex;
   align-items: center;
   padding: 12px 16px;
-  border-bottom: 0.5px solid var(--separator);
+  border-bottom: 1px solid var(--separator);
   gap: 12px;
-  min-height: 44px;
+  min-height: 52px;
 }
 
 .form-row:last-child { border-bottom: 0; }
@@ -1233,6 +1323,7 @@ button.stat-row { width: 100%; text-align: left; }
   text-align: right;
   font-family: inherit;
 }
+.form-row input::placeholder, .form-row textarea::placeholder { color: var(--text-tertiary); }
 
 .form-row select {
   text-align-last: right;
@@ -1249,50 +1340,51 @@ button.stat-row { width: 100%; text-align: left; }
 }
 
 .section-footer {
-  margin: 4px 16px 16px;
+  margin: 8px 16px 16px;
   font-size: 13px;
-  color: var(--text-tertiary);
-  padding: 0 4px;
+  color: var(--text-secondary);
 }
 
 /* ---------- Badges ---------- */
 .badge {
   display: inline-block;
-  padding: 2px 8px;
-  background: color-mix(in srgb, var(--accent-2) 16%, transparent);
-  color: var(--accent-2);
-  border-radius: 999px;
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  border-radius: 9999px;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.3px;
   margin-left: 6px;
+  vertical-align: 2px;
 }
 
+/* Set count beside an exercise — plain secondary text, not a pill. */
 .exercise-count {
   display: inline-block;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  background: var(--fill-2);
-  padding: 1px 7px;
-  border-radius: 999px;
-  margin-left: 6px;
-  vertical-align: middle;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Toast ---------- */
 .toast {
   position: fixed;
-  bottom: calc(var(--tab-height) + env(safe-area-inset-bottom) + 16px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.85);
-  color: white;
+  bottom: calc(var(--tab-height) + env(safe-area-inset-bottom) + 32px);
+  /* Inset both edges and auto-margin instead of left:50% — a half-width
+     containing block used to squeeze multi-line toasts into a tall column. */
+  left: 16px;
+  right: 16px;
+  width: fit-content;
+  margin: 0 auto;
+  background: var(--inverse-bg);
+  color: var(--inverse-text);
   padding: 12px 20px;
-  border-radius: 18px;
-  font-size: 14px;
-  font-weight: 500;
+  border-radius: 16px;
+  font-size: 15px;
+  font-weight: 600;
   z-index: 200;
   animation: fade-in 0.2s ease;
   pointer-events: none;
@@ -1309,13 +1401,11 @@ button.stat-row { width: 100%; text-align: left; }
   cursor: pointer;
 }
 
-/* Keep workout notices clear of the calculator button. Persistent PR toasts
-   can be several lines tall, so sharing the FAB's bottom edge made the two
-   controls collide on an iPhone. */
+/* During a workout the bottom of the screen is crowded — calculator FAB,
+   Finish, Discard — and a PR toast sticks around until it's tapped, so
+   anchoring it down there covered the Finish button and swallowed its taps.
+   Drop it under the nav bar instead, clear of every control. */
 body:has(.calc-fab) .toast {
-  bottom: calc(var(--tab-height) + env(safe-area-inset-bottom) + 82px);
-}
-
-@media (prefers-color-scheme: dark) {
-  .toast { background: rgba(255, 255, 255, 0.92); color: black; }
+  top: calc(var(--nav-height) + env(safe-area-inset-top) + 12px);
+  bottom: auto;
 }

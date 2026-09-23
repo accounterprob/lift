@@ -1,14 +1,15 @@
 // TEMPLATE — do not edit service-worker.js directly; edit this file and run
 // `npm run build`, which stamps the content-hash cache version and the
 // precache list into the two declarations below and writes service-worker.js.
-const CACHE_VERSION = 'lift-e32d6a11c5c8';
+const CACHE_VERSION = 'lift-b8b053265dd4';
 const ASSETS = [
   "./",
   "./index.html",
   "./dist/app.js",
   "./dist/app.css",
   "./manifest.webmanifest",
-  "./icons/icon.svg"
+  "./icons/icon.svg",
+  "./icons/apple-touch-icon.png"
 ];
 
 self.addEventListener('install', (event) => {

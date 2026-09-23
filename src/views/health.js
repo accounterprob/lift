@@ -39,7 +39,7 @@ export async function renderStateOfMindPage(ctx, onBack) {
 
       <div class="section">Recent entries</div>
       <div class="list">${stateOfMind.slice(-30).reverse().map(moodRow).join('')}</div>
-    ` : emptyState('🧠', 'No mood entries', 'Tap ＋ to log how you\'re feeling.')}
+    ` : emptyState('', 'No mood entries', 'Tap ＋ to log how you\'re feeling.')}
   `;
   ctx.container.scrollTop = 0;
 
@@ -149,7 +149,7 @@ function doseLabel(qty, unit) {
 function emptyState(icon, title, text) {
   return `
     <div class="empty-state" style="padding: 48px 24px; min-height: auto;">
-      <div class="empty-icon">${icon}</div>
+      ${icon ? `<div class="empty-icon">${icon}</div>` : ''}
       <h2>${esc(title)}</h2>
       <p>${esc(text)}</p>
     </div>`;

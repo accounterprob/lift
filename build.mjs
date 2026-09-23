@@ -22,12 +22,13 @@ const PRECACHE = [
   './dist/app.css',
   './manifest.webmanifest',
   './icons/icon.svg',
+  './icons/apple-touch-icon.png',
 ];
 
 // Files whose bytes should influence the cache version, so any content change
 // forces the service worker to update. (index.html carries the script/style
 // refs; the two dist/ files are the built app; manifest + icon round it out.)
-const HASH_INPUTS = ['dist/app.js', 'dist/app.css', 'index.html', 'manifest.webmanifest', 'icons/icon.svg'];
+const HASH_INPUTS = ['dist/app.js', 'dist/app.css', 'index.html', 'manifest.webmanifest', 'icons/icon.svg', 'icons/apple-touch-icon.png'];
 
 async function build() {
   await mkdir(OUT_DIR, { recursive: true });

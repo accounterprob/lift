@@ -125,7 +125,6 @@ function renderOverview(ctx) {
   if (!snapshot || snapshot.workouts.length === 0) {
     ctx.container.innerHTML = `
       <div class="empty-state" style="padding: 48px 24px; min-height: auto;">
-        <div class="empty-icon">📈</div>
         <h2>No data yet</h2>
         <p>Finish a workout and your stats and trends will show up here.</p>
       </div>

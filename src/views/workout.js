@@ -71,7 +71,6 @@ async function renderStart(ctx) {
 
   ctx.container.innerHTML = `
     <div class="workout-start">
-      <div class="icon">🏋️</div>
       <h2>No active workout</h2>
       <p>Start one to begin logging sets.</p>
       ${lastHint}
@@ -329,13 +328,7 @@ function renderActive(ctx, workout) {
     const bars = shares.map(({ muscle, record, cur, span }) => {
       const widthPct = (span / barMax) * 100;
       const fillPct = cur > 0 ? Math.min(100, (cur / span) * 100) : 0;
-      let stat;
-      if (record > 0) {
-        const pct = Math.round((cur / record) * 100);
-        stat = cur > record ? `${pct}% 🔥` : `${pct}%`;
-      } else {
-        stat = cur > 0 ? 'new 🔥' : 'new';
-      }
+      const stat = record > 0 ? `${Math.round((cur / record) * 100)}%` : 'new';
       const volText = record > 0
         ? `${formatVolume(cur)} / ${formatVolume(record)} · ${stat}`
         : `${formatVolume(cur)} · ${stat}`;
@@ -458,7 +451,7 @@ function renderActive(ctx, workout) {
 
     if (prs.length > 0) {
       const kind = prs.length > 1 ? 'New records' : 'New record';
-      showToast(`🏆 ${displayName(exercise)} — ${kind}!\n${prs.join('\n')}`, 0, { persistUntilClick: true });
+      showToast(`${displayName(exercise)} — ${kind}!\n${prs.join('\n')}`, 0, { persistUntilClick: true });
     }
   }
 
