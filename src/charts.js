@@ -34,7 +34,16 @@ function collapseByDay(rawPoints) {
  * @param {Array<{date:number, value:number}> | Array<{label:string, color:string, points:Array<{date:number, value:number}>}>} raw
  *        one flat point list (single accent-colored line) or named series
  *        (one colored line each, with a legend). Timestamps in ms.
- * @param {object} opts  { defaultPeriod?: string, unit?: string }
+ * @param {object} opts  {
+ *        defaultPeriod?: string,
+ *        unit?: string,                 appended to values ("12,500 lbs")
+ *        format?: (v) => string,        replaces the default number + unit
+ *        axisFormat?: (v, span) => string  y-axis ticks (span = axis range);
+ *                                       defaults to `format`
+ *        isolated?: string,             label of the line to start isolated
+ *        onStateChange?: ({ period, isolated }) => void  period key + isolated
+ *                                       label (or null) after each change
+ *      }
  */
 export function mountTimeSeriesChart(container, raw, opts = {}) {
   const isMulti = raw.length > 0 && raw[0].points !== undefined;
@@ -50,7 +59,13 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
   const defaultKey = opts.defaultPeriod || 'All';
   let activeIdx = Math.max(0, PERIODS.findIndex((p) => p.key === defaultKey));
   const maxIdx = PERIODS.length - 1;
-  let isolatedIdx = null;  // tap a legend day to show only that line; tap again for all
+  // Tap a legend day to show only that line; tap again for all.
+  let isolatedIdx = opts.isolated == null ? -1 : series.findIndex((s) => s.label === opts.isolated);
+  if (isolatedIdx === -1) isolatedIdx = null;
+  const notify = () => opts.onStateChange?.({
+    period: PERIODS[activeIdx].key,
+    isolated: isolatedIdx === null ? null : series[isolatedIdx].label,
+  });
 
   function filtered() {
     const p = PERIODS[activeIdx];
@@ -69,7 +84,7 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
   // slider). Dragging the slider only re-renders the chart body.
   const legendHtml = isMulti && series.some((s) => s.label)
     ? `<div class="chart-legend">${series.map((s, i) =>
-        `<button class="legend-item${s.dashed ? ' legend-dashed' : ''}" data-i="${i}" style="--dcolor: ${s.color};" aria-pressed="false">${s.label}</button>`
+        `<button class="legend-item${s.dashed ? ' legend-dashed' : ''}${isolatedIdx !== null && i !== isolatedIdx ? ' dimmed' : ''}" data-i="${i}" style="--dcolor: ${s.color};" aria-pressed="${isolatedIdx === i}">${s.label}</button>`
       ).join('')}</div>`
     : '';
   container.innerHTML = `
@@ -91,12 +106,17 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
   const slider = container.querySelector('.chart-range');
   const tickEls = [...container.querySelectorAll('.chart-slider-ticks span')];
   const unit = opts.unit || 'lbs';
+  // Values carry the unit ("12,500 lbs"); axis labels drop it so it doesn't
+  // crowd the gutter. A custom format ("+12%") is short enough for both.
+  const fmt = opts.format
+    ? { value: opts.format, axis: opts.axisFormat || opts.format }
+    : { value: (v) => `${Math.round(v).toLocaleString()} ${unit}`, axis: (v) => Math.round(v).toLocaleString() };
 
   let geom = null;  // pixel points + data for the currently drawn chart
 
   function update() {
     const perSeries = filtered();
-    const built = buildChart(perSeries, series, unit, isolatedIdx !== null);
+    const built = buildChart(perSeries, series, fmt, isolatedIdx !== null);
     chartEl.innerHTML = built.html;
     geom = built.geom;
     const all = perSeries.flat();
@@ -114,6 +134,7 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
     activeIdx = Number(slider.value);
     endScrub();
     update();
+    notify();
   });
 
   // Tap a day in the legend to isolate its line (and rescale the axes to
@@ -129,6 +150,7 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
       });
       endScrub();
       update();
+      notify();
     });
   }
 
@@ -160,7 +182,7 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
       dot.removeAttribute('visibility');
     }
     const label = p.label ? ` · ${p.label}` : '';
-    scrubEl.textContent = `${fmtDate(p.date)}${label} · ${Math.round(p.value).toLocaleString()} ${unit}`;
+    scrubEl.textContent = `${fmtDate(p.date)}${label} · ${fmt.value(p.value)}`;
   }
 
   function endScrub() {
@@ -198,10 +220,12 @@ function fmtDate(ms) {
  *
  * @param {Array<Array<{date,value}>>} perSeries  period-filtered points, one
  *        array per entry in `series` (same order)
+ * @param {{value: (v:number) => string, axis: (v:number, span:number) => string}} fmt
+ *        labels for a lone point's value and the y-axis ticks
  * @param {boolean} isolated  one line is shown on its own — draw it solid
  *        even if its series is normally dashed
  */
-function buildChart(perSeries, series, unit, isolated) {
+function buildChart(perSeries, series, fmt, isolated) {
   const W = 400, H = 200;
   const pad = { top: 16, right: 14, bottom: 14, left: 52 };  // room for full y labels like 12,500
   const innerW = W - pad.left - pad.right;
@@ -216,7 +240,7 @@ function buildChart(perSeries, series, unit, isolated) {
     const color = series[perSeries.findIndex((pts) => pts.length > 0)]?.color || 'var(--accent)';
     const x = pad.left + innerW / 2;
     const y = pad.top + innerH / 2;
-    return { html: `<svg viewBox="0 0 ${W} ${H}"><circle cx="${x}" cy="${y}" r="4" class="chart-point" style="fill: ${color};"/><text x="${x}" y="${y - 10}" text-anchor="middle" class="chart-axis-label">${Math.round(only.value).toLocaleString()} ${unit}</text></svg>`, geom: null };
+    return { html: `<svg viewBox="0 0 ${W} ${H}"><circle cx="${x}" cy="${y}" r="4" class="chart-point" style="fill: ${color};"/><text x="${x}" y="${y - 10}" text-anchor="middle" class="chart-axis-label">${fmt.value(only.value)}</text></svg>`, geom: null };
   }
 
   const xs = all.map((d) => d.date);
@@ -224,18 +248,19 @@ function buildChart(perSeries, series, unit, isolated) {
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const maxY = Math.max(...ys), minY = Math.min(...ys);
   const yRange = Math.max(maxY - minY, 1);
-  const yMin = Math.max(0, minY - yRange * 0.12);
+  // Headroom below the lowest point; never dips under zero unless the data
+  // does (a strength drop is negative).
+  const yMin = minY >= 0 ? Math.max(0, minY - yRange * 0.12) : minY - yRange * 0.12;
   const yMax = maxY + yRange * 0.12;
 
   const xScale = (x) => pad.left + ((x - minX) / Math.max(maxX - minX, 1)) * innerW;
   const yScale = (y) => pad.top + innerH - ((y - yMin) / (yMax - yMin)) * innerH;
 
   const ticks = 4;
-  const fmt = (v) => Math.round(v).toLocaleString();
   const yLabels = Array.from({ length: ticks + 1 }, (_, i) => {
     const val = yMin + ((yMax - yMin) * i) / ticks;
     const y = yScale(val);
-    return `<text x="${pad.left - 6}" y="${y + 3}" text-anchor="end" class="chart-axis-label">${fmt(val)}</text>`;
+    return `<text x="${pad.left - 6}" y="${y + 3}" text-anchor="end" class="chart-axis-label">${fmt.axis(val, yMax - yMin)}</text>`;
   }).join('');
   const grid = Array.from({ length: ticks + 1 }, (_, i) => {
     const y = pad.top + (innerH * i) / ticks;

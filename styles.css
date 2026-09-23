@@ -1242,6 +1242,18 @@ button.stat-row:active { background: var(--press); }
   stroke-width: 2;
 }
 
+/* Volume / Strength % switch above the workout chart: chips without the
+   filter row's divider, tucked up under the section heading. */
+.chart-mode-row {
+  border-bottom: 0;
+  margin-top: -6px;
+}
+.chart-empty {
+  margin: 8px 16px 16px;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
 .chart-daterange {
   display: flex;
   justify-content: space-between;

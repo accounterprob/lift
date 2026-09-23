@@ -17,6 +17,30 @@ import { ROTATION, DAYS, classifyWorkoutDays, dayColor } from '../days.js';
 // from IndexedDB on every navigation.
 let snapshot = null;
 
+// Workout chart modes. Volume is total work (weight × reps); Strength % is
+// the average change in each exercise's estimated 1RM from its first session.
+const CHART_MODES = {
+  volume:   { chip: 'Volume',     title: 'Workout Volume', key: 'volumeSeries',   opts: { unit: 'lbs' } },
+  strength: { chip: 'Strength %', title: 'Strength Change', key: 'strengthSeries', opts: { format: formatPct, axisFormat: formatPctAxis } },
+};
+// The chart's mode, time period, and isolated line survive re-renders and
+// mode switches for the rest of the session.
+const chartState = { mode: 'volume', period: 'All', isolated: null };
+
+/** Signed percent: "+12%", "-3%", "+0.8%" (one decimal under 10). */
+function formatPct(v) {
+  return signedPct(Math.abs(v) < 10 ? Math.round(v * 10) / 10 : Math.round(v));
+}
+
+/** Axis ticks stay whole numbers unless the axis is too tight for them. */
+function formatPctAxis(v, span) {
+  return signedPct(span < 8 ? Math.round(v * 10) / 10 : Math.round(v));
+}
+
+function signedPct(r) {
+  return `${r > 0 ? '+' : ''}${r}%`;
+}
+
 export function renderProgressTab(ctx) {
   let mounted = true;
   loadSnapshot().then((snap) => {
@@ -47,7 +71,7 @@ async function loadSnapshot() {
   let totalVolume = 0;
   let totalSets = 0;
   const volumeByDay = new Map();  // rotation day → volume points
-  const allVolumes = [];          // every workout's volume, for the average line
+  const strengthByDay = new Map(); // rotation day → strength % points
   const exerciseCounts = new Map();
   const bestByExercise = new Map();
 
@@ -67,7 +91,6 @@ async function loadSnapshot() {
       const day = dayById.get(w.id);
       if (!volumeByDay.has(day)) volumeByDay.set(day, []);
       volumeByDay.get(day).push({ date: w.startedAt, value: vol });
-      allVolumes.push({ date: w.startedAt, value: vol });
     }
 
     for (const s of completed) {
@@ -88,42 +111,90 @@ async function loadSnapshot() {
     }
   }
 
+  // Strength %: each exercise compared only to itself, so a heavy-but-easy
+  // lift can't drown out a light-but-hard one. Walk oldest → newest.
+  const baselineE1rm = new Map();  // exerciseId → first session's best e1RM
+  for (let i = workouts.length - 1; i >= 0; i--) {
+    const w = workouts[i];
+    const best = bestE1rmByExercise(setsByWorkout.get(w.id) || []);
+    const changes = [];
+    for (const [exerciseId, est] of best) {
+      const base = baselineE1rm.get(exerciseId);
+      // An exercise's first session is its baseline, not a data point.
+      if (base === undefined) baselineE1rm.set(exerciseId, est);
+      else changes.push((est / base - 1) * 100);
+    }
+    if (changes.length === 0) continue;
+    const day = dayById.get(w.id);
+    if (!strengthByDay.has(day)) strengthByDay.set(day, []);
+    strengthByDay.get(day).push({
+      date: w.startedAt,
+      value: changes.reduce((a, b) => a + b, 0) / changes.length,
+    });
+  }
+
   const topExercises = Array.from(exerciseCounts.entries())
     .sort((a, b) => b[1].count - a[1].count)
     .map(([, e]) => e);
   const prs = Array.from(bestByExercise.values()).sort((a, b) => b.weight - a.weight);
 
-  // One series per rotation day, in cycle order; days with no workouts yet
-  // drop out.
-  const volumeSeries = ROTATION
-    .filter((day) => volumeByDay.has(day))
+  const volumeSeries = seriesByDay(volumeByDay);
+  const strengthSeries = seriesByDay(strengthByDay);
+
+  return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, volumeSeries, strengthSeries, topExercises, prs };
+}
+
+/**
+ * Estimated one-rep max (Epley): weight × (1 + reps / 30). Lets a set of 15
+ * and a set of 5 be compared on one scale.
+ */
+function e1rm(weight, reps) {
+  return weight * (1 + reps / 30);
+}
+
+/** Map exerciseId → best e1RM among a workout's weighted working sets. */
+function bestE1rmByExercise(sets) {
+  const best = new Map();
+  for (const s of sets) {
+    if (s.weight <= 0 || s.reps <= 0) continue;
+    if ((s.setType || 'working') === 'warmup') continue;
+    const v = e1rm(s.weight, s.reps);
+    if (v > (best.get(s.exerciseId) ?? 0)) best.set(s.exerciseId, v);
+  }
+  return best;
+}
+
+/**
+ * One series per rotation day, in cycle order (days with no points drop
+ * out), plus an all-days "Avg" line: the rolling average of the last full
+ * rotation (one Chest + Legs + Back/Bi), so it tracks the overall trend
+ * without zig-zagging between days. Dashed alongside the day lines, solid
+ * when isolated on its own.
+ */
+function seriesByDay(pointsByDay) {
+  const series = ROTATION
+    .filter((day) => pointsByDay.has(day))
     .map((day) => ({
       label: DAYS[day].short,
       color: dayColor(day),
-      points: volumeByDay.get(day),
+      points: pointsByDay.get(day),
     }));
+  if (series.length === 0) return series;
 
-  // Aggregate line across every day: the rolling average of the last full
-  // rotation (one Chest + Legs + Back/Bi), so it tracks overall volume
-  // without zig-zagging between days. Dashed alongside the day lines, solid
-  // when isolated on its own.
-  if (volumeSeries.length > 0) {
-    const chrono = allVolumes.sort((a, b) => a.date - b.date);
-    // Start once a full rotation exists (partial windows would just echo
-    // whichever day came first); with fewer workouts, average what's there.
-    const n = Math.min(ROTATION.length, chrono.length);
-    volumeSeries.push({
-      label: 'Avg',
-      color: 'var(--day-avg)',
-      dashed: true,
-      points: chrono.slice(n - 1).map((p, i) => {
-        const window = chrono.slice(i, i + n);
-        return { date: p.date, value: window.reduce((sum, x) => sum + x.value, 0) / n };
-      }),
-    });
-  }
-
-  return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, volumeSeries, topExercises, prs };
+  const chrono = [...pointsByDay.values()].flat().sort((a, b) => a.date - b.date);
+  // Start once a full rotation exists (partial windows would just echo
+  // whichever day came first); with fewer workouts, average what's there.
+  const n = Math.min(ROTATION.length, chrono.length);
+  series.push({
+    label: 'Avg',
+    color: 'var(--day-avg)',
+    dashed: true,
+    points: chrono.slice(n - 1).map((p, i) => {
+      const window = chrono.slice(i, i + n);
+      return { date: p.date, value: window.reduce((sum, x) => sum + x.value, 0) / n };
+    }),
+  });
+  return series;
 }
 
 function renderOverview(ctx) {
@@ -157,6 +228,7 @@ function renderOverview(ctx) {
   }
 
   const { workouts, totalVolume, totalSets, volumeSeries, topExercises, prs } = snapshot;
+  const chartMode = CHART_MODES[chartState.mode];
 
   ctx.container.innerHTML = `
     <div class="section">Totals</div>
@@ -166,7 +238,12 @@ function renderOverview(ctx) {
     </div>
 
     ${volumeSeries.length > 0 ? `
-      <div class="section">Workout Volume</div>
+      <div class="section" data-role="chart-title">${chartMode.title}</div>
+      <div class="chip-row chart-mode-row">
+        ${Object.entries(CHART_MODES).map(([key, m]) =>
+          `<button type="button" class="chip${key === chartState.mode ? ' active' : ''}" data-mode="${key}">${m.chip}</button>`
+        ).join('')}
+      </div>
       <div class="volume-chart-mount"></div>
     ` : ''}
 
@@ -198,7 +275,35 @@ function renderOverview(ctx) {
 
   const chartMount = ctx.container.querySelector('.volume-chart-mount');
   if (chartMount && volumeSeries.length > 0) {
-    mountTimeSeriesChart(chartMount, volumeSeries, { unit: 'lbs' });
+    const titleEl = ctx.container.querySelector('[data-role="chart-title"]');
+    const chips = [...ctx.container.querySelectorAll('.chart-mode-row .chip')];
+    const mountChart = () => {
+      const mode = CHART_MODES[chartState.mode];
+      const series = snapshot[mode.key];
+      titleEl.textContent = mode.title;
+      chips.forEach((c) => c.classList.toggle('active', c.dataset.mode === chartState.mode));
+      if (series.length === 0) {
+        chartMount.innerHTML = `<p class="chart-empty">Log an exercise a second time to see how it's changed.</p>`;
+        return;
+      }
+      mountTimeSeriesChart(chartMount, series, {
+        ...mode.opts,
+        defaultPeriod: chartState.period,
+        isolated: chartState.isolated,
+        onStateChange: ({ period, isolated }) => {
+          chartState.period = period;
+          chartState.isolated = isolated;
+        },
+      });
+    };
+    for (const chip of chips) {
+      chip.addEventListener('click', () => {
+        if (chip.dataset.mode === chartState.mode) return;
+        chartState.mode = chip.dataset.mode;
+        mountChart();
+      });
+    }
+    mountChart();
   }
 
   wirePageLinks(ctx);
