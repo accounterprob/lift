@@ -23,9 +23,10 @@ const CHART_MODES = {
   volume:   { chip: 'Volume',     title: 'Workout Volume', key: 'volumeSeries',   opts: { unit: 'lbs' } },
   strength: { chip: 'Strength %', title: 'Strength Change', key: 'strengthSeries', opts: { format: formatPct, axisFormat: formatPctAxis } },
 };
-// The chart's mode, time period, and isolated line survive re-renders and
-// mode switches for the rest of the session.
-const chartState = { mode: 'volume', period: 'All', isolated: null };
+// Opens on Strength % with the Avg line isolated. The chart's mode, time
+// period, and isolated line survive re-renders and mode switches for the
+// rest of the session.
+const chartState = { mode: 'strength', period: 'All', isolated: 'Avg' };
 
 /** Signed percent: "+12%", "-3%", "+0.8%" (one decimal under 10). */
 function formatPct(v) {
