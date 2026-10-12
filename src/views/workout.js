@@ -246,7 +246,20 @@ function renderActive(ctx, workout) {
   });
 
   ctx.container.querySelector('#finish-btn').addEventListener('click', async () => {
-    if (!confirm('Finish this workout?')) return;
+    const filled = sets.filter((s) => (s.weight || 0) > 0 && (s.reps || 0) > 0);
+    if (!sets.some((s) => s.completed) && filled.length === 0) {
+      // Saving an empty workout would still move the rotation on a day.
+      if (!confirm('Nothing logged yet. Discard this workout?')) return;
+      await deleteWorkoutAndSets(workout.id);
+      emit('workout:changed');
+      return;
+    }
+    if (!sets.some((s) => s.completed)) {
+      // With nothing checked off, every filled-in row counts as done (the
+      // performedSets rule), so say so rather than saving it silently.
+      const n = filled.length;
+      if (!confirm(`No sets are checked off. Finish anyway and count all ${n} filled-in set${n === 1 ? '' : 's'} as done?`)) return;
+    } else if (!confirm('Finish this workout?')) return;
     await finishWorkout(workout, sets);
     try {
       const { filename } = await downloadBackup();
@@ -482,7 +495,7 @@ function renderActive(ctx, workout) {
         const ex = exMap.get(eid);
         const exSets = setsByExercise.get(eid);
         const prev = prevByExercise.get(eid) ?? new Map();
-        return renderExerciseSection(ex, exSets, prev, setCountByExercise.get(eid) ?? 0);
+        return renderExerciseSection(eid, ex, exSets, prev, setCountByExercise.get(eid) ?? 0);
       })
       .join('');
 
@@ -659,7 +672,7 @@ function renderActive(ctx, workout) {
   };
 }
 
-function renderExerciseSection(exercise, sets, prevSets = new Map(), totalSetCount = 0) {
+function renderExerciseSection(exerciseId, exercise, sets, prevSets = new Map(), totalSetCount = 0) {
   // Warmups get their own counter (W1, W2, W3); working sets get 1, 2, 3.
   // PREV matches by type AND position-within-type so W1 lines up with last
   // workout's W1, working-set 2 lines up with last workout's working-set 2, etc.
@@ -686,9 +699,9 @@ function renderExerciseSection(exercise, sets, prevSets = new Map(), totalSetCou
   return `
     <div class="exercise-section">
       <div class="exercise-section-header">
-        <button class="exercise-name-btn" data-exercise-id="${exercise?.id}">${exerciseRowMain(exercise)}</button>
+        <button class="exercise-name-btn" data-exercise-id="${esc(exerciseId)}">${exerciseRowMain(exercise)}</button>
         <div class="row-trailing trailing-stack">${setCountLabel(totalSetCount)}</div>
-        <button class="menu exercise-menu" data-exercise-id="${exercise?.id}" aria-label="Remove ${esc(displayName(exercise))} from workout">×</button>
+        <button class="menu exercise-menu" data-exercise-id="${esc(exerciseId)}" aria-label="Remove ${esc(displayName(exercise))} from workout">×</button>
       </div>
       <div class="set-table-header">
         <div class="col-set">SET</div>
@@ -698,7 +711,7 @@ function renderExerciseSection(exercise, sets, prevSets = new Map(), totalSetCou
         <div></div>
       </div>
       ${setBlocks}
-      <button class="add-set-btn" data-exercise-id="${exercise?.id}">+ Add Set</button>
+      <button class="add-set-btn" data-exercise-id="${esc(exerciseId)}">+ Add Set</button>
     </div>
   `;
 }

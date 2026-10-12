@@ -362,7 +362,7 @@ function renderPRs(ctx) {
             <div class="row-subtitle">${formatDateShort(pr.date)}</div>
           </div>
           <div class="row-trailing" style="text-align: right;">
-            <div style="font-weight: 600; color: var(--text);">${formatLbs(pr.weight)} lbs</div>
+            <div style="font-weight: 600; color: var(--text);">${formatLbs(pr.weight)}</div>
             <div style="font-size: 12px; color: var(--text-tertiary);">${pr.reps} rep${pr.reps === 1 ? '' : 's'}</div>
           </div>
           <div class="chevron">›</div>

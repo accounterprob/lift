@@ -1,5 +1,5 @@
 import {
-  getAll, get, del, getActiveWorkout, performedSets,
+  getAll, get, getActiveWorkout, getExerciseSets, deleteExerciseAndSets, performedSets,
 } from '../db.js';
 import {
   esc, formatLbs, formatVolumeLbs, formatDateShort, emit, showSheet, trashIcon, errorState,
@@ -130,8 +130,15 @@ export async function renderExerciseDetailPage(ctx, exerciseId, onBack) {
             alert(`Can't delete — this exercise has ${detail.completed.length} logged set${detail.completed.length === 1 ? '' : 's'}.`);
             return;
           }
+          const active = await getActiveWorkout();
+          const sets = await getExerciseSets(exerciseId);
+          if (active && sets.some((s) => s.workoutId === active.id)) {
+            alert('This exercise is in your current workout. Remove it there first.');
+            return;
+          }
           if (!confirm('Delete this custom exercise?')) return;
-          await del('exercises', exerciseId);
+          // Also clears any never-performed leftover rows, so nothing is orphaned.
+          await deleteExerciseAndSets(exerciseId);
           emit('data:changed');
         },
       }

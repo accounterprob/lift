@@ -214,8 +214,12 @@ export async function getExerciseSets(exerciseId) {
 }
 
 /**
- * Sets from the most recent prior workout that contains this exercise,
- * ordered by `order` ASC. Used to show "Previous" hints in the active workout.
+ * Sets from the most recent prior workout where this exercise was actually
+ * performed, ordered by `order` ASC. Used to prefill a newly added exercise.
+ * Same rule as performedSets: in a workout with any checked-off set, only the
+ * checked-off ones count, so a skipped (or auto-bumped but never lifted) row
+ * can't be copied forward as if it happened. A workout where this exercise
+ * wasn't performed is skipped in favour of an older one.
  * Doesn't require endedAt to be set — that filter was excluding legitimate
  * imported data where the source CSV had no end time.
  */
@@ -235,9 +239,17 @@ export async function previousWorkoutSetsForExercise(exerciseId, excludeWorkoutI
   const candidates = workouts
     .filter(Boolean)
     .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
-  if (candidates.length === 0) return [];
 
-  return byWorkout.get(candidates[0].id).sort((a, b) => a.order - b.order);
+  const byOrder = (a, b) => a.order - b.order;
+  for (const w of candidates) {
+    const mine = byWorkout.get(w.id);
+    if (mine.some((s) => s.completed)) return mine.filter((s) => s.completed).sort(byOrder);
+    // None of this exercise's rows were checked off. They only count when the
+    // whole workout has no checked-off sets (imported / never-checked history).
+    const whole = await getByIndex('sets', 'workoutId', w.id);
+    if (!whole.some((s) => s.completed)) return mine.sort(byOrder);
+  }
+  return [];
 }
 
 /**
@@ -250,9 +262,10 @@ export async function previousWorkoutSetsForExercise(exerciseId, excludeWorkoutI
  * no prior workout ever had simply won't be present — a genuinely new set →
  * blank PREV.
  *
- * Only real, performed sets participate (weight > 0 and reps > 0): leftover
- * prefilled rows like 155×0 would otherwise occupy a slot and mask genuine
- * history in older workouts.
+ * Only real, performed sets participate (performedSets, plus weight > 0 and
+ * reps > 0): leftover prefilled rows like 155×0, or a skipped row still
+ * holding an auto-bumped number, would otherwise occupy a slot and show a
+ * PREV that was never lifted.
  *
  * Imported HEVY data and workouts that predate warmup flags have no setType on
  * any set, so their warmups are indistinguishable from working sets. Those
@@ -268,7 +281,7 @@ export function buildPrevSlotMaps(allSets, allWorkouts, excludeWorkoutId = null)
   const startedAt = new Map(allWorkouts.map((w) => [w.id, w.startedAt ?? 0]));
   // exerciseId → workoutId → sets
   const byExercise = new Map();
-  for (const s of allSets) {
+  for (const s of performedSets(allSets)) {
     if (s.workoutId === excludeWorkoutId || !startedAt.has(s.workoutId)) continue;
     if ((s.weight || 0) <= 0 || (s.reps || 0) <= 0) continue;
     let byW = byExercise.get(s.exerciseId);
@@ -518,6 +531,18 @@ export async function reassignOtherEquipment() {
   });
   await putMany('exercises', toUpdate);
   return toUpdate.map((e) => `${e.name} → ${e.equipment}`);
+}
+
+/** Delete an exercise together with any sets still pointing at it, atomically,
+ * so no orphaned set can render as "Unknown exercise". */
+export async function deleteExerciseAndSets(exerciseId) {
+  const db = await openDB();
+  const sets = await getByIndex('sets', 'exerciseId', exerciseId);
+  return runTx(db, ['exercises', 'sets'], (tx) => {
+    tx.objectStore('exercises').delete(exerciseId);
+    const setStore = tx.objectStore('sets');
+    for (const s of sets) setStore.delete(s.id);
+  });
 }
 
 export async function deleteWorkoutAndSets(workoutId) {
