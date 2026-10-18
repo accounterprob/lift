@@ -4,9 +4,11 @@
   "private": true,
   "description": "Offline-first workout tracker PWA. Build bundles src/ into dist/.",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"
-  }
+  },
+  "type": "module"
 }

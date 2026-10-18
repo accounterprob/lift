@@ -1,6 +1,6 @@
 import {
   purgeCardioData, reorganizeOtherExercises, stripEquipmentFromNames,
-  mergeButterflyIntoChestFly, backfillCreatineDose, reassignOtherEquipment,
+  mergeButterflyIntoChestFly, reassignOtherEquipment,
 } from './db.js';
 import { categoryFor } from './seed.js';
 import { showToast } from './utils.js';
@@ -34,8 +34,6 @@ export async function runDataMigrations() {
   if (stripped > 0) console.info(`Stripped equipment from ${stripped} exercise name(s).`);
   const merged = await mergeButterflyIntoChestFly();
   if (merged > 0) showToast(`Merged Butterfly into Chest Fly (${merged} sets moved).`);
-  const dosed = await backfillCreatineDose();
-  if (dosed > 0) console.info(`Set a per-dose amount on ${dosed} medication(s).`);
   // Named individually in the log: "Other" was a catch-all, so the inferred
   // equipment is worth being able to eyeball and correct by hand.
   const requipped = await reassignOtherEquipment();

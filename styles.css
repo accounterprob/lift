@@ -718,14 +718,6 @@ button.exercise-section-header.pressed,
   padding: 10px 6px 4px 16px;
 }
 
-/* Medication card header doubles as the "edit this medication" button. */
-button.exercise-section-header {
-  width: 100%;
-  min-height: 52px;
-  padding-right: 16px;
-  text-align: left;
-}
-
 .exercise-section-header .exercise-name-btn {
   flex: 1;
   min-width: 0;
@@ -746,7 +738,7 @@ button.exercise-section-header {
 
 .set-table-header {
   display: grid;
-  grid-template-columns: 30px 64px 1fr 1fr 44px;
+  grid-template-columns: 30px 72px 1fr 1fr 44px;
   gap: 6px;
   padding: 4px 12px 2px;
   font-size: 11px;
@@ -791,7 +783,7 @@ button.exercise-section-header {
 
 .set-row {
   display: grid;
-  grid-template-columns: 30px 64px 1fr 1fr 44px;
+  grid-template-columns: 30px 72px 1fr 1fr 44px;
   gap: 6px;
   padding: 3px 12px;
   align-items: center;
@@ -802,15 +794,93 @@ button.exercise-section-header {
   touch-action: pan-y;  /* still allows vertical scroll, handles horiz ourselves */
 }
 
-.set-row .prev {
+/* GOAL cell — the set's goal in the accent color (tap for why); warm-ups and
+   finished sets drop back to secondary text. A finished set's cell shows the
+   goal it was lifted against (accent when hit) over its effort rating. */
+.set-row .goal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 44px;
+  border-radius: 10px;
   font-size: 13px;
-  color: var(--text-secondary);
-  text-align: center;
+  font-weight: 700;
+  color: var(--accent);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.15;
 }
+.set-row .goal.pressed { background: var(--press); }
+.set-row .goal.none,
+.set-row .goal.warmup,
+.set-row .goal.done { color: var(--text-secondary); font-weight: 600; }
+.set-row .goal.done.met .goal-main { color: var(--accent); }
+.set-row .goal .goal-main { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.set-row .goal .goal-sub {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* One-tap "how did it feel?" under a just-finished set. */
+.effort-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 12px 6px 48px;
+  background: color-mix(in srgb, var(--green) 12%, var(--bg));
+}
+.effort-q {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-right: 2px;
+}
+.effort-btn {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.15;
+}
+.effort-btn .effort-label { font-size: 14px; font-weight: 700; }
+.effort-btn .effort-hint { font-size: 10px; color: var(--text-secondary); white-space: nowrap; }
+.effort-btn.pressed { background: var(--press); }
+.effort-btn.selected { background: var(--accent); border-color: var(--accent); color: var(--inverse-text); }
+.effort-btn.selected .effort-hint { color: inherit; opacity: 0.85; }
+
+/* Goal explanation sheet. */
+.goal-exercise { margin-top: 12px; }
+.goal-hero { padding: 4px 16px 8px; }
+.goal-hero-value {
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+.goal-hero-sub { font-size: 15px; color: var(--text-secondary); margin-top: 2px; }
+.goal-reason .stat-label { min-width: 0; }
+.goal-reason-title { font-size: 15px; font-weight: 700; }
+.goal-reason-detail { font-size: 13px; color: var(--text-secondary); margin-top: 2px; }
+.goal-reason .goal-effect { flex-shrink: 0; color: var(--text-secondary); font-weight: 700; }
+.goal-reason .goal-effect.up { color: var(--accent); }
+.goal-reason .goal-effect.down { color: var(--text); }
+.goal-learned { margin-top: 16px; line-height: 1.4; }
 
 .set-row.completed {
   /* Opaque day-tinted bg so the swipe action stays hidden underneath */
@@ -909,60 +979,6 @@ button.exercise-section-header {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-/* ---------- Mental health ---------- */
-
-/* Tinted status pill — valence words, the "taken today" indicator. A small
-   signal, so it keeps its colour: a 14% wash of the pill color behind the
-   color itself. Callers pass the color via the --pc custom property. */
-.hz-pill {
-  display: inline-block;
-  padding: 3px 11px;
-  border-radius: 9999px;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.35;
-  white-space: nowrap;
-  background: color-mix(in srgb, var(--pc, var(--text-secondary)) 14%, transparent);
-  color: var(--pc, var(--text-secondary));
-}
-.hz-pill.muted {
-  color: var(--text-secondary);
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-}
-
-/* Mood pleasantness slider — same look as the chart's range slider (hairline
-   track, accent thumb); the word above it names the value. */
-.mood-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--separator);
-  outline: none;
-}
-.mood-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 3px solid var(--bg);
-  box-shadow: 0 0 0 1px var(--separator);
-  cursor: pointer;
-}
-.mood-slider::-moz-range-thumb {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 3px solid var(--bg);
-  box-shadow: 0 0 0 1px var(--separator);
-  cursor: pointer;
 }
 
 /* ---------- Sheet / modal ---------- */

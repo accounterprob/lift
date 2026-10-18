@@ -23,8 +23,10 @@ import {
   colorForMuscle, textOnColor, dayColor, refreshDayTheme,
 } from '../days.js';
 import { downloadBackup } from '../backup.js';
+import {
+  prepareHistory, loadCalibration, warmCalibration, goalsForWorkout, goalMet, EFFORTS, formatRest,
+} from '../goals.js';
 import { renderExerciseDetailPage } from './exercises.js';
-import { renderStateOfMindPage } from './health.js';
 
 export function renderWorkoutTab(ctx) {
   let mounted = true;
@@ -79,17 +81,8 @@ async function renderStart(ctx) {
     <div class="action-section">
       <button id="start-btn" class="btn-primary">Start Empty Workout</button>
     </div>
-    <div class="list">
-      <button class="list-row" data-nav="mind">
-        <div class="row-main"><div class="row-title">State of Mind</div></div>
-        <div class="chevron">›</div>
-      </button>
-    </div>
   `;
   ctx.container.querySelector('#start-btn').addEventListener('click', () => startNewWorkout(todayName, hintLabel));
-  for (const row of ctx.container.querySelectorAll('[data-nav]')) {
-    row.addEventListener('click', () => renderStateOfMindPage(ctx, () => ctx.refresh()));
-  }
 }
 
 // Day rotation + normalization live in days.js (shared with the Progress
@@ -188,6 +181,13 @@ function renderActive(ctx, workout) {
   let prevByExercise = new Map();
   let setCountByExercise = new Map();
   let timerInterval = null;
+  // Set goals (see goals.js): the model's view of history (everything but this
+  // workout), its calibration, the current goal per set, and the finished set
+  // whose "how did it feel?" strip is open.
+  let goalHistory = null;
+  let calibration = null;
+  let goals = new Map();
+  let ratingSetId = null;
 
   ctx.container.innerHTML = `
     <div class="active-workout">
@@ -268,6 +268,8 @@ function renderActive(ctx, workout) {
       showToast(`Saved · backup failed: ${err.message}`);
     }
     emit('workout:changed');
+    // Re-fit the goal model to include this workout while the app is idle.
+    setTimeout(() => warmCalibration().catch((err) => console.warn('Goal calibration failed:', err)), 1500);
   });
 
   ctx.container.querySelector('#discard-btn').addEventListener('click', async () => {
@@ -293,8 +295,89 @@ function renderActive(ctx, workout) {
     for (const s of allSets) {
       setCountByExercise.set(s.exerciseId, (setCountByExercise.get(s.exerciseId) ?? 0) + 1);
     }
+    goalHistory = prepareHistory({ sets: allSets, workouts: allWorkouts, exercises, excludeWorkoutId: workout.id });
+    calibration = await loadCalibration(goalHistory);
+    await adoptLegacyBumps();
+    await refreshGoals();
     renderSections();
     updateRunningStats();
+  }
+
+  /** The set PREV used to show for a set's slot (type + position), or null. */
+  function prevSlotFor(s) {
+    const type = s.setType || 'working';
+    let typePos = 0;
+    let overallPos = 0;
+    for (const x of sets) {
+      if (x.exerciseId !== s.exerciseId) continue;
+      overallPos += 1;
+      if ((x.setType || 'working') === type) typePos += 1;
+      if (x.id === s.id) break;
+    }
+    return findPrevSetByTypeAndPosition(type, typePos, prevByExercise.get(s.exerciseId), overallPos);
+  }
+
+  /**
+   * Recompute every set's goal, then move each still-autofilled set (one the
+   * user hasn't typed in or checked off) onto its new goal — so finishing a
+   * set, rating it, or changing its numbers re-plans the sets after it.
+   */
+  async function refreshGoals() {
+    if (!goalHistory || !calibration) return;
+    goals = goalsForWorkout({
+      history: goalHistory,
+      params: calibration.params,
+      workout,
+      sets,
+      prevFor: prevSlotFor,
+      now: Date.now(),
+    });
+    const changed = [];
+    for (const s of sets) {
+      if (s.completed || !s.autofill) continue;
+      const g = goals.get(s.id);
+      if (!g || (s.weight === g.weight && s.reps === g.reps)) continue;
+      s.weight = g.weight;
+      s.reps = g.reps;
+      changed.push(s);
+    }
+    if (changed.length > 0) await putMany('sets', changed);
+  }
+
+  /** Sets auto-bumped by the old bump logic are suggestions too — hand them to the goals. */
+  async function adoptLegacyBumps() {
+    const legacy = sets.filter((s) => 'bumpedBy' in s || 'preBumpWeight' in s);
+    for (const s of legacy) {
+      if (s.bumpedBy != null && !s.completed) s.autofill = true;
+      delete s.bumpedBy;
+      delete s.preBumpWeight;
+      delete s.preBumpReps;
+    }
+    if (legacy.length > 0) await putMany('sets', legacy);
+  }
+
+  /**
+   * Bring every row's inputs and goal cell up to date without re-rendering,
+   * so a field being typed in keeps focus.
+   */
+  function syncRowsInPlace() {
+    const sectionsEl = ctx.container.querySelector('#exercise-sections');
+    if (!sectionsEl) return;
+    for (const s of sets) {
+      const row = sectionsEl.querySelector(`.set-row[data-set-id="${s.id}"]`);
+      if (!row) continue;
+      const w = row.querySelector('.weight-input');
+      const r = row.querySelector('.reps-input');
+      if (w && document.activeElement !== w) w.value = s.weight > 0 ? String(s.weight) : '';
+      if (r && document.activeElement !== r) r.value = s.reps > 0 ? String(s.reps) : '';
+      const goalEl = row.querySelector('.goal');
+      if (goalEl) {
+        const cell = goalCell(s, goals.get(s.id));
+        goalEl.className = cell.cls;
+        goalEl.innerHTML = cell.html;
+        goalEl.setAttribute('aria-label', cell.aria);
+      }
+    }
   }
 
   function updateRunningStats() {
@@ -430,6 +513,73 @@ function renderActive(ctx, workout) {
     return records;
   }
 
+  /** Bottom sheet explaining an open set's goal: last time, then each effect in reps. */
+  function openGoalSheet(set) {
+    const goal = goals.get(set.id);
+    const exercise = allExercises.find((e) => e.id === set.exerciseId);
+    const exSets = sets.filter((x) => x.exerciseId === set.exerciseId);
+    const label = setDisplayLabel(exSets, set);
+    const stats = calibration?.stats;
+    const params = calibration?.params;
+
+    let body;
+    if (!goal) {
+      body = `<div class="section-footer goal-empty">No goal yet. Log a set of ${esc(displayName(exercise))} and the rest of today's sets will follow it.</div>`;
+    } else if (goal.kind === 'warmup') {
+      body = `
+        <div class="goal-hero"><div class="goal-hero-value">${esc(formatGoal(goal.weight, goal.reps))}</div></div>
+        <div class="section-footer">Warm-ups repeat what you did for this warm-up last time.</div>`;
+    } else {
+      const shown = goal.reasons.filter((r) => r.always || r.reps == null || Math.abs(r.reps) >= 0.25);
+      const last = goal.last
+        ? `Last time ${formatGoal(goal.last.weight, goal.last.reps)} · ${relativeDay(goal.last.t)}`
+        : 'Based on your sets so far today';
+      body = `
+        <div class="goal-hero">
+          <div class="goal-hero-value">${esc(formatGoal(goal.weight, goal.reps))}</div>
+          <div class="goal-hero-sub">${esc(last)}</div>
+        </div>
+        <div class="section">What went into it</div>
+        <div class="form-section">
+          ${shown.map((r) => `
+            <div class="stat-row goal-reason">
+              <div class="stat-label">
+                <div class="goal-reason-title">${esc(r.label)}</div>
+                <div class="goal-reason-detail">${esc(r.detail)}</div>
+              </div>
+              <div class="stat-value goal-effect${effectClass(r)}">${esc(r.reps == null ? formatLbsChange(r.lbs) : formatRepEffect(r.reps))}</div>
+            </div>`).join('')}
+        </div>
+        <div class="section-footer">Effects are in reps at the goal weight, compared with last time.</div>`;
+    }
+
+    const learned = [];
+    if (stats?.sessions) learned.push(`Tuned to ${stats.sessions.toLocaleString()} past exercise sessions.`);
+    if (stats?.model != null) {
+      learned.push(`Replaying your history, goals land within 1 rep ${Math.round(stats.model * 100)}% of the time (repeating last time: ${Math.round(stats.naive * 100)}%).`);
+    }
+    if (stats?.restSamples >= 10 && params) learned.push(`You usually rest ${formatRest(params.typicalRestSec)} between sets.`);
+    learned.push('Tap a finished set\'s goal to rate how it felt — Easy sets push the next goals up, Hard ones hold them.');
+
+    const dismiss = showSheet({
+      html: `
+        <div class="sheet-header">
+          <button class="btn-text" id="goal-done">Done</button>
+          <div class="title">Set ${esc(label)} Goal</div>
+          <span style="width: 60px;"></span>
+        </div>
+        <div class="sheet-content">
+          <div class="section goal-exercise">${esc(displayName(exercise))}</div>
+          ${body}
+          <div class="section-footer goal-learned">${learned.map(esc).join(' ')}</div>
+        </div>
+      `,
+      onMount(sheet) {
+        sheet.querySelector('#goal-done').addEventListener('click', () => dismiss());
+      },
+    });
+  }
+
   async function maybeShowPRToast(set) {
     if (!set.completed) return;
     if ((set.setType || 'working') === 'warmup') return;
@@ -494,51 +644,9 @@ function renderActive(ctx, workout) {
       .map((eid) => {
         const ex = exMap.get(eid);
         const exSets = setsByExercise.get(eid);
-        const prev = prevByExercise.get(eid) ?? new Map();
-        return renderExerciseSection(eid, ex, exSets, prev, setCountByExercise.get(eid) ?? 0);
+        return renderExerciseSection(eid, ex, exSets, goals, ratingSetId, setCountByExercise.get(eid) ?? 0);
       })
       .join('');
-
-    // A set is "owned" once the user types in it or completes it — clear any
-    // auto-bump bookkeeping so it won't be reverted out from under them.
-    function clearBumpMarker(s) {
-      delete s.bumpedBy;
-      delete s.preBumpWeight;
-      delete s.preBumpReps;
-    }
-    // The previous-workout value (what PREV shows) for a set's slot — the target
-    // an auto-bump should revert to. Null when the set has no history.
-    function prevTargetFor(s) {
-      const exSets = sets
-        .filter((x) => x.exerciseId === s.exerciseId)
-        .sort((a, b) => a.order - b.order);
-      const type = s.setType || 'working';
-      let typePos = 0;
-      let overallPos = 0;
-      for (const x of exSets) {
-        overallPos += 1;
-        if ((x.setType || 'working') === type) typePos += 1;
-        if (x.id === s.id) break;
-      }
-      const prev = findPrevSetByTypeAndPosition(type, typePos, prevByExercise.get(s.exerciseId), overallPos);
-      return prev && prev.weight > 0 && prev.reps > 0 ? { weight: prev.weight, reps: prev.reps } : null;
-    }
-    // Re-evaluate the bumps a trigger set causes: undo its old ones, then re-apply
-    // from its current value (if still completed). Reflects changes in the
-    // succeeding rows' inputs in place so a field being typed in keeps focus.
-    async function resyncBumps(trigger) {
-      await revertBumpsFrom(trigger.id, sets);
-      if (trigger.completed) await bumpSucceedingSets(trigger, sets, prevTargetFor);
-      for (const s of sets) {
-        if (s.exerciseId !== trigger.exerciseId) continue;
-        const row = sectionsEl.querySelector(`.set-row[data-set-id="${s.id}"]`);
-        if (!row) continue;
-        const w = row.querySelector('.weight-input');
-        const r = row.querySelector('.reps-input');
-        if (w && document.activeElement !== w) w.value = s.weight > 0 ? String(s.weight) : '';
-        if (r && document.activeElement !== r) r.value = s.reps > 0 ? String(s.reps) : '';
-      }
-    }
 
     // Wire up per-set events
     for (const wrap of sectionsEl.querySelectorAll('.set-row-wrap')) {
@@ -557,46 +665,65 @@ function renderActive(ctx, workout) {
         await reload();
       });
 
-      const persistWeight = debounce(async () => {
-        await resyncBumps(set);
+      // Typing makes a set the user's own: goals stop moving it, and the sets
+      // after it re-plan around the new numbers.
+      const replan = debounce(async () => {
+        await refreshGoals();
+        syncRowsInPlace();
         if (set.completed) updateRunningStats();
       }, 200);
       weightInput.addEventListener('input', () => {
         set.weight = parseFloat(weightInput.value) || 0;
-        clearBumpMarker(set);          // user now owns this value
+        delete set.autofill;
         put('sets', { ...set }).catch((error) => console.error('Set save failed', error));
-        persistWeight();
+        replan();
       });
-
-      const persistReps = debounce(async () => {
-        await resyncBumps(set);
-        if (set.completed) updateRunningStats();
-      }, 200);
       repsInput.addEventListener('input', () => {
         set.reps = parseInt(repsInput.value, 10) || 0;
-        clearBumpMarker(set);
+        delete set.autofill;
         put('sets', { ...set }).catch((error) => console.error('Set save failed', error));
-        persistReps();
+        replan();
       });
 
       completeBtn.addEventListener('click', async () => {
         const wasCompleted = set.completed;
         set.completed = !set.completed;
-        if (set.completed) clearBumpMarker(set);  // a logged set owns its value
+        if (set.completed) {
+          // Stamp the time (→ rest between sets) and the goal it was lifted
+          // against (→ which goals get hit), and offer the effort rating.
+          set.completedAt = Date.now();
+          delete set.autofill;
+          const goal = goals.get(set.id);
+          if (goal?.kind === 'model') {
+            set.goalWeight = goal.weight;
+            set.goalReps = goal.reps;
+          } else {
+            delete set.goalWeight;
+            delete set.goalReps;
+          }
+          ratingSetId = isWorkingSet(set) ? set.id : null;
+        } else {
+          delete set.completedAt;
+          delete set.goalWeight;
+          delete set.goalReps;
+          delete set.effort;
+          if (ratingSetId === set.id) ratingSetId = null;
+        }
         await put('sets', set);
-        setRow.classList.toggle('completed', set.completed);
-        completeBtn.innerHTML = checkIcon(set.completed);
-        const setLabel = setRow.querySelector('.set-number')?.textContent?.trim() || '';
-        completeBtn.setAttribute('aria-label', `${set.completed ? 'Mark incomplete' : 'Mark complete'} set ${setLabel}`);
+        await refreshGoals();
+        renderSections();
         updateRunningStats();
-        if (!wasCompleted && set.completed) {
-          const bumped = await bumpSucceedingSets(set, sets, prevTargetFor);
-          if (bumped) renderSections();
-          await maybeShowPRToast(set);
-        } else if (wasCompleted && !set.completed) {
-          // Unchecked: put back any sets this one bumped up.
-          const reverted = await revertBumpsFrom(set.id, sets);
-          if (reverted) renderSections();
+        if (!wasCompleted && set.completed) await maybeShowPRToast(set);
+      });
+
+      // Goal cell: an open set explains its goal; a finished working set
+      // opens (or closes) its effort rating.
+      setRow.querySelector('.goal')?.addEventListener('click', () => {
+        if (!set.completed) {
+          openGoalSheet(set);
+        } else if (isWorkingSet(set)) {
+          ratingSetId = ratingSetId === set.id ? null : set.id;
+          renderSections();
         }
       });
 
@@ -605,42 +732,38 @@ function renderActive(ctx, workout) {
       if (numBtn) {
         numBtn.addEventListener('click', async () => {
           const current = set.setType || 'working';
-          const newType = current === 'warmup' ? 'working' : 'warmup';
-          set.setType = newType;
-          // Re-suggest this set's numbers from the matching slot's history (the
-          // same value PREV shows), so a set flipped to/from warmup adopts that
-          // slot's previous weight/reps instead of keeping the other type's.
-          // Skip if it's already completed (don't rewrite logged work).
-          if (!set.completed) {
-            const exSets = sets
-              .filter((s) => s.exerciseId === set.exerciseId)
-              .sort((a, b) => a.order - b.order);
-            let typePos = 0;
-            let overallPos = 0;
-            for (const s of exSets) {
-              overallPos += 1;
-              if ((s.setType || 'working') === newType) typePos += 1;
-              if (s.id === set.id) break;
-            }
-            const prev = findPrevSetByTypeAndPosition(
-              newType, typePos, prevByExercise.get(set.exerciseId), overallPos
-            );
-            if (prev && prev.weight > 0 && prev.reps > 0) {
-              set.weight = prev.weight;
-              set.reps = prev.reps;
-            }
-          }
+          set.setType = current === 'warmup' ? 'working' : 'warmup';
+          // Re-suggest this set's numbers for its new slot (a warmup repeats
+          // last time's warmup; a working set takes its goal). Skip if it's
+          // already completed (don't rewrite logged work).
+          if (!set.completed) set.autofill = true;
+          if (!isWorkingSet(set) && ratingSetId === set.id) ratingSetId = null;
           await put('sets', set);
+          await refreshGoals();
           renderSections();  // re-render so set numbering updates correctly across the section
         });
       }
     }
 
+    // One tap on the effort strip rates the set (tap the same one again to
+    // clear it); the goals after it re-plan around the rating.
+    for (const btn of sectionsEl.querySelectorAll('.effort-btn')) {
+      btn.addEventListener('click', async () => {
+        const s = sets.find((x) => x.id === btn.dataset.setId);
+        if (!s) return;
+        if (s.effort === btn.dataset.effort) delete s.effort;
+        else s.effort = btn.dataset.effort;
+        await put('sets', s);
+        ratingSetId = null;
+        await refreshGoals();
+        renderSections();
+      });
+    }
+
     // Wire up add-set and exercise menu
     for (const addBtn of sectionsEl.querySelectorAll('.add-set-btn')) {
       addBtn.addEventListener('click', async () => {
-        const eid = addBtn.dataset.exerciseId;
-        await addSet(workout, sets, eid, prevByExercise.get(eid) ?? new Map());
+        await addSet(workout, sets, addBtn.dataset.exerciseId);
         await reload();
       });
     }
@@ -672,28 +795,29 @@ function renderActive(ctx, workout) {
   };
 }
 
-function renderExerciseSection(exerciseId, exercise, sets, prevSets = new Map(), totalSetCount = 0) {
+function isWorkingSet(set) {
+  return (set.setType || 'working') !== 'warmup';
+}
+
+/** "W2" / "3": warmups and working sets are numbered separately. */
+function setDisplayLabel(exSets, set) {
+  const sorted = [...exSets].sort((a, b) => a.order - b.order);
+  let n = 0;
+  for (const s of sorted) {
+    if (isWorkingSet(s) === isWorkingSet(set)) n += 1;
+    if (s.id === set.id) break;
+  }
+  return isWorkingSet(set) ? String(n) : `W${n}`;
+}
+
+function renderExerciseSection(exerciseId, exercise, sets, goals, ratingSetId, totalSetCount = 0) {
   // Warmups get their own counter (W1, W2, W3); working sets get 1, 2, 3.
-  // PREV matches by type AND position-within-type so W1 lines up with last
-  // workout's W1, working-set 2 lines up with last workout's working-set 2, etc.
-  // Each slot can come from a different past workout (see prevSets above).
   let workingIndex = 0;
   let warmupIndex = 0;
-  const setBlocks = sets.map((s, i) => {
-    const type = s.setType || 'working';
-    let display;
-    let positionInType;
-    if (type === 'warmup') {
-      warmupIndex += 1;
-      positionInType = warmupIndex;
-      display = `W${warmupIndex}`;
-    } else {
-      workingIndex += 1;
-      positionInType = workingIndex;
-      display = String(workingIndex);
-    }
-    const prev = findPrevSetByTypeAndPosition(type, positionInType, prevSets, i + 1);
-    return renderSetRow(s, display, prev);
+  const setBlocks = sets.map((s) => {
+    const display = isWorkingSet(s) ? String(++workingIndex) : `W${++warmupIndex}`;
+    const rating = s.id === ratingSetId && s.completed && isWorkingSet(s);
+    return renderSetRow(s, display, goals.get(s.id), rating);
   }).join('');
 
   return `
@@ -705,7 +829,7 @@ function renderExerciseSection(exerciseId, exercise, sets, prevSets = new Map(),
       </div>
       <div class="set-table-header">
         <div class="col-set">SET</div>
-        <div>PREV</div>
+        <div>GOAL</div>
         <div>LBS</div>
         <div>REPS</div>
         <div></div>
@@ -733,25 +857,77 @@ function findPrevSetByTypeAndPosition(type, positionInType, prevMap, overallPosi
   return null;
 }
 
-function renderSetRow(set, displayLabel, prevSet) {
+const formatGoal = (weight, reps) => (weight > 0 ? `${formatWeight(weight)} × ${reps}` : `${reps} reps`);
+
+/**
+ * The GOAL cell for a set row: an open set shows its goal (tap for why); a
+ * finished working set shows the goal it was lifted against, marked when hit,
+ * with its effort rating underneath.
+ */
+function goalCell(set, goal) {
+  if (set.completed) {
+    const felt = EFFORTS[set.effort];
+    const met = goalMet(set);
+    const main = set.goalReps > 0 ? formatGoal(set.goalWeight, set.goalReps)
+      : goal?.kind === 'warmup' ? formatGoal(goal.weight, goal.reps)
+      : '—';
+    const rateable = isWorkingSet(set);
+    return {
+      cls: `goal done${met ? ' met' : ''}`,
+      html: `<span class="goal-main">${esc(main)}</span>${felt ? `<span class="goal-sub">${esc(felt.label)}</span>` : ''}`,
+      aria: `${set.goalReps > 0 ? `Goal was ${main}${met ? ', hit' : ''}` : 'No goal'}${felt ? `, felt ${felt.label}` : ''}${rateable ? ', tap to rate effort' : ''}`,
+    };
+  }
+  if (!goal) return { cls: 'goal none', html: '—', aria: 'No goal yet, tap for details' };
+  const text = formatGoal(goal.weight, goal.reps);
+  return { cls: `goal ${goal.kind}`, html: esc(text), aria: `Goal ${text}, tap for details` };
+}
+
+function renderSetRow(set, displayLabel, goal, showRating) {
   const type = set.setType || 'working';
-  const prevText = prevSet && prevSet.weight > 0 && prevSet.reps > 0
-    ? `${formatWeight(prevSet.weight)} × ${prevSet.reps}`
-    : '—';
+  const cell = goalCell(set, goal);
+  const strip = showRating ? `
+    <div class="effort-strip" role="group" aria-label="How did set ${displayLabel} feel?">
+      <span class="effort-q">How did it feel?</span>
+      ${Object.entries(EFFORTS).map(([key, e]) => `
+        <button class="effort-btn${set.effort === key ? ' selected' : ''}" data-set-id="${set.id}" data-effort="${key}">
+          <span class="effort-label">${e.label}</span><span class="effort-hint">${e.hint}</span>
+        </button>`).join('')}
+    </div>` : '';
   return `
     <div class="set-row-wrap" data-set-id="${set.id}">
       <button class="set-swipe-delete" data-set-id="${set.id}" aria-label="Delete set ${displayLabel}">Delete</button>
       <div class="set-row type-${type}${set.completed ? ' completed' : ''}" data-set-id="${set.id}">
         <button class="set-number" aria-label="Set ${displayLabel}, tap to mark as ${type === 'warmup' ? 'working' : 'warmup'}">${displayLabel}</button>
-        <div class="prev" aria-label="Previous">${prevText}</div>
+        <button class="${cell.cls}" aria-label="${esc(cell.aria)}">${cell.html}</button>
         <input class="weight-input" type="number" inputmode="decimal" step="0.5" aria-label="Weight in pounds for set ${displayLabel}"
                placeholder="0" value="${set.weight > 0 ? set.weight : ''}" />
         <input class="reps-input" type="number" inputmode="numeric" step="1" aria-label="Repetitions for set ${displayLabel}"
                placeholder="0" value="${set.reps > 0 ? set.reps : ''}" />
         <button class="complete-btn" aria-label="${set.completed ? 'Mark incomplete' : 'Mark complete'} set ${displayLabel}">${checkIcon(set.completed)}</button>
       </div>
-    </div>
+    </div>${strip}
   `;
+}
+
+/** "+1 rep", "−½ rep", "+1½ reps", "±0" — an effect rounded to the half rep. */
+function formatRepEffect(reps) {
+  const half = Math.round(reps * 2) / 2;
+  if (half === 0) return '±0';
+  const abs = Math.abs(half);
+  const whole = Math.floor(abs);
+  const num = `${whole > 0 ? whole : ''}${abs > whole ? '½' : ''}`;
+  return `${half > 0 ? '+' : '−'}${num} rep${abs > 1 ? 's' : ''}`;
+}
+
+function formatLbsChange(lbs) {
+  return `${lbs > 0 ? '+' : '−'}${formatWeight(Math.abs(lbs))} lbs`;
+}
+
+function effectClass(reason) {
+  const v = reason.reps ?? reason.lbs ?? 0;
+  if (reason.reps != null && Math.abs(v) < 0.25) return '';
+  return v > 0 ? ' up' : v < 0 ? ' down' : '';
 }
 
 /**
@@ -893,6 +1069,8 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
     const template = prevSets.length > 0
       ? prevSets
       : [{ weight: 0, reps: 0, setType: 'working' }];
+    // Prefilled numbers are last time's until reload() moves each set onto
+    // its goal; `autofill` marks them as suggestions the goals may update.
     const newSets = template.map((prev) => ({
       id: uuid(),
       workoutId: workout.id,
@@ -901,6 +1079,7 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
       reps: prev.reps ?? 0,
       setType: prev.setType || 'working',
       completed: false,
+      autofill: true,
       order: order++,
       createdAt: Date.now(),
     }));
@@ -909,109 +1088,22 @@ async function addExercisesToWorkout(workout, existingSets, exerciseIds) {
 }
 
 /**
- * When a set is marked complete, pull any later sets of the same exercise that
- * fall short up to match the just-completed set — across set types, so a
- * heavier warmup can lift a lighter following set too. A later set has to hold
- * its own on BOTH counts to keep its previous-workout target: going heavier
- * bumps later sets even when their volume is higher (100×5 pulls up a planned
- * 95×10), and more total volume bumps them even at the same weight.
- * Already-logged (completed) later sets are never rewritten. Each bumped set
- * remembers its pre-bump weight/reps and which set bumped it, so the change can
- * be undone (see revertBumpsFrom). Returns true if any set was changed.
+ * Append a working set to an exercise. It starts as a copy of the exercise's
+ * last set and is flagged autofill, so reload() moves it onto its goal when
+ * there is one (history, or sets already done today).
  */
-async function bumpSucceedingSets(completedSet, allSets, prevTargetFor) {
-  const completedWeight = completedSet.weight || 0;
-  const completedVol = completedWeight * (completedSet.reps || 0);
-  if (completedVol <= 0) return false;
-  let changed = false;
-  for (const s of allSets) {
-    if (s.exerciseId !== completedSet.exerciseId) continue;
-    if (s.id === completedSet.id) continue;
-    if ((s.order ?? 0) <= (completedSet.order ?? 0)) continue;
-    if (s.completed) continue;
-    const behind = (s.weight || 0) * (s.reps || 0) < completedVol
-      || (s.weight || 0) < completedWeight;
-    if (behind) {
-      if (s.bumpedBy == null) {
-        // Revert target is the previous-workout value for this slot (what PREV
-        // shows) so unchecking restores the original, not an interim bump.
-        // Fall back to the current value when there's no history.
-        const orig = prevTargetFor?.(s);
-        s.preBumpWeight = orig ? orig.weight : s.weight;
-        s.preBumpReps = orig ? orig.reps : s.reps;
-      }
-      s.bumpedBy = completedSet.id;
-      s.weight = completedSet.weight;
-      s.reps = completedSet.reps;
-      await put('sets', s);
-      changed = true;
-    }
-  }
-  return changed;
-}
-
-/**
- * Undo the auto-bumps caused by a given trigger set (when it's unchecked or its
- * weight/reps change). Restores each still-unedited, uncompleted set to its
- * remembered pre-bump weight/reps and clears the bookkeeping. Returns true if
- * any set was changed.
- */
-async function revertBumpsFrom(triggerId, allSets) {
-  let changed = false;
-  for (const s of allSets) {
-    if (s.bumpedBy !== triggerId) continue;
-    if (!s.completed) {
-      if (s.preBumpWeight != null) s.weight = s.preBumpWeight;
-      if (s.preBumpReps != null) s.reps = s.preBumpReps;
-    }
-    delete s.bumpedBy;
-    delete s.preBumpWeight;
-    delete s.preBumpReps;
-    await put('sets', s);
-    changed = true;
-  }
-  return changed;
-}
-
-async function addSet(workout, existingSets, exerciseId, prevSets = new Map()) {
+async function addSet(workout, existingSets, exerciseId) {
   const setsForEx = existingSets.filter((s) => s.exerciseId === exerciseId);
   const last = setsForEx[setsForEx.length - 1];
-
-  // The new set is a working set appended at the end of this exercise.
-  const vol = (s) => (s?.weight || 0) * (s?.reps || 0);
-  const workingSets = setsForEx.filter((s) => (s.setType || 'working') !== 'warmup');
-  const newPosition = workingSets.length + 1;
-  const prevForNew = findPrevSetByTypeAndPosition('working', newPosition, prevSets, setsForEx.length + 1);
-
-  // Heaviest working set entered so far this workout (by volume).
-  const bestSoFar = workingSets
-    .filter((s) => s.weight > 0 && s.reps > 0)
-    .reduce((best, s) => (!best || vol(s) > vol(best) ? s : best), null);
-
-  // Have we already beaten the previous workout at any matching set position?
-  const beatenPrevious = workingSets.some((s, i) => {
-    const prev = findPrevSetByTypeAndPosition('working', i + 1, prevSets);
-    return prev && prev.weight > 0 && prev.reps > 0 && vol(s) > vol(prev);
-  });
-
-  // Progressive overload: when there's no previous-workout history for this next
-  // set, or we've already exceeded the previous volume, carry the heaviest set
-  // of the workout forward instead of just repeating the last (possibly lighter)
-  // set. Otherwise keep the default "repeat last set" behavior.
-  let weight = last?.weight ?? 0;
-  let reps = last?.reps ?? 0;
-  if (bestSoFar && (!prevForNew || beatenPrevious)) {
-    weight = bestSoFar.weight;
-    reps = bestSoFar.reps;
-  }
-
   const set = {
     id: uuid(),
     workoutId: workout.id,
     exerciseId,
-    weight,
-    reps,
+    weight: last?.weight ?? 0,
+    reps: last?.reps ?? 0,
+    setType: 'working',
     completed: false,
+    autofill: true,
     order: (last?.order ?? -1) + 1,
     createdAt: Date.now(),
   };

@@ -4,37 +4,66 @@ A self-contained, offline-first workout tracker that runs as a Progressive Web A
 
 **Features**
 - Start an empty workout, add exercises, log weight × reps per set, finish.
+- **Set goals:** every set shows a GOAL worked out from your own history — recent sessions and their trend, days since you last did the exercise, how recovered its muscles are, what you've already done this workout, and how today's earlier sets went. Tap a goal to see why.
+- One-tap effort rating (Easy / Solid / Hard) after each set, and rest time between sets recorded automatically.
 - ~70 seeded common exercises + ability to add your own custom exercises.
 - History tab with all past workouts.
 - Per-exercise detail with recent sets and an estimated-1RM line chart.
 - Progress tab with totals, a volume trend chart with one line per training day (Chest / Legs / Back/Bi), top exercises, and PRs.
 - The app accent color follows today's rotation day (Chest pink, Legs gold, Back/Bi blue), and each muscle group's volume-bar color is a shade of its day's color.
 - **Encrypted** JSON Export/Import via the Files picker — point at iCloud Drive for cross-device sync.
-- State of Mind + Medications (from the Workout start screen): log moods and per-medication doses in-app, with mood-vs-training correlation and dose adherence.
 - iOS-style design with dark mode auto-detect.
 - Works fully offline once installed (service worker caches everything).
 
 ---
 
-## Mood & medications
+## How set goals work
 
-Logged **directly in Lift**, from two buttons on the Workout start screen:
+The GOAL column replaces the old PREV column. Each open set's inputs are
+prefilled with its goal, and the goals keep re-planning as you go: finish a
+set heavier than planned, rate it Easy, or type different numbers, and the
+sets after it move. A set you've typed in is yours — goals never overwrite it.
 
-- **State of Mind** — momentary/daily kind, a pleasantness slider (Apple's
-  scale, stored as a −1..1 valence), optional emotion + context labels, and a
-  time. Shows average mood and a mood-vs-training correlation (mood on workout
-  vs. rest days).
-- **Medications** — add a medication, then log each dose per-med (Taken now /
-  Skip / Log at time), with adherence % and a timestamped dose history.
+A goal starts from your recent sessions of that exercise (weighted toward the
+latest, projected along their trend), then adjusts for:
 
-This data lives only in Lift (nothing syncs to or from Apple Health); the model
-mirrors HealthKit's fields (valence, emotion labels, dose status). Logic in
-[`src/health.js`](src/health.js), UI in `src/views/health.js`.
+- **Days since you last did it**, in 24-hour steps — a small lift after a few
+  days' rest, a gradual detraining loss after ~10 days away.
+- **Muscle recovery** — hard sets from the past week on the same muscles (from
+  any exercise, so incline counts against bench), fading by the hour.
+- **This workout** — sets that already hit those muscles today.
+- **Set position** — your own typical drop from set 1 to set 2, 3, …
+- **Today so far** — this exercise's finished sets count most; how you're doing
+  against goals on other lifts nudges it a little.
+- **Progression** — hit every goal last time (and nothing felt Hard)? It
+  reaches for one more rep. When reps climb past your usual range, the weight
+  steps up by the increment you normally use instead.
 
-> **Privacy:** because this is sensitive data, all backups are AES-256-GCM
-> **encrypted** with a device passphrase (Progress → share icon → Backup
-> password → save it in your Passwords app). The backup file in iCloud is
-> unreadable without it. See `src/crypto.js`.
+Every past session is judged by the same adjustments as they stood back then,
+so anything that's always true (say, incline always after flat bench) cancels
+out — only what's different today moves the goal.
+
+**Effort.** After you check off a working set, a strip asks how it felt: Easy
+(3+ reps left), Solid (1–2 left), Hard (0–1 left). It's optional. Ratings make
+goals smarter: an Easy set raises the next goals, a Hard one holds them. Tap a
+finished set's goal to rate (or re-rate) it later.
+
+**Rest.** Each set records when it was checked off, so rest between sets is
+known. Because logging can lag or be forgotten, rest only nudges goals by a few
+percent at most and gaps under 20 s or over 15 min are ignored.
+
+**Tuned to you.** The model replays your history — predicting each past
+session from the ones before it — and keeps the recovery, fatigue, detraining
+and recency settings that predicted you best, leaning on the defaults until
+there's enough history. The goal sheet shows how often goals land within one
+rep compared with just repeating last time. All of this is computed on the
+device; logic in [`src/goals.js`](src/goals.js), tests in `tests/`
+(`npm test`).
+
+> **Privacy:** all backups are AES-256-GCM **encrypted** with a device
+> passphrase (Progress → share icon → Backup password → save it in your
+> Passwords app). The backup file in iCloud is unreadable without it. See
+> `src/crypto.js`.
 
 ---
 
@@ -151,13 +180,15 @@ lift-pwa/
 ├── index.html              — app shell; loads the built dist/ bundle
 ├── manifest.webmanifest    — PWA install metadata
 ├── build.mjs               — build script: bundles src/ → dist/, regenerates the SW
-├── package.json            — dev tooling (esbuild); `npm run build`
+├── package.json            — dev tooling (esbuild); `npm run build`, `npm test`
 ├── service-worker.template.js — SOURCE for the service worker (edit this)
 ├── service-worker.js       — GENERATED by the build (cache list + version)
 ├── styles.css              — iOS-style design system (auto dark mode)
 ├── dist/                   — GENERATED, committed so Pages serves it
 │   ├── app.js              — the whole app, bundled + minified
 │   └── app.css             — styles.css, minified
+├── tests/
+│   └── goals.test.mjs      — unit tests for the goal model (`npm test`, no deps)
 ├── tools/
 │   ├── install-prune-agent.sh — one-command installer for the backup pruner
 │   ├── prune-backups.sh    — Mac-side trim of the backup folder to the newest few
@@ -170,6 +201,7 @@ lift-pwa/
     ├── db.js               — IndexedDB wrapper (exercises, workouts, sets)
     ├── seed.js             — ~70 starter exercises + muscle classification
     ├── days.js             — PPL rotation, day colors, muscle-day mapping, theming
+    ├── goals.js            — set goals: history model, calibration, explanations
     ├── migrations.js       — one-time data cleanups (run once per device)
     ├── backup.js           — JSON export/import via Files picker
     ├── charts.js           — the interactive time-series chart

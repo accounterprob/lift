@@ -1,19 +1,19 @@
 const DB_NAME = 'lift';
 // Schema version. Must only ever INCREASE — opening with a number lower than a
 // device has already used makes IndexedDB refuse to open the database.
-// v4 adds the read-only Apple Health import stores (see health.js).
 // v5 adds appMeta, device settings that are deliberately NOT user data.
-// v6 drops doseEvents: medications are a standing list, not a per-day log.
-const DB_VERSION = 6;
+// v7 drops the mood + medication stores (stateOfMind, medications, and the
+// older doseEvents) — Lift is workouts only.
+const DB_VERSION = 7;
+
+// Retired stores, deleted on upgrade wherever they still exist.
+const RETIRED_STORES = ['stateOfMind', 'medications', 'doseEvents'];
 
 // Every object store holding user data, so clear/replace operations can't
 // forget one. Deliberately excludes appMeta: the backup passphrase lives there
 // and must survive a restore rather than be replaced by the backup's own copy
 // (and must never be written into a backup beside the data it encrypts).
-export const ALL_STORES = [
-  'exercises', 'workouts', 'sets',
-  'stateOfMind', 'medications',
-];
+export const ALL_STORES = ['exercises', 'workouts', 'sets'];
 
 let _db = null;
 
@@ -42,24 +42,15 @@ export function openDB() {
         s.createIndex('workoutId', 'workoutId', { unique: false });
         s.createIndex('exerciseId', 'exerciseId', { unique: false });
       }
-      // Apple Health import stores (read-only mirror of Health data, brought in
-      // via the import bridge — the app never writes back to Health).
-      if (!db.objectStoreNames.contains('stateOfMind')) {
-        const s = db.createObjectStore('stateOfMind', { keyPath: 'id' });
-        s.createIndex('date', 'date', { unique: false });
-      }
-      if (!db.objectStoreNames.contains('medications')) {
-        db.createObjectStore('medications', { keyPath: 'id' });
-      }
-      // Device-local settings (currently just the backup passphrase). Kept out
-      // of ALL_STORES so backup/restore never touches it.
+      // Device-local settings (the backup passphrase, the goal model's
+      // calibration). Kept out of ALL_STORES so backup/restore never touches it.
       if (!db.objectStoreNames.contains('appMeta')) {
         db.createObjectStore('appMeta', { keyPath: 'key' });
       }
-      // Dose logging was removed — medications are a standing list, so the
-      // per-dose history is dropped outright rather than left orphaned.
-      if (db.objectStoreNames.contains('doseEvents')) {
-        db.deleteObjectStore('doseEvents');
+      // Mood + medication tracking was removed; drop its data outright rather
+      // than leave it orphaned on the device.
+      for (const name of RETIRED_STORES) {
+        if (db.objectStoreNames.contains(name)) db.deleteObjectStore(name);
       }
     };
   });
@@ -161,9 +152,8 @@ export async function clearAll() {
 
 /** Replace the complete Lift database in one transaction. Every store is
  * cleared and repopulated from `rowsByStore` (a store missing from the object
- * is emptied), so restoring an older backup with no health data clears any
- * health stores too. If any record is invalid, runTx aborts the transaction so
- * the existing data is never left half-erased. */
+ * is emptied). If any record is invalid, runTx aborts the transaction so the
+ * existing data is never left half-erased. */
 export async function replaceAllData(rowsByStore) {
   const db = await openDB();
   return runTx(db, ALL_STORES, (tx) => {
@@ -483,27 +473,6 @@ export async function reorganizeOtherExercises(classify) {
     for (const w of workoutsToDelete) woStore.delete(w.id);
   });
   return { recategorized: toUpdate.length, deleted: deleteIds.size, workouts: workoutsToDelete.length };
-}
-
-/**
- * One-time backfill: the Creatine entry imported from Apple Health is a daily
- * serving of four 1.25 g capsules, but was stored with no per-dose amount, so
- * each log counted as a single generic "dose". Give it an explicit amount (4)
- * and unit (capsule) and drop the now-redundant "(4×/day)" note from the form.
- * Idempotent: only touches a Creatine med that has no doseAmount set yet.
- */
-export async function backfillCreatineDose() {
-  const meds = await getAll('medications');
-  const toUpdate = [];
-  for (const m of meds) {
-    if (m.doseAmount != null) continue;
-    const name = m.nickname || m.concept?.displayText || '';
-    if (!/creatine/i.test(name)) continue;
-    const form = (m.concept?.form || '').replace(/\s*\(4\s*[×x]\s*\/?\s*day\)\s*/i, '').trim();
-    toUpdate.push({ ...m, doseAmount: 4, doseUnit: 'capsule', concept: { ...m.concept, form } });
-  }
-  if (toUpdate.length > 0) await putMany('medications', toUpdate);
-  return toUpdate.length;
 }
 
 /**

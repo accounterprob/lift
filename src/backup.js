@@ -7,17 +7,15 @@ import {
 } from './crypto.js';
 
 export async function buildSnapshot() {
-  const [exercises, workouts, sets, stateOfMind, medications] = await Promise.all([
+  const [exercises, workouts, sets] = await Promise.all([
     getAll('exercises'), getAll('workouts'), getAll('sets'),
-    getAll('stateOfMind'), getAll('medications'),
   ]);
   return {
-    // v2 added the mood + medication stores; v3 drops doseEvents, which older
-    // backups may still carry (restore simply ignores them).
-    version: 3,
+    // v4 drops the mood + medication stores. Older backups may still carry
+    // stateOfMind / medications / doseEvents; restore simply ignores them.
+    version: 4,
     exportedAt: new Date().toISOString(),
     exercises, workouts, sets,
-    stateOfMind, medications,
   };
 }
 
@@ -30,7 +28,7 @@ function timestampedName() {
 /**
  * Export an ENCRYPTED backup. The file written to disk / iCloud is an AES-GCM
  * envelope (see crypto.js) that's unreadable without the device passphrase, so
- * mood + medication data never sits in cloud storage as plaintext.
+ * training history never sits in cloud storage as plaintext.
  */
 export async function downloadBackup() {
   const snapshot = await buildSnapshot();
@@ -84,13 +82,11 @@ export async function restoreFromFile(file) {
     throw new Error('File doesn\'t look like a Lift backup.');
   }
 
+  // Mood / medication data in a pre-v4 backup is intentionally dropped.
   await replaceAllData({
     exercises: snapshot.exercises,
     workouts: snapshot.workouts,
     sets: snapshot.sets,
-    stateOfMind: snapshot.stateOfMind ?? [],
-    medications: snapshot.medications ?? [],
-    // snapshot.doseEvents from a pre-v3 backup is intentionally dropped.
   });
 
   // A restored backup can predate the one-time cleanups (old cardio/"Other"
@@ -102,7 +98,6 @@ export async function restoreFromFile(file) {
     exercises: snapshot.exercises.length,
     workouts: snapshot.workouts.length,
     sets: snapshot.sets.length,
-    stateOfMind: (snapshot.stateOfMind ?? []).length,
   };
 }
 

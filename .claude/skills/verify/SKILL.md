@@ -35,11 +35,16 @@ The app seeds its ~70-exercise library on first load (wait for
 `.workout-start`). Then write workouts/sets straight into IndexedDB from
 `page.evaluate` and `page.reload()`:
 
-- DB `lift` v1, stores `exercises` / `workouts` / `sets` (keyPath `id`).
+- DB `lift` (v7), stores `exercises` / `workouts` / `sets` (keyPath `id`),
+  plus device-local `appMeta` (backup passphrase, cached goal calibration).
 - Workout: `{ id, name, startedAt, endedAt, notes }` — `endedAt: null` = active
   workout; names like `Chest Day` / `Leg Day` / `Back/Bi Day` drive the
   rotation (see `src/days.js` normalizeDayName).
 - Set: `{ id, workoutId, exerciseId, weight, reps, setType: 'working', completed: true, order, createdAt }`.
+  Optional: `completedAt` (check-off time → rest), `effort` (`easy`/`solid`/`hard`),
+  `goalWeight`/`goalReps` (goal snapshot at check-off), `autofill` (open set
+  still holding the app's suggestion). Give seeded sets `completedAt` to
+  exercise the rest logic.
 - Look up `exerciseId`s from the seeded library by name — a startup migration
   strips equipment suffixes from names ("Bench Press (Barbell)" → "Bench
   Press" + equipment field), so match loosely.
@@ -55,6 +60,12 @@ scenario script shape if you need a reference to rebuild one.
   animation before screenshots) → pick a day → theme flips immediately.
 - Active workout: `#add-exercise-btn` → search + click rows → `#picker-add`;
   click `.complete-btn`s → `.vol-muscle` bars (assert `--mcolor`/`--mtext`).
+- Set goals: the second column is GOAL (`.set-row .goal`, class `model` /
+  `warmup` / `none` / `done`). Autofilled inputs equal the goal. Tap an open
+  set's goal → explanation sheet (`#goal-done` closes). Completing a working
+  set opens `.effort-strip`; `.effort-btn[data-effort]` rates it. Beating a
+  goal moves later autofilled sets up. The model itself has unit tests:
+  `npm test`.
 - Progress tab: `[data-tab="progress"]` → `.chart-legend` items, `.chart-line`
   strokes, scrub via `page.mouse` drag over `.chart-container`, period via
   setting `.chart-range` value + dispatching `input`.
