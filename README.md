@@ -11,7 +11,7 @@ A self-contained, offline-first workout tracker that runs as a Progressive Web A
 - Per-exercise detail with recent sets and an estimated-1RM line chart.
 - Progress tab with totals, a volume trend chart with one line per training day (Chest / Legs / Back/Bi), top exercises, and PRs.
 - The app accent color follows today's rotation day (Chest pink, Legs gold, Back/Bi blue), and each muscle group's volume-bar color is a shade of its day's color.
-- **Encrypted** JSON Export/Import via the Files picker — point at iCloud Drive for cross-device sync.
+- JSON Export/Import via the Files picker — point at iCloud Drive for cross-device sync.
 - iOS-style design with dark mode auto-detect.
 - Works fully offline once installed (service worker caches everything).
 
@@ -60,9 +60,8 @@ rep compared with just repeating last time. All of this is computed on the
 device; logic in [`src/goals.js`](src/goals.js), tests in `tests/`
 (`npm test`).
 
-> **Privacy:** all backups are AES-256-GCM **encrypted** with a device
-> passphrase (Progress → share icon → Backup password → save it in your
-> Passwords app). The backup file in iCloud is unreadable without it. See
+> **Backups are plain JSON** (encryption was removed 2026-10-18). Restore
+> still opens older encrypted backups and asks for their password; see
 > `src/crypto.js`.
 
 ---
@@ -146,31 +145,6 @@ After that, the flow on iPhone is:
 
 **Restoring after a wipe:** Reinstall the PWA → open it → it'll have no data → Progress → Restore from Backup → pick the most recent JSON from `iCloud Drive/Lift`. Done.
 
-### Keeping the backup folder tidy
-
-Every backup is a **full snapshot** of the entire database, so older ones are pure redundancy — only the newest few matter. The app itself can't delete files (browsers don't allow it), but a tiny Mac-side job can trim the folder for you. `tools/prune-backups.sh` keeps the newest 3 backups (edit the `KEEP=` line for a different number) and touches nothing but `lift-backup-*.json` files; it finds the folder in `~/Desktop/Lift` or `iCloud Drive/Lift` automatically.
-
-If an older cleanup job (e.g. an age-based one) is already installed, remove it first so two agents don't fight over the folder:
-
-```bash
-launchctl list | grep -i lift          # find any old agent's label
-ls ~/Library/LaunchAgents | grep -i lift
-launchctl unload ~/Library/LaunchAgents/<old-plist-name>.plist
-rm ~/Library/LaunchAgents/<old-plist-name>.plist
-```
-
-Then install with one command in Terminal on the Mac — it fetches the prune script, writes the agent with your real home folder baked in, loads it, and trims the folder immediately:
-
-```bash
-curl -fsSL https://accounterprob.github.io/lift/tools/install-prune-agent.sh | bash
-```
-
-(From a clone of this repo, `bash tools/install-prune-agent.sh` does the same using the local files. The manual steps it automates: copy `tools/prune-backups.sh` to `~/Scripts/`, `chmod +x` it, write `tools/com.lift.prune-backups.plist` to `~/Library/LaunchAgents/` with `__HOME__` replaced by your home folder — launchd can't expand `~` in WatchPaths — and `launchctl load` it.)
-
-The agent is event-driven: it fires the moment the Lift folder changes — i.e. right after a new backup syncs down from the phone — plus once at login to catch anything it slept through. There is no daily schedule. Run `bash ~/Scripts/prune-backups.sh` any time to trim immediately. To undo: `launchctl unload ~/Library/LaunchAgents/com.lift.prune-backups.plist` and delete the two files.
-
-> Why can't the app do this itself? iOS gives web apps no access to the Files app / iCloud Drive — Lift can hand a backup *down* as a download, but can never list or delete what's in the folder. Any cleanup has to run on the Mac.
-
 ---
 
 ## File layout
@@ -189,10 +163,6 @@ lift-pwa/
 │   └── app.css             — styles.css, minified
 ├── tests/
 │   └── goals.test.mjs      — unit tests for the goal model (`npm test`, no deps)
-├── tools/
-│   ├── install-prune-agent.sh — one-command installer for the backup pruner
-│   ├── prune-backups.sh    — Mac-side trim of the backup folder to the newest few
-│   └── com.lift.prune-backups.plist — LaunchAgent template that runs it on folder changes
 ├── icons/
 │   └── icon.svg            — app icon (neutral dumbbell, light/dark aware)
 └── src/                    — EDITABLE source, bundled into dist/app.js

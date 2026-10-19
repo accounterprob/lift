@@ -10,9 +10,9 @@ const DB_VERSION = 7;
 const RETIRED_STORES = ['stateOfMind', 'medications', 'doseEvents'];
 
 // Every object store holding user data, so clear/replace operations can't
-// forget one. Deliberately excludes appMeta: the backup passphrase lives there
-// and must survive a restore rather than be replaced by the backup's own copy
-// (and must never be written into a backup beside the data it encrypts).
+// forget one. Deliberately excludes appMeta: it holds device-local state (and,
+// on older installs, the passphrase for old encrypted backups) that a restore
+// must not replace.
 export const ALL_STORES = ['exercises', 'workouts', 'sets'];
 
 let _db = null;

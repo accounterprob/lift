@@ -1,10 +1,7 @@
 import { getAll, replaceAllData } from './db.js';
-import { showSheet, showToast, emit, esc } from './utils.js';
+import { showSheet, showToast, emit } from './utils.js';
 import { runDataMigrations } from './migrations.js';
-import {
-  getOrCreatePassphrase, getStoredPassphrase, setStoredPassphrase,
-  encryptSnapshot, decryptSnapshot, isEncryptedBackup,
-} from './crypto.js';
+import { getStoredPassphrase, decryptSnapshot, isEncryptedBackup } from './crypto.js';
 
 export async function buildSnapshot() {
   const [exercises, workouts, sets] = await Promise.all([
@@ -25,16 +22,10 @@ function timestampedName() {
   return `lift-backup-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.json`;
 }
 
-/**
- * Export an ENCRYPTED backup. The file written to disk / iCloud is an AES-GCM
- * envelope (see crypto.js) that's unreadable without the device passphrase, so
- * training history never sits in cloud storage as plaintext.
- */
+/** Export a plain JSON backup of the whole database. */
 export async function downloadBackup() {
   const snapshot = await buildSnapshot();
-  const passphrase = getOrCreatePassphrase();
-  const envelope = await encryptSnapshot(snapshot, passphrase);
-  const json = JSON.stringify(envelope);
+  const json = JSON.stringify(snapshot);
   const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
 
@@ -53,10 +44,10 @@ export async function downloadBackup() {
   return { filename, bytes: blob.size, snapshot };
 }
 
-/** Decrypt an encrypted backup: try the device's stored passphrase, else prompt
- * (and adopt a working one so future backups on this device match). */
+/** Decrypt an old encrypted backup: try the passphrase an older install left
+ * on this device, else prompt. */
 async function decryptBackup(envelope) {
-  const stored = getStoredPassphrase();
+  const stored = await getStoredPassphrase();
   if (stored) {
     try { return await decryptSnapshot(envelope, stored); } catch { /* prompt below */ }
   }
@@ -64,9 +55,7 @@ async function decryptBackup(envelope) {
     const entered = prompt('Enter your backup password (saved in your Passwords app):');
     if (entered == null) throw new Error('Restore cancelled.');
     try {
-      const snapshot = await decryptSnapshot(envelope, entered.trim());
-      setStoredPassphrase(entered.trim());
-      return snapshot;
+      return await decryptSnapshot(envelope, entered.trim());
     } catch (err) {
       if (attempt === 2) throw err;
       alert('Wrong password — try again.');
@@ -102,7 +91,6 @@ export async function restoreFromFile(file) {
 }
 
 export function openBackupSheet() {
-  const passphrase = getOrCreatePassphrase();
   showSheet({
     html: `
       <div class="sheet-header">
@@ -118,18 +106,7 @@ export function openBackupSheet() {
           </button>
         </div>
         <div class="section-footer">
-          Saves an <b>encrypted</b> JSON file. In Safari on iPhone, after the download finishes tap the Downloads button → long-press the file → <b>Share → Save to Files</b> → pick <b>iCloud Drive</b>.
-        </div>
-
-        <div class="section">Backup password</div>
-        <div class="form-section">
-          <div class="stat-row">
-            <div class="stat-value" id="bk-pass" style="font-variant-numeric: tabular-nums; letter-spacing: 0.5px; color: var(--text); -webkit-user-select: all; user-select: all;">${esc(passphrase)}</div>
-            <button class="btn-text primary" id="bk-copy">Copy</button>
-          </div>
-        </div>
-        <div class="section-footer">
-          Your backups are encrypted with this password. <b>Save it in your Passwords app</b> — you need it to restore on another device or after reinstalling. Without it, encrypted backups can't be recovered.
+          Saves a JSON file. In Safari on iPhone, after the download finishes tap the Downloads button → long-press the file → <b>Share → Save to Files</b> → pick <b>iCloud Drive</b>.
         </div>
 
         <div class="section">Restore</div>
@@ -139,7 +116,7 @@ export function openBackupSheet() {
           </button>
         </div>
         <div class="section-footer">
-          <b>Replaces</b> all current data with the chosen backup. Encrypted files prompt for the password (unless this device already has it).
+          <b>Replaces</b> all current data with the chosen backup. Older encrypted backups ask for their password.
         </div>
 
         <input type="file" id="bk-file" accept=".json,application/json" style="display: none;" />
@@ -147,11 +124,6 @@ export function openBackupSheet() {
     `,
     onMount(sheet, dismiss) {
       sheet.querySelector('#bk-close').addEventListener('click', () => dismiss());
-
-      sheet.querySelector('#bk-copy').addEventListener('click', async () => {
-        try { await navigator.clipboard.writeText(passphrase); showToast('Password copied — save it in your Passwords app'); }
-        catch { showToast('Copy failed — long-press the password to select it'); }
-      });
 
       sheet.querySelector('#bk-export').addEventListener('click', async () => {
         try {
