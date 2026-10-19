@@ -233,6 +233,21 @@ button {
   height: 26px;
 }
 
+/* Build version, tucked into the tab bar's bottom padding below the icons. */
+.app-version {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom) + 2px);
+  text-align: center;
+  font-size: 10px;
+  line-height: 12px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
 /* ---------- View content ---------- */
 .view-content {
   flex: 1;

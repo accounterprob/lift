@@ -128,6 +128,13 @@ document.querySelectorAll('.tab').forEach((btn) => {
   });
 });
 
+// App version ("v52"), injected by build.mjs from version.json, shown small
+// under the tab icons so it's easy to tell which build a device is running.
+const versionEl = document.createElement('div');
+versionEl.className = 'app-version';
+versionEl.textContent = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
+document.getElementById('tab-bar').append(versionEl);
+
 navBack.addEventListener('click', () => {
   if (activeBackHandler) activeBackHandler();
 });

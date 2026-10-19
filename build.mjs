@@ -5,11 +5,12 @@
 // service-worker.js are committed so GitHub Pages serves them directly.
 //
 // Source of truth = src/*.js, styles.css, index.html, service-worker.template.js.
-// Generated (do not hand-edit) = dist/app.js, dist/app.css, service-worker.js.
+// Generated (do not hand-edit) = dist/app.js, dist/app.css, service-worker.js,
+// version.json.
 
 import esbuild from 'esbuild';
 import { createHash } from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 
 const OUT_DIR = 'dist';
 
@@ -30,8 +31,36 @@ const PRECACHE = [
 // refs; the two dist/ files are the built app; manifest + icon round it out.)
 const HASH_INPUTS = ['dist/app.js', 'dist/app.css', 'index.html', 'manifest.webmanifest', 'icons/icon.svg', 'icons/apple-touch-icon.png'];
 
+// The app's user-facing version ("v52" under the tab bar). version.json holds
+// the number plus a hash of the source it was built from; a build bumps the
+// number only when that source changed, so rebuilding is stable and every
+// shipped change gets a new number. (A counter file rather than the git commit
+// count, which a shallow clone gets wrong.)
+const VERSION_FILE = 'version.json';
+const VERSION_INPUTS = ['styles.css', 'index.html', 'manifest.webmanifest', 'service-worker.template.js'];
+
+async function appVersion() {
+  const srcFiles = (await readdir('src', { recursive: true }))
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => `src/${f}`)
+    .sort();
+  const hash = createHash('sha256');
+  for (const f of [...srcFiles, ...VERSION_INPUTS]) {
+    hash.update(f);
+    hash.update(await readFile(f));
+  }
+  const sourceHash = hash.digest('hex').slice(0, 12);
+  let prev = { version: 0, sourceHash: null };
+  try { prev = JSON.parse(await readFile(VERSION_FILE, 'utf8')); } catch {}
+  if (prev.sourceHash === sourceHash) return prev.version;
+  const version = prev.version + 1;
+  await writeFile(VERSION_FILE, JSON.stringify({ version, sourceHash }, null, 2) + '\n');
+  return version;
+}
+
 async function build() {
   await mkdir(OUT_DIR, { recursive: true });
+  const appVer = await appVersion();
 
   // Bundle every src/ module reachable from main.js into one minified file.
   // target safari14 keeps it safe for older iPhones.
@@ -43,6 +72,7 @@ async function build() {
     target: ['safari14'],
     outfile: `${OUT_DIR}/app.js`,
     legalComments: 'none',
+    define: { __APP_VERSION__: JSON.stringify(`v${appVer}`) },
   });
 
   // Minify the stylesheet (no imports to resolve; the search-icon data URI is
@@ -74,7 +104,7 @@ async function build() {
     readFile(`${OUT_DIR}/app.js`), readFile(`${OUT_DIR}/app.css`),
   ]);
   console.log(`Built ${OUT_DIR}/app.js (${(js.length / 1024).toFixed(1)} KB) + ${OUT_DIR}/app.css (${(css.length / 1024).toFixed(1)} KB)`);
-  console.log(`Regenerated service-worker.js @ ${version}`);
+  console.log(`Regenerated service-worker.js @ ${version} (app v${appVer})`);
 }
 
 build().catch((err) => { console.error(err); process.exit(1); });
