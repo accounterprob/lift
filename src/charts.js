@@ -43,6 +43,10 @@ function collapseByDay(rawPoints) {
  *        isolated?: string,             label of the line to start isolated
  *        onStateChange?: ({ period, isolated }) => void  period key + isolated
  *                                       label (or null) after each change
+ *        rebase?: (cutoff) => series    recompute the named series for a
+ *                                       period window (cutoff ms) instead of
+ *                                       just trimming `raw`, e.g. Strength %
+ *                                       measured from the window's start
  *      }
  */
 export function mountTimeSeriesChart(container, raw, opts = {}) {
@@ -67,13 +71,26 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
     isolated: isolatedIdx === null ? null : series[isolatedIdx].label,
   });
 
+  // Rebased series per period key, matched to `series` by label so legend
+  // indices, colors and isolation stay aligned.
+  const rebased = new Map();
+  function pointsFor(p, cutoff) {
+    if (!opts.rebase || p.all) return series.map((s) => s.points);
+    if (!rebased.has(p.key)) {
+      const byLabel = new Map(opts.rebase(cutoff).map((s) => [s.label, collapseByDay(s.points)]));
+      rebased.set(p.key, series.map((s) => byLabel.get(s.label) || []));
+    }
+    return rebased.get(p.key);
+  }
+
   function filtered() {
     const p = PERIODS[activeIdx];
+    const cutoff = p.all ? null : Date.now() - p.days * 86400000;
+    const pts = pointsFor(p, cutoff);
     // Isolation empties the other series rather than dropping them, so
     // series/colors stay index-aligned for the chart builder.
-    const active = series.map((s, i) => (isolatedIdx === null || i === isolatedIdx ? s.points : []));
+    const active = pts.map((s, i) => (isolatedIdx === null || i === isolatedIdx ? s : []));
     if (p.all) return active;
-    const cutoff = Date.now() - p.days * 86400000;
     const within = active.map((pts) => pts.filter((pt) => pt.date >= cutoff));
     // Nothing at all in the window: fall back to each shown line's latest point.
     if (within.every((pts) => pts.length === 0)) return active.map((pts) => pts.slice(-1));

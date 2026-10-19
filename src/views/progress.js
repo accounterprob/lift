@@ -17,7 +17,8 @@ import { ROTATION, DAYS, classifyWorkoutDays, dayColor } from '../days.js';
 let snapshot = null;
 
 // Workout chart modes. Volume is total work (weight × reps); Strength % is
-// the average change in each exercise's estimated 1RM from its first session.
+// the average change in each exercise's estimated 1RM from its baseline
+// (first session on All, the window's start on shorter periods).
 const CHART_MODES = {
   volume:   { chip: 'Volume',     title: 'Workout Volume', key: 'volumeSeries',   opts: { unit: 'lbs' } },
   strength: { chip: 'Strength %', title: 'Strength Change', key: 'strengthSeries', opts: { format: formatPct, axisFormat: formatPctAxis } },
@@ -71,7 +72,6 @@ async function loadSnapshot() {
   let totalVolume = 0;
   let totalSets = 0;
   const volumeByDay = new Map();  // rotation day → volume points
-  const strengthByDay = new Map(); // rotation day → strength % points
   const exerciseCounts = new Map();
   const bestByExercise = new Map();
 
@@ -111,37 +111,54 @@ async function loadSnapshot() {
     }
   }
 
-  // Strength %: each exercise compared only to itself, so a heavy-but-easy
-  // lift can't drown out a light-but-hard one. Walk oldest → newest.
-  const baselineE1rm = new Map();  // exerciseId → first session's best e1RM
-  for (let i = workouts.length - 1; i >= 0; i--) {
-    const w = workouts[i];
-    const best = bestE1rmByExercise(setsByWorkout.get(w.id) || []);
-    const changes = [];
-    for (const [exerciseId, est] of best) {
-      const base = baselineE1rm.get(exerciseId);
-      // An exercise's first session is its baseline, not a data point.
-      if (base === undefined) baselineE1rm.set(exerciseId, est);
-      else changes.push((est / base - 1) * 100);
-    }
-    if (changes.length === 0) continue;
-    const day = dayById.get(w.id);
-    if (!strengthByDay.has(day)) strengthByDay.set(day, []);
-    strengthByDay.get(day).push({
-      date: w.startedAt,
-      value: changes.reduce((a, b) => a + b, 0) / changes.length,
-    });
-  }
-
   const topExercises = Array.from(exerciseCounts.entries())
     .sort((a, b) => b[1].count - a[1].count)
     .map(([, e]) => e);
   const prs = Array.from(bestByExercise.values()).sort((a, b) => b.weight - a.weight);
 
   const volumeSeries = seriesByDay(volumeByDay);
-  const strengthSeries = seriesByDay(strengthByDay);
+  // Strength % rebases to the chart's period: All compares to each lift's
+  // first session, shorter windows to where it stood when the window opened.
+  const strengthFor = (cutoff) => seriesByDay(strengthPointsByDay(workouts, setsByWorkout, dayById, cutoff));
+  const strengthSeries = strengthFor(null);
 
-  return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, volumeSeries, strengthSeries, topExercises, prs };
+  return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, volumeSeries, strengthSeries, strengthFor, topExercises, prs };
+}
+
+/**
+ * Strength % points by rotation day: each exercise compared only to itself,
+ * so a heavy-but-easy lift can't drown out a light-but-hard one.
+ *
+ * cutoff null: the baseline is each exercise's first session ever. With a
+ * cutoff (ms), it's the last session before the window opened, or the first
+ * one inside it for a lift that's new since. A baseline isn't a data point.
+ */
+function strengthPointsByDay(workouts, setsByWorkout, dayById, cutoff) {
+  const byDay = new Map();
+  const baselineE1rm = new Map();  // exerciseId → baseline best e1RM
+  // Workouts come newest-first; walk oldest → newest.
+  for (let i = workouts.length - 1; i >= 0; i--) {
+    const w = workouts[i];
+    const best = bestE1rmByExercise(setsByWorkout.get(w.id) || []);
+    if (cutoff != null && w.startedAt < cutoff) {
+      for (const [exerciseId, est] of best) baselineE1rm.set(exerciseId, est);
+      continue;
+    }
+    const changes = [];
+    for (const [exerciseId, est] of best) {
+      const base = baselineE1rm.get(exerciseId);
+      if (base === undefined) baselineE1rm.set(exerciseId, est);
+      else changes.push((est / base - 1) * 100);
+    }
+    if (changes.length === 0) continue;
+    const day = dayById.get(w.id);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push({
+      date: w.startedAt,
+      value: changes.reduce((a, b) => a + b, 0) / changes.length,
+    });
+  }
+  return byDay;
 }
 
 /**
@@ -277,6 +294,7 @@ function renderOverview(ctx) {
       }
       mountTimeSeriesChart(chartMount, series, {
         ...mode.opts,
+        rebase: chartState.mode === 'strength' ? snapshot.strengthFor : undefined,
         defaultPeriod: chartState.period,
         isolated: chartState.isolated,
         onStateChange: ({ period, isolated }) => {
