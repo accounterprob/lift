@@ -694,11 +694,10 @@ button.exercise-section-header.pressed,
    gold or ice blue need dark text where midtones want white. */
 .vol-info.on-fill { color: var(--mtext, #ffffff); }
 /* Helper muscles (credited partially by compound lifts, e.g. glutes on a
-   squat day): a slimmer bar with a softened fill, under the primaries. Text
-   stays the regular color since the fill no longer matches --mtext's pick. */
-.vol-muscle.helper { height: 24px; }
+   squat day): same size as the primaries, listed under them with a softened
+   fill. Text stays the regular color since the fill no longer matches
+   --mtext's pick. */
 .vol-muscle.helper .vol-fill { opacity: 0.5; }
-.vol-muscle.helper .seg-name { font-weight: 600; }
 .vol-muscle .seg-name {
   font-size: 11px;
   font-weight: 700;
