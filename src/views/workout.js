@@ -15,7 +15,7 @@ import {
   uuid, esc, formatDuration, formatWeight, formatVolume, showSheet, emit, debounce, showToast,
 } from '../utils.js';
 import {
-  MUSCLES, EQUIPMENT, primaryMuscleFor, displayName,
+  MUSCLES, EQUIPMENT, primaryMuscleFor, muscleShares, displayName,
   exerciseRowMain, setCountLabel, muscleChipsHtml,
 } from '../seed.js';
 import {
@@ -235,6 +235,14 @@ function renderActive(ctx, workout) {
 
   // All-time best single-workout volume per muscle, across the whole history.
   let muscleRecords = new Map();
+  // muscleShares per exercise object. reload() re-reads exercises as fresh
+  // objects, so an edited name or muscle misses the cache and takes effect.
+  const sharesCache = new WeakMap();
+  const sharesFor = (ex) => {
+    let s = sharesCache.get(ex);
+    if (!s) sharesCache.set(ex, (s = muscleShares(ex)));
+    return s;
+  };
 
   // Buttons
   ctx.container.querySelector('#add-exercise-btn').addEventListener('click', () => {
@@ -382,22 +390,33 @@ function renderActive(ctx, workout) {
 
   function updateRunningStats() {
     const exMap = new Map(allExercises.map((e) => [e.id, e]));
-    // Muscles in this workout in order of first appearance (from every set,
-    // completed or not, so a section appears the moment an exercise is added),
-    // plus each muscle's completed volume so far.
-    const muscles = [];
+    // Muscles in this workout: every exercise's primary muscle in order of
+    // first appearance (from every set, completed or not, so a section
+    // appears the moment an exercise is added), then the helper muscles that
+    // only compound lifts reach. Each muscle's completed volume so far counts
+    // a set at its muscleShares weight — full for the primary, partial for
+    // helpers — the same rule the records below use.
+    const primaries = [];
+    const helpers = [];
     const currentByMuscle = new Map();
+    let totalVolume = 0;
     for (const s of sets) {
       const ex = exMap.get(s.exerciseId);
       if (!ex) continue;
-      const muscle = primaryMuscleFor(ex);
-      if (!muscles.includes(muscle)) muscles.push(muscle);
+      const shares = sharesFor(ex);
+      for (const [muscle, w] of shares) {
+        const list = w >= 1 ? primaries : helpers;
+        if (!list.includes(muscle)) list.push(muscle);
+      }
       if (!s.completed) continue;
       const vol = (s.weight || 0) * (s.reps || 0);
       if (vol <= 0) continue;
-      currentByMuscle.set(muscle, (currentByMuscle.get(muscle) ?? 0) + vol);
+      totalVolume += vol;
+      for (const [muscle, w] of shares) {
+        currentByMuscle.set(muscle, (currentByMuscle.get(muscle) ?? 0) + vol * w);
+      }
     }
-    const totalVolume = [...currentByMuscle.values()].reduce((a, b) => a + b, 0);
+    const muscles = [...primaries, ...helpers.filter((m) => !primaries.includes(m))];
 
     // One bar per muscle, stacked vertically. A bar's length is proportional
     // to the all-time best single-workout volume for that muscle (or today's
@@ -413,7 +432,8 @@ function renderActive(ctx, workout) {
     let shares = muscles.map((muscle) => {
       const record = muscleRecords.get(muscle) ?? 0;
       const cur = currentByMuscle.get(muscle) ?? 0;
-      return { muscle, record, cur, span: Math.max(record, cur) };
+      const helper = !primaries.includes(muscle);
+      return { muscle, record, cur, helper, span: Math.max(record, cur) };
     });
     // Muscles with no record yet still get a visible bar.
     const maxSpan = Math.max(...shares.map((x) => x.span));
@@ -421,7 +441,7 @@ function renderActive(ctx, workout) {
     shares = shares.map((x) => ({ ...x, span: Math.max(x.span, minSpan) }));
     const barMax = Math.max(...shares.map((x) => x.span));
 
-    const bars = shares.map(({ muscle, record, cur, span }) => {
+    const bars = shares.map(({ muscle, record, cur, helper, span }) => {
       const widthPct = (span / barMax) * 100;
       const fillPct = cur > 0 ? Math.min(100, (cur / span) * 100) : 0;
       const stat = record > 0 ? `${Math.round((cur / record) * 100)}%` : 'new';
@@ -430,9 +450,9 @@ function renderActive(ctx, workout) {
         : `${formatVolume(cur)} · ${stat}`;
       const color = colorForMuscle(muscle);
       return `
-        <div class="vol-muscle" style="width: ${widthPct.toFixed(2)}%; --mcolor: ${color}; --mtext: ${textOnColor(color)};" title="${esc(muscle)}: ${formatVolume(cur)} / record ${formatVolume(record)} lbs">
+        <div class="vol-muscle${helper ? ' helper' : ''}" style="width: ${widthPct.toFixed(2)}%; --mcolor: ${color}; --mtext: ${textOnColor(color)};" title="${esc(muscle)}${helper ? ' (helper)' : ''}: ${formatVolume(cur)} / record ${formatVolume(record)} lbs">
           <div class="vol-fill" style="width: ${fillPct.toFixed(2)}%;"></div>
-          <div class="vol-info${fillPct > 55 ? ' on-fill' : ''}">
+          <div class="vol-info${fillPct > 55 && !helper ? ' on-fill' : ''}">
             <span class="seg-name">${esc(muscle)}</span>
             <span class="seg-vol">${volText}</span>
           </div>
@@ -488,7 +508,8 @@ function renderActive(ctx, workout) {
    * All-time best single-workout volume for each muscle, across the entire
    * history regardless of day name, excluding the active workout. Which sets
    * count is decided by performedSets (the shared in-app vs imported rule).
-   * Returns Map muscle → volume.
+   * Every past set is credited by muscleShares, same as today's bars, so the
+   * records are always recomputed under one rule. Returns Map muscle → volume.
    */
   function computeMuscleRecords(setsAll, exercises, excludeId) {
     const exMap = new Map(exercises.map((e) => [e.id, e]));
@@ -500,10 +521,11 @@ function renderActive(ctx, workout) {
       if (!ex) continue;
       const vol = (s.weight || 0) * (s.reps || 0);
       if (vol <= 0) continue;
-      const muscle = primaryMuscleFor(ex);
       let byMuscle = byWorkoutMuscle.get(s.workoutId);
       if (!byMuscle) byWorkoutMuscle.set(s.workoutId, (byMuscle = new Map()));
-      byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + vol);
+      for (const [muscle, w] of sharesFor(ex)) {
+        byMuscle.set(muscle, (byMuscle.get(muscle) ?? 0) + vol * w);
+      }
     }
     for (const byMuscle of byWorkoutMuscle.values()) {
       for (const [muscle, vol] of byMuscle) {

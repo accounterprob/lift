@@ -39,7 +39,7 @@
 // Everything here is pure except loadCalibration (appMeta cache).
 
 import { performedSets, getAll, getMeta, setMeta } from './db.js';
-import { primaryMuscleFor } from './seed.js';
+import { muscleShares } from './seed.js';
 
 const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -148,49 +148,6 @@ export function positionFactor(k, params) {
 }
 
 // ---------- Muscles ----------
-
-/**
- * Muscles an exercise works, as share of a hard set: the primary muscle at 1
- * plus the usual helpers for compound movements (bench → triceps + front
- * delts, rows → biceps, squats → glutes, …).
- */
-export function muscleShares(exercise) {
-  const primary = primaryMuscleFor(exercise);
-  const name = (exercise?.name || '').toLowerCase();
-  const shares = new Map([[primary, 1]]);
-  const add = (m, w) => { if (!shares.has(m)) shares.set(m, w); };
-  const pressing = /press|bench|push.?up|\bdip/.test(name);
-  switch (primary) {
-    case 'Pectorals':
-      if (pressing) { add('Triceps', 0.5); add('Anterior Deltoid', 0.5); }
-      else add('Anterior Deltoid', 0.3);
-      break;
-    case 'Anterior Deltoid':
-      if (pressing) { add('Triceps', 0.5); add('Lateral Deltoid', 0.3); }
-      break;
-    case 'Triceps':
-      if (/close.?grip|\bdip|jm press/.test(name)) { add('Pectorals', 0.4); add('Anterior Deltoid', 0.3); }
-      break;
-    case 'Lats': add('Biceps', 0.5); add('Upper Back', 0.3); add('Posterior Deltoid', 0.2); break;
-    case 'Upper Back': add('Biceps', 0.4); add('Lats', 0.4); add('Posterior Deltoid', 0.3); break;
-    case 'Posterior Deltoid': add('Upper Back', 0.3); break;
-    case 'Lateral Deltoid': if (/upright row/.test(name)) add('Traps', 0.4); break;
-    case 'Traps': add('Upper Back', 0.3); break;
-    case 'Biceps': add('Forearms', 0.3); break;
-    case 'Quadriceps':
-      if (/squat|leg press|lunge|step.?up|hack/.test(name)) { add('Glutes', 0.5); add('Adductors', 0.3); }
-      break;
-    case 'Lower Back':
-      if (/deadlift|rack pull/.test(name)) { add('Hamstrings', 0.5); add('Glutes', 0.5); add('Traps', 0.3); }
-      break;
-    case 'Hamstrings':
-      if (/romanian|\brdl\b|stiff|good morning/.test(name)) { add('Glutes', 0.5); add('Lower Back', 0.3); }
-      break;
-    case 'Glutes': add('Hamstrings', 0.3); break;
-    default: break;
-  }
-  return shares;
-}
 
 /**
  * How much a set of `other` loads the muscles `target` uses, scaled so a set
