@@ -68,6 +68,7 @@ img { -webkit-user-drag: none; }
 }
 .top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.6px; margin: 0; }
+.ver { font-size: 12px; font-weight: 600; color: var(--dim); letter-spacing: 0; margin-left: 6px; }
 .week { display: flex; align-items: center; }
 .week button { min-width: 44px; height: 44px; font-size: 24px; color: var(--dim); }
 .week .week-label { font-size: 14px; font-weight: 600; color: var(--text); padding: 0 4px; min-width: 0; }

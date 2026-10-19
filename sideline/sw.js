@@ -1,6 +1,6 @@
 // Network-first for the app shell so updates show up on the next open; cache is only an offline fallback.
 // Score and odds requests go cross-origin and are never cached.
-const CACHE = 'sideline-v2';
+const CACHE = 'sideline-v3'; // deploy.sh keeps this in step with VERSION in app.js
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

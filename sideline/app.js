@@ -1,6 +1,9 @@
 'use strict';
 // Sideline: ESPN scores + Polymarket win odds, side by side.
 
+// Bumped by deploy.sh on every publish; shown next to the title.
+const VERSION = 3;
+
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football';
 const GAMMA = 'https://gamma-api.polymarket.com';
 const CLOB = 'https://clob.polymarket.com';
@@ -714,6 +717,7 @@ document.addEventListener('visibilitychange', () => {
   if (S.open) loadHistory(S.open); // fill the gap while the phone was locked
 });
 
+$('#ver').textContent = 'v' + VERSION;
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
 render();
 refresh(true);
