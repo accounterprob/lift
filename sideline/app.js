@@ -2,7 +2,7 @@
 // Sideline: ESPN scores + Polymarket win odds, side by side.
 
 // Bumped by deploy.sh on every publish; shown next to the title.
-const VERSION = 3;
+const VERSION = 4;
 
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football';
 const GAMMA = 'https://gamma-api.polymarket.com';
@@ -31,8 +31,7 @@ const S = {
   tok: new Map(),     // token id -> { gid, side }
   book: new Map(),    // token id -> { bb, ba, last } from the live socket
   kick: store.get('kick') || {}, // away token id -> price at kickoff
-  hist: null,         // { id, pts: [[t, p]], loading } for the open game
-  open: null,
+  exp: null,         // { id, range, side } of the game expanded in the list
   lastPm: 0,
   lastLines: 0,
   updated: null,
@@ -388,15 +387,21 @@ function statusText(g) {
 }
 const rightText = g => g.state === 'post' ? (kickProb(g) ? 'pregame odds' : '') : esc(favText(g));
 
-function card(g) {
+function cardMain(g) {
   const pr = g.state === 'post' ? kickProb(g) : probs(g);
-  const accent = g.mine ? teamColor(MY_TEAMS[g.lg][g.away.id] ? g.away : g.home) : '';
   const bar = pr ? `<div class="bar"><span style="flex-basis:${(pr.away * 100).toFixed(1)}%;background:${teamColor(g.away)}"></span><span style="flex:1;background:${teamColor(g.home)}"></span></div>` : '<div class="bar off"></div>';
-  return `<button class="card${g.mine ? ' mine' : ''}" data-id="${g.id}"${accent ? ` style="--accent:${accent}"` : ''}>
-    ${teamRow(g, 'away', pr)}${teamRow(g, 'home', pr)}
+  return `${teamRow(g, 'away', pr)}${teamRow(g, 'home', pr)}
     ${bar}
-    <div class="meta"><span class="st">${statusText(g)}</span><span class="ln">${rightText(g)}</span></div>
-  </button>`;
+    <div class="meta"><span class="st">${statusText(g)}</span><span class="ln">${rightText(g)}</span></div>`;
+}
+function card(g) {
+  const accent = g.mine ? teamColor(MY_TEAMS[g.lg][g.away.id] ? g.away : g.home) : '';
+  const h = cardMain(g);
+  cardHtml.set(g.id, h);
+  return `<div class="card${g.mine ? ' mine' : ''}" data-id="${g.id}"${accent ? ` style="--accent:${accent}"` : ''}>
+    <div class="card-main" role="button" tabindex="0">${h}</div>
+    <div class="xp"><div class="xp-in"></div></div>
+  </div>`;
 }
 
 const ORDER = { in: 0, pre: 1, post: 2 };
@@ -432,15 +437,14 @@ function byeNote() {
   return out.length ? `<div class="bye">${esc(out.join(' and '))}: no game this week</div>` : '';
 }
 
-// Rebuild the list only when its layout changes; otherwise swap just the cards
-// whose contents changed, so scrolling and taps aren't interrupted.
+// Rebuild the list only when its layout changes; otherwise refresh just the cards
+// whose contents changed, so scrolling, taps and an open chart aren't disturbed.
 let listKey = '';
 const cardHtml = new Map();
 function render() {
   document.querySelectorAll('#chips button').forEach(b => b.classList.toggle('on', b.dataset.f === S.filter));
   weekLabel();
   foot();
-  if (S.open) updateSheet();
   const list = $('#list');
   if (!S.games.length) {
     listKey = '';
@@ -456,19 +460,21 @@ function render() {
     for (const [title, gs, mine] of secs) {
       const live = gs.filter(g => g.state === 'in').length;
       html += `<h2>${esc(title)}${live ? `<small><span class="live-dot">●</span> ${live} live</small>` : ''}</h2>`;
-      for (const g of gs) { const h = card(g); cardHtml.set(g.id, h); html += h; }
+      html += gs.map(card).join('');
       if (mine) html += byeNote();
     }
     list.innerHTML = html || '<div class="empty">No games here this week.</div>';
+    if (S.exp) mountExpand(false);
     return;
   }
   for (const [, gs] of secs) for (const g of gs) {
-    const h = card(g);
+    const h = cardMain(g);
     if (cardHtml.get(g.id) === h) continue;
-    const el = list.querySelector(`.card[data-id="${g.id}"]`);
-    if (el) el.outerHTML = h;
+    const el = list.querySelector(`.card[data-id="${g.id}"] .card-main`);
+    if (el) el.innerHTML = h;
     cardHtml.set(g.id, h);
   }
+  if (S.exp) drawChart();
 }
 
 function weekLabel() {
@@ -486,12 +492,28 @@ function foot() {
   $('#foot').textContent = `Scores ESPN · Odds Polymarket${S.wsUp ? ' (live)' : ''}${t ? ' · updated ' + t : ''}`;
 }
 
+// Every live price, to the second, for every game this week (away team's chance).
+// This is what lets the short chart ranges move second by second.
+const ticks = new Map();
+function recordTick(g) {
+  const p = rawProb(g);
+  if (p == null) return;
+  const now = Math.floor(Date.now() / 1000);
+  let a = ticks.get(g.id);
+  if (!a) ticks.set(g.id, a = []);
+  const last = a[a.length - 1];
+  if (last && last[0] === now) last[1] = p;
+  else if (!last || last[1] !== p) a.push([now, p]);
+  if (a.length > 20000) a.splice(0, a.length - 20000);
+}
+
 // Live socket ticks: touch only the numbers that changed.
 function patchOdds(gid) {
   const g = S.games.find(x => x.id === gid);
   if (!g) return;
+  recordTick(g);
   const pr = probs(g);
-  const el = document.querySelector(`.card[data-id="${gid}"]`);
+  const el = document.querySelector(`.card[data-id="${gid}"] .card-main`);
   if (el && pr) {
     el.querySelectorAll('.odds[data-side]').forEach(o => {
       const txt = pct(pr[o.dataset.side]);
@@ -503,14 +525,7 @@ function patchOdds(gid) {
     const bar = el.querySelector('.bar span');
     if (bar) bar.style.flexBasis = (pr.away * 100).toFixed(1) + '%';
   }
-  if (S.open === gid) {
-    const p = rawProb(g);
-    if (p != null && S.hist?.id === gid && g.state !== 'post') {
-      const now = Date.now() / 1000, pts = S.hist.pts, last = pts[pts.length - 1];
-      if (last && now - last[0] < 2) last[1] = p; else pts.push([now, p]);
-    }
-    updateSheet();
-  }
+  if (S.exp?.id === gid) drawChart();
 }
 function flash(el, up) {
   el.classList.remove('flash-up', 'flash-dn');
@@ -518,137 +533,242 @@ function flash(el, up) {
   el.classList.add(up ? 'flash-up' : 'flash-dn');
 }
 
-/* ---------- game screen ---------- */
+/* ---------- expanded game: odds chart ---------- */
 
-let sheetTimer = null;
-function openSheet(id) {
-  S.open = id;
-  S.hist = { id, pts: [], loading: true };
-  $('#sheet').hidden = false;
-  document.documentElement.classList.add('locked');
-  $('#sheet').scrollTop = 0;
-  history.pushState({ sheet: id }, '');
-  buildSheet();
-  loadHistory(id);
-  // Keep the chart's clock moving between ticks, and refill it from the server now and then.
-  let n = 0;
-  clearInterval(sheetTimer);
-  sheetTimer = setInterval(() => {
-    const g = S.games.find(x => x.id === S.open);
-    if (!g || g.state === 'post' || document.hidden) return;
+// Time ranges, like Polymarket's. The two short ones run off live ticks.
+const RANGES = {
+  '5M': { sec: 300, fid: 1, span: 3600 },
+  '1H': { sec: 3600, fid: 1, span: 3600 },
+  '6H': { sec: 21600, fid: 1, span: 21600 },
+  '1D': { sec: 86400, fid: 5, span: 86400 },
+  '1W': { sec: 604800, fid: 30, span: 604800 },
+  'MAX': { sec: 0, fid: 60 },
+};
+const histCache = new Map(); // `${token}|${range}` -> { at, pts, loading }
+let expTimer = null, scrubT = null, geo = null;
+
+// A finished game's chart ends when the game did, not now.
+const chartEnd = g => g.state === 'post' ? Math.min(Date.now() / 1000, g.date / 1000 + 5 * 3600) : Date.now() / 1000;
+
+function defaultRange(g) {
+  if (g.state === 'in') return '1H';
+  if (g.state === 'post') return '6H';
+  return g.date - Date.now() < 864e5 ? '1D' : '1W';
+}
+function defaultSide(g) {
+  const mine = MY_TEAMS[g.lg];
+  if (mine[g.away.id]) return 'away';
+  if (mine[g.home.id]) return 'home';
+  const pr = probs(g);
+  return pr && pr.home > pr.away ? 'home' : 'away';
+}
+
+function toggleExpand(id) {
+  const prev = S.exp?.id;
+  if (prev) collapse(prev);
+  if (prev === id) { S.exp = null; stopExpTimer(); return; }
+  const g = S.games.find(x => x.id === id);
+  if (!g) return;
+  S.exp = { id, range: defaultRange(g), side: defaultSide(g) };
+  mountExpand(true);
+}
+function collapse(id) {
+  const el = document.querySelector(`.card[data-id="${id}"]`);
+  if (!el) return;
+  el.classList.remove('open');
+  setTimeout(() => { if (!el.classList.contains('open')) el.querySelector('.xp-in').innerHTML = ''; }, 300);
+}
+function stopExpTimer() { clearInterval(expTimer); expTimer = null; }
+
+function mountExpand(animate) {
+  const g = S.games.find(x => x.id === S.exp?.id);
+  const el = g && document.querySelector(`.card[data-id="${g.id}"]`);
+  if (!el) { S.exp = null; stopExpTimer(); return; }
+  const inner = el.querySelector('.xp-in');
+  if (!S.pm.has(g.id)) {
+    inner.innerHTML = '<div class="none">No Polymarket odds for this game.</div>';
+  } else {
+    inner.innerHTML = `
+      <div class="xp-head"><div class="xp-now" id="xv"></div></div>
+      <div class="chart" id="xc"></div>
+      <div class="xp-ctl">
+        <div class="seg" id="xr">${Object.keys(RANGES).filter(r => g.state !== 'post' || !['5M', '1H'].includes(r)).map(r => `<button data-r="${r}">${r}</button>`).join('')}</div>
+        <div class="seg" id="xs">${['away', 'home'].map(s => `<button data-s="${s}">${esc(g[s].abbr)}</button>`).join('')}</div>
+      </div>`;
+    bindChart(inner.querySelector('#xc'));
+    loadRange(g);
     drawChart();
-    if (++n % 20 === 0) loadHistory(S.open);
-  }, 3000);
-}
-function closeSheet() {
-  S.open = null;
-  S.hist = null;
-  clearInterval(sheetTimer);
-  $('#sheet').hidden = true;
-  document.documentElement.classList.remove('locked');
-}
-
-function buildSheet() {
-  const g = S.games.find(x => x.id === S.open);
-  const body = $('#sheetBody');
-  if (!g) { body.innerHTML = '<div class="empty">Game not found.</div>'; return; }
-  const team = s => {
-    const t = g[s];
-    return `<div class="side">${logo(t)}<div class="nm">${isRanked(t) ? `<span class="rank">${t.rank}</span> ` : ''}${esc(teamName(g, t))}</div><div class="sub">${esc(t.record || '')}</div></div>`;
-  };
-  const pc = s => `<div class="pc"><div class="p" id="sh-${s}"></div><div class="who"><i style="background:${teamColor(g[s])}"></i>${esc(g[s].abbr)}</div></div>`;
-  body.innerHTML = `
-    <div class="hero">${team('away')}<div class="mid"><div class="big" id="sh-score"></div><div class="stat" id="sh-status"></div></div>${team('home')}</div>
-    ${S.pm.has(g.id) ? `
-    <div class="box">
-      <div class="box-head"><h3 id="sh-label"></h3><span class="fav-line" id="sh-fav"></span></div>
-      <div class="probs">${pc('away')}${pc('home')}</div>
-      <div class="chart" id="sh-chart"></div>
-    </div>` : '<div class="box"><div class="none">No Polymarket odds for this game.</div></div>'}`;
-  updateSheet();
-}
-
-function updateSheet() {
-  const g = S.games.find(x => x.id === S.open);
-  if (!g || !$('#sh-score')) return;
-  if (S.pm.has(g.id) && !$('#sh-chart')) { buildSheet(); loadHistory(g.id); return; } // odds arrived after it opened
-  const sc = s => `<span class="${g.state === 'post' && g[other(s)].winner ? 'lost' : ''}">${esc(g[s].score)}</span>`;
-  $('#sh-score').innerHTML = g.state === 'pre' ? `<span class="when">${esc(startText(g))}</span>` : `${sc('away')}<span class="dash">–</span>${sc('home')}`;
-  $('#sh-status').innerHTML = g.state === 'pre' ? esc(g.tv)
-    : g.state === 'in' ? `<span class="live-dot">●</span> ${esc(g.detail)}${g.dd ? `<br>${esc(g.dd)}` : ''}` : esc(g.detail);
-  if (!$('#sh-chart')) return;
-  const pr = g.state === 'post' ? kickProb(g) : probs(g);
-  for (const s of ['away', 'home']) {
-    const el = $('#sh-' + s), txt = pct(pr?.[s]);
-    if (el.textContent && el.textContent !== txt && g.state !== 'post') flash(el, parseFloat(txt) > parseFloat(el.textContent));
-    el.textContent = txt;
-    el.classList.toggle('dimmed', g.state !== 'post' && pr?.[s] < 0.5);
   }
-  $('#sh-label').innerHTML = g.state === 'in' ? '<span class="live-pill">LIVE</span> Win odds' : g.state === 'post' ? 'Win odds at kickoff' : 'Win odds';
-  $('#sh-fav').textContent = g.state === 'post' ? '' : favText(g);
-  drawChart();
+  if (animate) {
+    void el.offsetWidth;
+    el.classList.add('open');
+    setTimeout(() => {
+      const r = el.getBoundingClientRect();
+      if (r.bottom > innerHeight - 20) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 260);
+  } else el.classList.add('open');
+  // Redraw every second so the line keeps flowing up to "now" between price changes.
+  stopExpTimer();
+  if (g.state !== 'post') expTimer = setInterval(() => { if (!document.hidden) drawChart(); }, 1000);
 }
 
-async function loadHistory(id) {
-  const g = S.games.find(x => x.id === id), pm = S.pm.get(id);
-  if (!g || !pm?.tok.away) return;
-  const k = Math.floor(g.date / 1000), now = Math.floor(Date.now() / 1000);
-  const url = g.state === 'pre'
-    ? `${CLOB}/prices-history?market=${pm.tok.away}&interval=1w&fidelity=60`
-    : `${CLOB}/prices-history?market=${pm.tok.away}&startTs=${Math.min(k, now) - 1800}&endTs=${Math.min(now, k + 6 * 3600)}&fidelity=1`;
-  let pts = [];
+async function loadRange(g, force) {
+  const pm = S.pm.get(g.id), R = RANGES[S.exp.range];
+  const key = pm.tok.away + '|' + S.exp.range;
+  const c = histCache.get(key);
+  if (c && (c.loading || (!force && Date.now() - c.at < 60e3))) return;
+  histCache.set(key, { at: Date.now(), pts: c?.pts || [], loading: true });
+  const end = Math.floor(chartEnd(g));
+  const url = R.sec
+    ? `${CLOB}/prices-history?market=${pm.tok.away}&startTs=${end - R.span}&endTs=${end}&fidelity=${R.fid}`
+    : `${CLOB}/prices-history?market=${pm.tok.away}&interval=max&fidelity=${R.fid}`;
+  let pts = c?.pts || [];
   try { pts = ((await j(url)).history || []).map(x => [x.t, x.p]); } catch {}
-  if (S.hist?.id !== id) return;
-  // The server's history runs a minute or two behind; keep our own live ticks after it.
-  const lastT = pts.length ? pts[pts.length - 1][0] : 0;
-  S.hist = { id, pts: pts.concat(S.hist.pts.filter(q => q[0] > lastT)) };
+  histCache.set(key, { at: Date.now(), pts });
   drawChart();
 }
 
-let chartQueued = false;
-function drawChart() {
-  if (chartQueued) return;
-  chartQueued = true;
-  requestAnimationFrame(() => {
-    chartQueued = false;
-    const g = S.games.find(x => x.id === S.open), el = $('#sh-chart');
-    if (g && el) el.innerHTML = chartSvg(g);
-  });
+// History from the server (minute-level) plus our own per-second ticks after it.
+function seriesFor(g) {
+  const pm = S.pm.get(g.id), R = RANGES[S.exp.range];
+  const c = histCache.get(pm.tok.away + '|' + S.exp.range);
+  const end = chartEnd(g);
+  const start = R.sec ? end - R.sec : -Infinity;
+  const hist = (c?.pts || []).filter(q => q[0] >= start && q[0] <= end);
+  const lastT = hist.length ? hist[hist.length - 1][0] : start;
+  const live = (ticks.get(g.id) || []).filter(q => q[0] > lastT && q[0] >= start);
+  let pts = hist.concat(live);
+  // Carry the price in from before the window so the line starts at the left edge.
+  if (R.sec && pts.length && pts[0][0] > start) {
+    const before = (c?.pts || []).filter(q => q[0] < start).pop() || (ticks.get(g.id) || []).filter(q => q[0] < start).pop();
+    if (before) pts.unshift([start, before[1]]);
+  }
+  if (g.state !== 'post') {
+    const p = rawProb(g);
+    if (p != null) pts.push([end, p]);
+  }
+  return { pts, start: R.sec ? start : (pts[0]?.[0] ?? end), end, loading: c?.loading };
 }
 
-function chartSvg(g) {
-  const h = S.hist;
-  let pts = h?.id === g.id ? h.pts.slice() : [];
-  const live = g.state !== 'post';
-  const now = Date.now() / 1000;
-  // A live line runs right up to now, even if the price hasn't moved.
-  if (live && pts.length) pts.push([now, pts[pts.length - 1][1]]);
-  if (pts.length < 2) return `<div class="none">${h?.loading ? 'Loading…' : 'No odds history yet'}</div>`;
-  const W = 340, H = 170, P = 8, R = 30;
-  const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
-  const x = t => P + (t - t0) / (t1 - t0 || 1) * (W - P - R);
-  const y = p => P + (1 - p) * (H - 2 * P);
-  const line = pts.map((q, i) => (i ? 'L' : 'M') + x(q[0]).toFixed(1) + ',' + y(q[1]).toFixed(1)).join('');
-  const area = `${line}L${x(t1).toFixed(1)},${y(0.5)}L${x(t0).toFixed(1)},${y(0.5)}Z`;
+let drawQueued = false;
+function drawChart() {
+  if (drawQueued) return;
+  drawQueued = true;
+  setTimeout(() => {
+    drawQueued = false;
+    const g = S.games.find(x => x.id === S.exp?.id), box = $('#xc');
+    if (!g || !box) return;
+    if (!histCache.has(S.pm.get(g.id).tok.away + '|' + S.exp.range) || Date.now() - histCache.get(S.pm.get(g.id).tok.away + '|' + S.exp.range).at > 60e3) loadRange(g);
+    const sr = seriesFor(g);
+    box.innerHTML = chartSvg(g, sr);
+    drawHead(g, sr);
+    document.querySelectorAll('#xr button').forEach(b => b.classList.toggle('on', b.dataset.r === S.exp.range));
+    document.querySelectorAll('#xs button').forEach(b => b.classList.toggle('on', b.dataset.s === S.exp.side));
+  }, 30);
+}
+
+const val = (p, side) => side === 'away' ? p : 1 - p;
+const pct1 = v => (v * 100).toFixed(1) + '%';
+
+function drawHead(g, sr) {
+  const side = S.exp.side, t = g[side];
+  const pts = sr.pts;
+  let html;
+  if (scrubT != null && pts.length) {
+    const q = pointAt(pts, scrubT);
+    html = `<b>${esc(t.abbr)} ${pct1(val(q[1], side))}</b><span class="when">${esc(fmtScrub(q[0]))}</span>`;
+  } else if (pts.length) {
+    const now = val(pts[pts.length - 1][1], side), then = val(pts[0][1], side);
+    const d = (now - then) * 100;
+    const label = g.state === 'post' && S.exp.range !== 'MAX' ? '' : S.exp.range === 'MAX' ? 'all time' : 'past ' + S.exp.range.toLowerCase().replace('m', ' min').replace('h', ' hr').replace('d', ' day').replace('w', ' wk');
+    html = `<b>${esc(t.abbr)} ${pct1(now)}</b>` +
+      (Math.abs(d) >= 0.05 ? `<span class="chg ${d > 0 ? 'up' : 'dn'}">${d > 0 ? '▲' : '▼'}${Math.abs(d).toFixed(1)}</span>` : '<span class="chg">no change</span>') +
+      (label ? `<span class="when">${label}</span>` : '');
+  } else html = `<b>${esc(t.abbr)}</b>`;
+  $('#xv').innerHTML = html;
+}
+
+function pointAt(pts, t) {
+  let q = pts[0];
+  for (const p of pts) { if (p[0] > t) break; q = p; }
+  return q;
+}
+function fmtScrub(t) {
+  const d = new Date(t * 1000), R = S.exp.range;
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: R === '5M' || R === '1H' ? '2-digit' : undefined });
+  return R === '1W' || R === 'MAX' ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + time : time;
+}
+function fmtAxis(t) {
+  const d = new Date(t * 1000), R = S.exp.range;
+  if (R === '5M') return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }).replace(/\s?[AP]M$/i, '');
+  if (R === '1W') return d.toLocaleDateString([], { weekday: 'short' });
+  if (R === 'MAX') return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s?([AP])M$/i, (_, a) => a.toLowerCase());
+}
+
+function chartSvg(g, sr) {
+  const side = S.exp.side, color = teamColor(g[side]);
+  const pts = sr.pts.map(q => [q[0], val(q[1], side)]);
+  if (pts.length < 2) return `<div class="none">${sr.loading ? 'Loading…' : 'No odds history yet'}</div>`;
+  const W = 340, H = 190, L = 2, R = 38, T = 8, B = 20;
+  const t0 = sr.start, t1 = sr.end;
+  // Zoom the y-axis to the window so small moves are visible, like Polymarket.
+  let lo = Math.min(...pts.map(q => q[1])), hi = Math.max(...pts.map(q => q[1]));
+  const pad = Math.max((hi - lo) * 0.15, 0.005);
+  lo -= pad; hi += pad;
+  if (hi - lo < 0.04) { const m = (hi + lo) / 2; lo = m - 0.02; hi = m + 0.02; }
+  lo = Math.max(0, lo); hi = Math.min(1, hi);
+  const x = t => L + (t - t0) / (t1 - t0 || 1) * (W - L - R);
+  const y = v => T + (hi - v) / (hi - lo || 1) * (H - T - B);
+  geo = { x0: L, x1: W - R, t0, t1, W };
+  const d = pts.map((q, i) => (i ? 'L' : 'M') + x(q[0]).toFixed(1) + ',' + y(q[1]).toFixed(1)).join('');
+  const area = `${d}L${x(pts[pts.length - 1][0]).toFixed(1)},${H - B}L${x(pts[0][0]).toFixed(1)},${H - B}Z`;
+  // Gridlines at round percentages.
+  const span = (hi - lo) * 100;
+  const step = [0.5, 1, 2, 5, 10, 20, 25].find(s => span / s <= 4) || 25;
+  let grid = '';
+  for (let v = Math.ceil(lo * 100 / step) * step; v <= hi * 100 + 1e-9; v += step) {
+    const yy = y(v / 100);
+    grid += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" class="grid"/><text class="axis" x="${W - R + 5}" y="${yy + 3}">${+v.toFixed(1)}%</text>`;
+  }
+  let xt = '';
+  for (let i = 0; i < 4; i++) {
+    const t = t0 + (t1 - t0) * (i + 0.5) / 4;
+    xt += `<text class="axis" x="${x(t)}" y="${H - 5}" text-anchor="middle">${esc(fmtAxis(t))}</text>`;
+  }
   const k = g.date / 1000;
-  const ko = k > t0 && k < t1 ? `<line x1="${x(k)}" x2="${x(k)}" y1="${P}" y2="${H - P}" stroke="var(--faint)" stroke-dasharray="3 3"/><text class="axis" x="${x(k) + 4}" y="${H - P - 3}">kickoff</text>` : '';
-  const [lx, ly] = [x(t1), y(pts[pts.length - 1][1])];
+  const ko = k > t0 && k < t1 ? `<line x1="${x(k)}" x2="${x(k)}" y1="${T}" y2="${H - B}" class="ko"/>` : '';
+  const [lx, ly] = [x(pts[pts.length - 1][0]), y(pts[pts.length - 1][1])];
+  let scrub = '';
+  if (scrubT != null) {
+    const q = pointAt(pts, scrubT), sx = x(Math.max(t0, Math.min(t1, scrubT)));
+    scrub = `<line x1="${sx}" x2="${sx}" y1="${T}" y2="${H - B}" class="scrub"/><circle cx="${sx}" cy="${y(q[1])}" r="4.5" fill="${color}" stroke="var(--card)" stroke-width="2"/>`;
+  }
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Win odds over time">
-    <defs>
-      <clipPath id="ctop"><rect x="0" y="0" width="${W}" height="${y(0.5)}"/></clipPath>
-      <clipPath id="cbot"><rect x="0" y="${y(0.5)}" width="${W}" height="${H}"/></clipPath>
-    </defs>
-    <path d="${area}" fill="${teamColor(g.away)}" opacity=".4" clip-path="url(#ctop)"/>
-    <path d="${area}" fill="${teamColor(g.home)}" opacity=".4" clip-path="url(#cbot)"/>
-    <line x1="${P}" x2="${W - R}" y1="${y(0.5)}" y2="${y(0.5)}" stroke="var(--faint)" stroke-dasharray="2 4"/>
-    ${ko}
-    <path d="${line}" fill="none" stroke="var(--text)" stroke-width="2" stroke-linejoin="round"/>
-    ${live ? `<circle class="pulse" cx="${lx}" cy="${ly}" r="7" fill="var(--text)"/>` : ''}
-    <circle cx="${lx}" cy="${ly}" r="3.5" fill="var(--text)"/>
-    <text class="axis" x="${W - R + 6}" y="${P + 8}">${esc(g.away.abbr)}</text>
-    <text class="axis" x="${W - R + 6}" y="${y(0.5) + 3}">50%</text>
-    <text class="axis" x="${W - R + 6}" y="${H - P}">${esc(g.home.abbr)}</text>
+    <defs><linearGradient id="xg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".35"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    ${grid}${ko}
+    <path d="${area}" fill="url(#xg)"/>
+    <path d="${d}" fill="none" stroke="${color}" class="line"/>
+    ${g.state !== 'post' && scrubT == null ? `<circle class="pulse" cx="${lx}" cy="${ly}" r="7" fill="${color}"/><circle cx="${lx}" cy="${ly}" r="3.5" fill="${color}"/>` : ''}
+    ${scrub}${xt}
   </svg>`;
+}
+
+// Drag across the chart to read the odds at any moment, like Polymarket.
+function bindChart(box) {
+  const move = e => {
+    if (!geo) return;
+    const r = box.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width * geo.W;
+    scrubT = geo.t0 + (Math.max(geo.x0, Math.min(geo.x1, px)) - geo.x0) / (geo.x1 - geo.x0) * (geo.t1 - geo.t0);
+    drawChart();
+  };
+  const end = () => { scrubT = null; drawChart(); };
+  box.addEventListener('pointerdown', move);
+  box.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' || e.buttons) move(e); });
+  box.addEventListener('pointerup', e => { if (e.pointerType !== 'mouse') end(); });
+  box.addEventListener('pointerleave', end);
+  box.addEventListener('pointercancel', end);
 }
 
 /* ---------- refresh loop ---------- */
@@ -685,7 +805,8 @@ function schedule() {
 
 function changeWeek(delta) {
   S.offset = delta === 0 ? 0 : S.offset + delta;
-  S.games = []; S.pm.clear(); S.book.clear(); S.updated = null;
+  S.games = []; S.pm.clear(); S.book.clear(); S.updated = null; S.exp = null;
+  stopExpTimer(); ticks.clear();
   closeSocket(); wsKey = '';
   window.scrollTo(0, 0);
   render();
@@ -705,16 +826,17 @@ $('#prev').onclick = () => changeWeek(-1);
 $('#next').onclick = () => changeWeek(1);
 $('#weekLabel').onclick = () => S.offset && changeWeek(0);
 $('#list').addEventListener('click', e => {
-  const c = e.target.closest('.card');
-  if (c) openSheet(c.dataset.id);
+  const rb = e.target.closest('#xr button'), sb = e.target.closest('#xs button');
+  if (rb) { S.exp.range = rb.dataset.r; scrubT = null; drawChart(); return; }
+  if (sb) { S.exp.side = sb.dataset.s; drawChart(); return; }
+  const main = e.target.closest('.card-main');
+  if (main) toggleExpand(main.parentElement.dataset.id);
 });
-$('#close').onclick = () => history.state?.sheet ? history.back() : closeSheet();
-addEventListener('popstate', () => { if (S.open) closeSheet(); });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { clearTimeout(timer); closeSocket(); return; }
   wsKey = '';
   refresh(Date.now() - S.lastPm > 120e3);
-  if (S.open) loadHistory(S.open); // fill the gap while the phone was locked
+  if (S.exp) { const g = S.games.find(x => x.id === S.exp.id); if (g && S.pm.has(g.id)) loadRange(g, true); } // fill the gap while the phone was locked
 });
 
 $('#ver').textContent = 'v' + VERSION;
