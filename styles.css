@@ -28,6 +28,9 @@
   --fill-1: var(--border-strong);
   --fill-2: var(--field);
   --nav-height: 53px;
+  /* Where the nav bar's content starts: below the status bar, plus (in the
+     installed iPhone app, below) clearance from iOS 26's edge blur. */
+  --top-inset: env(safe-area-inset-top);
   --tab-height: 50px;
   /* Rotation-day identity colors (chart lines, legend, day picker). Chest
      pink / Legs gold / Back-Bi blue — validated to stay apart under
@@ -147,6 +150,16 @@ button {
   height: var(--app-height, 100dvh);
 }
 
+/* iOS 26 draws a Liquid Glass edge blur over the top ~40pt below the status
+   bar of an installed web app, which smeared the nav title (the workout
+   timer). It's system chrome no CSS can turn off, so in the installed iPhone
+   app (portrait, where the status bar is) the nav content starts below it. */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) and (orientation: portrait) {
+    :root { --top-inset: calc(env(safe-area-inset-top) + 28px); }
+  }
+}
+
 /* ---------- Nav bar ----------
    Floats over the scrolling view (translucent + blur, like X's header), so
    .view-content pads its top by the same height. */
@@ -159,8 +172,8 @@ button {
   left: 0;
   right: 0;
   padding: 0 12px;
-  padding-top: env(safe-area-inset-top);
-  height: calc(var(--nav-height) + env(safe-area-inset-top));
+  padding-top: var(--top-inset);
+  height: calc(var(--nav-height) + var(--top-inset));
   background: var(--bar-bg);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -184,7 +197,7 @@ button {
 
 .nav-back, .nav-action {
   position: absolute;
-  top: calc(env(safe-area-inset-top) + 4px);
+  top: calc(var(--top-inset) + 4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -270,9 +283,9 @@ button {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   /* Content scrolls under the translucent nav and tab bars. */
-  padding-top: calc(var(--nav-height) + env(safe-area-inset-top));
+  padding-top: calc(var(--nav-height) + var(--top-inset));
   padding-bottom: calc(var(--tab-height) + env(safe-area-inset-bottom) + 16px + 16px);
-  scroll-padding-top: calc(var(--nav-height) + env(safe-area-inset-top) + 8px);
+  scroll-padding-top: calc(var(--nav-height) + var(--top-inset) + 8px);
   scroll-padding-bottom: calc(var(--tab-height) + env(safe-area-inset-bottom) + 32px);
 }
 
@@ -1476,6 +1489,6 @@ button.stat-row:active { background: var(--press); }
    anchoring it down there covered the Finish button and swallowed its taps.
    Drop it under the nav bar instead, clear of every control. */
 body:has(.calc-fab) .toast {
-  top: calc(var(--nav-height) + env(safe-area-inset-top) + 12px);
+  top: calc(var(--nav-height) + var(--top-inset) + 12px);
   bottom: auto;
 }
