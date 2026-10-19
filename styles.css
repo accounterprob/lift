@@ -99,6 +99,16 @@ html, body {
   inset: 0;
 }
 
+/* iOS 26 home-screen apps size the page about one status bar short of the
+   screen, so nothing paints below that line and the bottom of the tab bar
+   (its padding and the version label) is cut off over a blank strip. Making
+   the root that much taller gets iOS to draw the page to the bottom edge. */
+@media (display-mode: standalone) {
+  html {
+    min-height: calc(100% + env(safe-area-inset-top));
+  }
+}
+
 body {
   user-select: none;
   -webkit-user-select: none;
