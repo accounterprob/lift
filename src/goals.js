@@ -45,7 +45,7 @@ const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 // Bump when the model changes so cached calibrations are recomputed.
-const MODEL_VERSION = 1;
+const MODEL_VERSION = 2;
 
 /** One-tap effort ratings → reps in reserve (RIR). */
 export const EFFORTS = {
@@ -568,7 +568,7 @@ function weightStep(sessions) {
 function repRange(sessions, fallbackReps) {
   const reps = sessions.slice(-8).flatMap((s) => s.entries.map((e) => e.set.reps));
   const typical = Math.round(median(reps) ?? fallbackReps ?? 8);
-  return { typical, low: Math.max(1, typical - 3), high: typical + 2 };
+  return { typical, low: Math.max(1, typical - 3), high: typical + 1 };
 }
 
 /** Rep change a capacity factor amounts to around a goal (for explanations). */
@@ -847,9 +847,13 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
     let reps = repsAt(target, loadOf(weight), rir);
     if (mode === 'load') {
       const step = weightStep(sessions.length > 0 ? sessions : [{ entries: obs.map((o) => ({ load: o.set.weight })) }]);
+      // Past the range, add weight as long as that lands nearer the usual reps.
+      const off = (r) => Math.abs(r - range.typical);
       for (let i = 0; i < 10 && reps > range.high + 0.5; i++) {
+        const next = repsAt(target, weight + step, rir);
+        if (off(next) > off(reps)) break;
         weight += step;
-        reps = repsAt(target, weight, rir);
+        reps = next;
       }
       for (let i = 0; i < 10 && reps < range.low - 0.5 && weight - step > 0; i++) {
         weight -= step;
