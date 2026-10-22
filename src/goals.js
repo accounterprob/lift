@@ -802,10 +802,19 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       }
 
       // Readiness: how today's other lifts are going against their goals —
-      // a partial carry-over, trusted more as more sets come in.
+      // a partial carry-over, larger from lifts that share these muscles (a
+      // tough set of pulldowns says more about rows than about squats), and
+      // trusted more as more sets come in.
       const others = readiness.filter((r) => r.exerciseId !== exerciseId);
-      const mean = others.reduce((a, r) => a + r.log, 0) / Math.max(1, others.length);
-      const ready = Math.exp(clamp(0.3 * mean * (others.length / (others.length + 1)), -0.02, 0.02));
+      let carried = 0;
+      let sharedMuscles = false;
+      for (const r of others) {
+        const o = overlap(shares, history.sharesOf(r.exerciseId));
+        if (o >= 0.5) sharedMuscles = true;
+        carried += (0.3 + 0.5 * o) * r.log;
+      }
+      const mean = carried / Math.max(1, others.length);
+      const ready = Math.exp(clamp(mean * (others.length / (others.length + 1)), -0.04, 0.03));
 
       predFresh = base.value * ctxProduct(ctxNow) * push * ready;
 
@@ -813,7 +822,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       const ref = findEntry(sessions, prevSlot) ?? lastEntryAt(last, k);
       const ctxRef = sessionContext(history, ref.session, p);
       f = {
-        ref, base, gapDays, fat, push, ready, hitDetail,
+        ref, base, gapDays, fat, push, ready, hitDetail, sharedMuscles,
         recent: base.value / normalizedEntry(ref.entry, ctxRef, p),
         gap: ctxNow.gap / ctxRef.gap,
         days: ctxNow.days / ctxRef.days,
@@ -906,6 +915,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
           label: 'Earlier this workout',
           detail: `${todaySets} set${todaySets === 1 ? '' : 's'} already hit these muscles (last time: ${refSets})`,
           reps: effect(f.today),
+          always: todaySets > 0,
         });
       }
       if (k !== f.ref.entry.k) {
@@ -936,7 +946,8 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       if (f.ready !== 1) {
         reasons.push({
           label: 'Today so far',
-          detail: f.ready > 1 ? 'Beating your goals on other lifts today' : 'Coming in under your goals on other lifts today',
+          detail: (f.ready > 1 ? 'Beating your goals on other lifts today' : 'Coming in under your goals on other lifts today')
+            + (f.sharedMuscles ? ', including ones that work these muscles' : ''),
           reps: effect(f.ready),
         });
       }
