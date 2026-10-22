@@ -255,12 +255,55 @@ test('a brand-new exercise has no goal until a set is done, then follows it', ()
   assert.ok(g.reps >= 7 && g.reps <= 8);
 });
 
-test('warmups repeat last time\'s warmup for the slot', () => {
+test('warmups ramp to today\'s working goal on the user\'s own steps, reps tapering', () => {
   const s = workoutAt(NOW - 3 * DAY, [{ exerciseId: 'bench', sets: [[95, 12, { setType: 'warmup' }], [155, 10], [155, 10]] }]);
   const act = active(NOW, [{ exerciseId: 'bench', setType: 'warmup' }, { exerciseId: 'bench', weight: 155, reps: 10 }]);
   const goals = goalsFor(buildData([s]), act);
-  assert.deepEqual(goals.get(act.sets[0].id), { kind: 'warmup', weight: 95, reps: 12 });
-  assert.equal(goals.get(act.sets[1].id).kind, 'model');
+  const w = goals.get(act.sets[0].id);
+  const work = goals.get(act.sets[1].id);
+  assert.equal(work.kind, 'model');
+  assert.equal(w.kind, 'warmup');
+  assert.ok(w.personal);
+  assert.equal(w.target.weight, work.weight);
+  // Same share of the working weight as last time (95 / 155), on 5 lb steps.
+  assert.ok(Math.abs(w.weight - work.weight * 95 / 155) <= 5);
+  assert.ok(w.reps < 12 && w.reps >= 5);
+});
+
+test('a heavier working set pulls the warmups up with it', () => {
+  const s = workoutAt(NOW - 3 * DAY, [{ exerciseId: 'bench', sets: [[95, 8, { setType: 'warmup' }], [135, 5, { setType: 'warmup' }], [155, 10], [155, 10]] }]);
+  const plan = (weight) => {
+    const act = active(NOW, [
+      { exerciseId: 'bench', setType: 'warmup' }, { exerciseId: 'bench', setType: 'warmup' },
+      { exerciseId: 'bench', weight, reps: 10, autofill: false },
+    ]);
+    const goals = goalsFor(buildData([...steadyBench(), s]), act);
+    return act.sets.slice(0, 2).map((x) => goals.get(x.id));
+  };
+  const [b1, b2] = plan(155);
+  const [h1, h2] = plan(185);
+  assert.deepEqual([b1.weight, b2.weight], [95, 135]);  // same day as last time → same warm-ups
+  assert.ok(h1.weight > b1.weight && h2.weight > b2.weight && h2.weight < 185);
+  assert.ok(h2.reps <= h1.reps);
+});
+
+test('warmups with no history use a standard ramp below the typed working weight', () => {
+  const act = active(NOW, [
+    { exerciseId: 'squat', setType: 'warmup' }, { exerciseId: 'squat', setType: 'warmup' }, { exerciseId: 'squat', setType: 'warmup' },
+    { exerciseId: 'squat', weight: 225, reps: 5, autofill: false },
+  ]);
+  const goals = goalsFor(buildData([]), act);
+  const ws = act.sets.slice(0, 3).map((x) => goals.get(x.id));
+  assert.deepEqual(ws.map((g) => g.weight), [100, 145, 190]);
+  assert.ok(ws.every((g) => !g.personal && g.target.weight === 225));
+  assert.ok(ws[0].reps >= ws[1].reps && ws[1].reps >= ws[2].reps && ws[2].reps >= 1);
+});
+
+test('a trailing warmup with no working set after it repeats last time', () => {
+  const s = workoutAt(NOW - 3 * DAY, [{ exerciseId: 'bench', sets: [[95, 12, { setType: 'warmup' }], [155, 10]] }]);
+  const act = active(NOW, [{ exerciseId: 'bench', setType: 'warmup' }]);
+  const goals = goalsFor(buildData([s]), act);
+  assert.deepEqual(goals.get(act.sets[0].id), { kind: 'warmup', weight: 95, reps: 12, target: null });
 });
 
 test('hitting every recorded goal last time triggers progression; missing one does not', () => {

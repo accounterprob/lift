@@ -78,6 +78,17 @@ const GAP_CURVE = [
   [56, 0.89], [84, 0.86],
 ];
 
+// Warm-up reps as a share of the working reps, by the warm-up's share of the
+// working weight: full reps when light, tapering to a single near the top.
+const WARMUP_REPS = [[0, 1], [0.5, 1], [0.65, 0.65], [0.8, 0.4], [0.9, 0.2], [1, 0.12]];
+
+/** Standard ramp (share of the working weight) for n warm-ups. */
+function defaultRamp(n) {
+  const table = { 1: [0.6], 2: [0.5, 0.75], 3: [0.45, 0.65, 0.85], 4: [0.4, 0.55, 0.7, 0.85] };
+  if (table[n]) return table[n];
+  return Array.from({ length: n }, (_, i) => 0.35 + (0.55 * i) / (n - 1));
+}
+
 const FATIGUE_WINDOW_MS = 7 * DAY_MS;
 const BASELINE_SESSIONS = 8;
 const BASELINE_WINDOW_MS = 180 * DAY_MS;
@@ -589,7 +600,8 @@ function lastMuscleHit(history, exerciseId, t) {
 /**
  * Goals for every set of the active workout. Returns Map setId → goal:
  *   { kind: 'model', weight, reps, k, reasons, last }   a working set
- *   { kind: 'warmup', weight, reps }                     repeats last time
+ *   { kind: 'warmup', weight, reps, target, pct, personal, last }
+ *                                                        ramps to the next working set
  * Sets with nothing to go on (a brand-new exercise, nothing logged yet) and
  * completed sets are absent; completed sets feed the others as context.
  *
@@ -637,13 +649,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       const rest = s.completed && s.completedAt && prevCompletedAt ? (s.completedAt - prevCompletedAt) / 1000 : null;
       if (s.completed) prevCompletedAt = s.completedAt || null;
 
-      if (isWarmup(s)) {
-        const prev = prevFor(s);
-        if (prev && prev.weight > 0 && prev.reps > 0) {
-          goals.set(s.id, { kind: 'warmup', weight: prev.weight, reps: prev.reps });
-        }
-        continue;
-      }
+      if (isWarmup(s)) continue;  // planned below, off the working goals
       k += 1;
 
       if (s.completed) {
@@ -662,8 +668,81 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       prevWeight = takesGoal ? goal.weight : (s.weight || 0);
       prevReps = takesGoal ? goal.reps : (s.reps || 0);
     }
+
+    // Warm-ups: each run of them ramps toward the working set right after it.
+    let run = [];
+    for (const s of exSets) {
+      if (isWarmup(s)) { run.push(s); continue; }
+      if (run.length > 0) planWarmups(run, s, sessionsAll);
+      run = [];
+    }
+    for (const s of run) repeatLastWarmup(s);  // trailing: nothing to ramp to
   }
   return goals;
+
+  /** A warm-up with nothing to ramp toward repeats last time's. */
+  function repeatLastWarmup(s) {
+    if (s.completed) return;
+    const prev = prevFor(s);
+    if (prev && prev.weight > 0 && prev.reps > 0) {
+      goals.set(s.id, { kind: 'warmup', weight: prev.weight, reps: prev.reps, target: null });
+    }
+  }
+
+  /**
+   * Warm-up goals ramping to `working`.
+   * Weights follow the user's own ramp from last time (each warm-up's share of
+   * that day's first working weight) scaled to today's, else a standard ramp,
+   * on the plate steps they use. Reps taper as the weight climbs, so warm-ups
+   * prime the lift without spending what the working sets need.
+   */
+  function planWarmups(run, working, sessionsAll) {
+    // What the working set will be: its numbers once logged or typed in by
+    // hand, else its goal.
+    const wGoal = goals.get(working.id);
+    const own = (working.completed || !working.autofill) && working.weight > 0;
+    const top = own ? working.weight : (wGoal?.weight ?? working.weight);
+    const topReps = (own ? working.reps : wGoal?.reps) || working.reps || wGoal?.reps || 8;
+    if (!(top > 0)) { run.forEach(repeatLastWarmup); return; }
+
+    const loadSessions = sessionsAll.filter((x) => x.mode === 'load');
+    const step = loadSessions.length > 0 ? weightStep(loadSessions) : 5;
+    const ramp = defaultRamp(run.length);
+    let floor = 0;  // keep the ramp climbing
+    run.forEach((s, j) => {
+      if (s.completed) { floor = Math.max(floor, s.weight || 0); return; }
+      const prev = prevFor(s);
+      const prevTop = prev && prev.weight > 0
+        ? sessionsAll.find((x) => x.workoutId === prev.workoutId && x.mode === 'load')?.entries[0].load
+        : null;
+      const personal = prevTop > prev?.weight ? prev.weight / prevTop : null;
+      const pct = clamp(personal ?? ramp[j], 0.1, 0.92);
+
+      // On the grid of reachable weights below the working weight. A very
+      // light opener (the empty bar, say) stays as it was.
+      let weight = personal != null && personal < 0.3 ? prev.weight
+        : top - Math.round((top * (1 - pct)) / step) * step;
+      if (weight <= floor) weight = floor + step;
+      weight = Math.min(weight, top - step);
+      if (!(weight > 0)) weight = Math.min(top, step);
+      weight = Math.round(weight * 100) / 100;
+
+      let reps = Math.max(1, Math.round(topReps * interpolate(WARMUP_REPS, weight / top)));
+      if (prev?.reps > 0 && personal != null) reps = Math.min(reps, Math.max(prev.reps, 1));
+      floor = weight;
+      goals.set(s.id, {
+        kind: 'warmup', weight, reps,
+        target: { weight: top, reps: topReps, k: workingIndex(working) },
+        pct: weight / top,
+        personal: personal != null,
+        last: prev && prev.weight > 0 ? { weight: prev.weight, reps: prev.reps } : null,
+      });
+    });
+  }
+
+  function workingIndex(set) {
+    return ordered.filter((x) => x.exerciseId === set.exerciseId && !isWarmup(x)).indexOf(set) + 1;
+  }
 
   function goalForSet(exerciseId, sessionsAll, observations, set, k, prevWeight, prevReps) {
     // Anchor weight: today's previous working set, else this slot last time,

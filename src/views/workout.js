@@ -548,9 +548,32 @@ function renderActive(ctx, workout) {
     if (!goal) {
       body = `<div class="section-footer goal-empty">No goal yet. Log a set of ${esc(displayName(exercise))} and the rest of today's sets will follow it.</div>`;
     } else if (goal.kind === 'warmup') {
+      const t = goal.target;
+      const rows = t ? [
+        ['Ramping to', `Set ${t.k} goal: ${formatGoal(t.weight, t.reps)}`, `${Math.round(goal.pct * 100)}%`],
+        ['Weight', goal.personal
+          ? `Your usual step for this warm-up${goal.last ? ` (last time ${formatGoal(goal.last.weight, goal.last.reps)})` : ''}, scaled to today's working weight`
+          : 'A standard ramp toward your working weight', null],
+        ['Reps', 'Fewer as the weight climbs, so warm-ups prime the lift without tiring you for the working sets', null],
+      ] : [];
       body = `
-        <div class="goal-hero"><div class="goal-hero-value">${esc(formatGoal(goal.weight, goal.reps))}</div></div>
-        <div class="section-footer">Warm-ups repeat what you did for this warm-up last time.</div>`;
+        <div class="goal-hero">
+          <div class="goal-hero-value">${esc(formatGoal(goal.weight, goal.reps))}</div>
+          ${t ? '' : '<div class="goal-hero-sub">Last time\'s warm-up (no working set after it to ramp to)</div>'}
+        </div>
+        ${t ? `
+        <div class="section">What went into it</div>
+        <div class="form-section">
+          ${rows.map(([label, detail, value]) => `
+            <div class="stat-row goal-reason">
+              <div class="stat-label">
+                <div class="goal-reason-title">${esc(label)}</div>
+                <div class="goal-reason-detail">${esc(detail)}</div>
+              </div>
+              ${value ? `<div class="stat-value goal-effect">${esc(value)}</div>` : ''}
+            </div>`).join('')}
+        </div>
+        <div class="section-footer">Warm-ups follow the goal for the working set after them, so they move when it does.</div>` : ''}`;
     } else {
       const shown = goal.reasons.filter((r) => r.always || r.reps == null || Math.abs(r.reps) >= 0.25);
       const last = goal.last
@@ -716,7 +739,7 @@ function renderActive(ctx, workout) {
           set.completedAt = Date.now();
           delete set.autofill;
           const goal = goals.get(set.id);
-          if (goal?.kind === 'model') {
+          if (goal) {
             set.goalWeight = goal.weight;
             set.goalReps = goal.reps;
           } else {
@@ -755,8 +778,8 @@ function renderActive(ctx, workout) {
         numBtn.addEventListener('click', async () => {
           const current = set.setType || 'working';
           set.setType = current === 'warmup' ? 'working' : 'warmup';
-          // Re-suggest this set's numbers for its new slot (a warmup repeats
-          // last time's warmup; a working set takes its goal). Skip if it's
+          // Re-suggest this set's numbers for its new slot (a warmup ramps to
+          // the working set after it; a working set takes its goal). Skip if it's
           // already completed (don't rewrite logged work).
           if (!set.completed) set.autofill = true;
           if (!isWorkingSet(set) && ratingSetId === set.id) ratingSetId = null;
@@ -891,7 +914,6 @@ function goalCell(set, goal) {
     const felt = EFFORTS[set.effort];
     const met = goalMet(set);
     const main = set.goalReps > 0 ? formatGoal(set.goalWeight, set.goalReps)
-      : goal?.kind === 'warmup' ? formatGoal(goal.weight, goal.reps)
       : '—';
     const rateable = isWorkingSet(set);
     return {
