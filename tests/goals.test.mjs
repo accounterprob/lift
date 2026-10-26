@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   prepareHistory, calibrate, goalsForWorkout, gapFactor, restFactor,
-  capacity, DEFAULT_PARAMS,
+  capacity, DEFAULT_PARAMS, suggestExercises,
 } from '../src/goals.js';
 import { buildPrevSlotMaps } from '../src/db.js';
 
@@ -110,14 +110,15 @@ test('rest factor stays within a few percent and ignores implausible gaps', () =
   assert.ok(restFactor(300, p) > 1 && restFactor(300, p) <= 1.02);
 });
 
-test('steady straight sets: goal holds the weight and reaches for one more rep', () => {
+test('steady straight sets: goal steps the weight up once at the same reps', () => {
   const data = buildData(steadyBench());
   const act = active(NOW, [{ exerciseId: 'bench', weight: 155, reps: 10 }, { exerciseId: 'bench', weight: 155, reps: 10 }]);
   const goals = goalsFor(data, act);
   const g1 = goals.get(act.sets[0].id);
   assert.equal(g1.kind, 'model');
-  assert.equal(g1.weight, 155);
-  assert.equal(g1.reps, 11);
+  assert.equal(g1.weight, 160);
+  assert.equal(g1.reps, 10);
+  assert.ok(g1.reasons.some((r) => r.label === 'Progression' && r.lbs === 5));
   assert.deepEqual(g1.last && [g1.last.weight, g1.last.reps], [155, 10]);
   const g2 = goals.get(act.sets[1].id);
   assert.ok(goalCap(g2) <= goalCap(g1));
@@ -390,4 +391,52 @@ test('calibration on a big history stays fast', () => {
   calibrate(history);
   const ms = performance.now() - t0;
   assert.ok(ms < 1500, `took ${Math.round(ms)} ms`);
+});
+
+test('no step up when last time was rated Hard, and never more than one step', () => {
+  const hard = steadyBench().map((s, i, all) => (i === all.length - 1
+    ? { ...s, sets: s.sets.map((x) => ({ ...x, effort: 'hard' })) } : s));
+  const act = active(NOW, [{ exerciseId: 'bench', weight: 155, reps: 10 }]);
+  const g = goalsFor(buildData(hard), act).get(act.sets[0].id);
+  assert.ok(g.weight <= 155, `expected no step after Hard, got ${g.weight}`);
+
+  // Much stronger lately (reps far above the range) still moves one step at most.
+  const strong = steadyBench().map((s, i, all) => (i === all.length - 1
+    ? { ...s, sets: s.sets.map((x) => ({ ...x, reps: 20 })) } : s));
+  const act2 = active(NOW, [{ exerciseId: 'bench', weight: 155, reps: 20 }]);
+  const g2 = goalsFor(buildData(strong), act2).get(act2.sets[0].id);
+  assert.ok(g2.weight <= 160, `expected at most one step, got ${g2.weight}`);
+});
+
+test('suggestions skip exercises already in the workout and favor untrained muscles', () => {
+  const data = buildData([
+    workoutAt(NOW - 3 * DAY, [{ exerciseId: 'bench', sets: [[155, 10], [155, 10], [155, 10]] }]),
+    workoutAt(NOW - 2 * DAY, [{ exerciseId: 'squat', sets: [[225, 5], [225, 5]] }], 'Leg Day'),
+    workoutAt(NOW - 20 * DAY, [{ exerciseId: 'pushdown', sets: [[50, 12]] }]),
+  ]);
+  const act = active(NOW, [{ exerciseId: 'bench', weight: 155, reps: 10 }]);
+  const history = prepareHistory({ sets: [...data.sets, ...act.sets], workouts: [...data.workouts, act.workout], exercises: EXERCISES, excludeWorkoutId: act.workout.id });
+  const out = suggestExercises({ history, params: DEFAULT_PARAMS, exercises: EXERCISES, sets: act.sets, now: NOW });
+  const ids = out.map((x) => x.exercise.id);
+  assert.ok(!ids.includes('bench'));
+  assert.ok(!ids.includes('pullup'), 'never-done exercises are not suggested');
+  assert.ok(ids.includes('pushdown'));
+});
+
+test('per-workout suggestions: the usual sets of this day type, minus today', () => {
+  const past = [
+    workoutAt(NOW - 6 * DAY, [{ exerciseId: 'bench', sets: [[155, 10], [155, 10], [155, 10]] }, { exerciseId: 'pushdown', sets: [[50, 12], [50, 12], [50, 12]] }]),
+    workoutAt(NOW - 3 * DAY, [{ exerciseId: 'bench', sets: [[155, 10], [155, 10], [155, 10]] }, { exerciseId: 'pushdown', sets: [[50, 12], [50, 12], [50, 12]] }]),
+  ];
+  const data = buildData(past);
+  const act = active(NOW, [{ exerciseId: 'bench', weight: 155, reps: 10, completed: true }]);
+  const history = prepareHistory({ sets: [...data.sets, ...act.sets], workouts: [...data.workouts, act.workout], exercises: EXERCISES, excludeWorkoutId: act.workout.id });
+  const out = suggestExercises({
+    history, params: DEFAULT_PARAMS, exercises: EXERCISES, sets: act.sets, now: NOW,
+    pastWorkoutIds: past.map((p) => p.workout.id),
+  });
+  const pushdown = out.find((x) => x.exercise.id === 'pushdown');
+  assert.ok(pushdown, 'pushdown is suggested');
+  assert.equal(pushdown.usual, 5);  // 3 pushdowns + half credit from 3 bench sets
+  assert.equal(pushdown.done, 1);   // half credit from today's bench set, rounded
 });

@@ -19,12 +19,13 @@ import {
   exerciseRowMain, setCountLabel, muscleChipsHtml,
 } from '../seed.js';
 import {
-  ROTATION, nextInRotation, lastRotationWorkout,
+  ROTATION, nextInRotation, lastRotationWorkout, normalizeDayName, dayForMuscle,
   colorForMuscle, textOnColor, dayColor, refreshDayTheme,
 } from '../days.js';
 import { downloadBackup } from '../backup.js';
 import {
   prepareHistory, loadCalibration, warmCalibration, goalsForWorkout, goalMet, EFFORTS, formatRest,
+  suggestExercises,
 } from '../goals.js';
 import { renderExerciseDetailPage } from './exercises.js';
 
@@ -177,6 +178,7 @@ function openWorkoutTypePicker(recommendedName, onPick, badgeLabel = 'Today') {
 
 function renderActive(ctx, workout) {
   let allExercises = [];
+  let allWorkouts = [];
   let sets = [];
   let prevByExercise = new Map();
   let setCountByExercise = new Map();
@@ -247,7 +249,28 @@ function renderActive(ctx, workout) {
   // Buttons
   ctx.container.querySelector('#add-exercise-btn').addEventListener('click', () => {
     // Counts were built by the last reload(), which runs after every change.
-    openExercisePicker(allExercises, setCountByExercise, async (selectedIds) => {
+    // Suggestions stay on today's rotation day (core fits any day) and
+    // measure today against its last few workouts.
+    const day = normalizeDayName(workout.name);
+    const pastWorkoutIds = day
+      ? allWorkouts
+        .filter((w) => w.endedAt && w.id !== workout.id && normalizeDayName(w.name) === day)
+        .sort((a, b) => b.startedAt - a.startedAt)
+        .slice(0, 6)
+        .map((w) => w.id)
+      : [];
+    const suggested = goalHistory && calibration
+      ? suggestExercises({
+        history: goalHistory,
+        params: calibration.params,
+        exercises: allExercises,
+        sets,
+        now: Date.now(),
+        pastWorkoutIds,
+        allow: (e) => !day || [day, null].includes(dayForMuscle(primaryMuscleFor(e))),
+      })
+      : [];
+    openExercisePicker(allExercises, setCountByExercise, suggested, async (selectedIds) => {
       await addExercisesToWorkout(workout, sets, selectedIds);
       await reload();
     });
@@ -288,12 +311,13 @@ function renderActive(ctx, workout) {
 
   async function reload() {
     // One read of each store per reload; everything below computes in memory.
-    const [allSets, allWorkouts, exercises] = await Promise.all([
+    const [allSets, workoutsRead, exercises] = await Promise.all([
       getAll('sets'),
       getAll('workouts'),
       getAll('exercises'),
     ]);
     allExercises = exercises;
+    allWorkouts = workoutsRead;
     sets = allSets
       .filter((s) => s.workoutId === workout.id)
       .sort((a, b) => a.order - b.order);
@@ -1167,7 +1191,7 @@ async function finishWorkout(workout, sets) {
 
 // ----------------- Exercise picker sheet -----------------
 
-function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
+function openExercisePicker(allExercises, setCountByExercise, suggested, onConfirm) {
   let selected = new Set();
   let search = '';
   let category = null;
@@ -1184,6 +1208,7 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
       </div>
       <div class="chip-row" id="picker-chips"></div>
       <div class="sheet-content">
+        <div id="picker-suggested"></div>
         <div class="list" id="picker-list"></div>
         <div class="action-section">
           <button class="btn-secondary" id="picker-custom">+ Create Custom Exercise</button>
@@ -1192,6 +1217,7 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
     `,
     onMount(sheet) {
       const listEl = sheet.querySelector('#picker-list');
+      const suggestedEl = sheet.querySelector('#picker-suggested');
       const addBtn = sheet.querySelector('#picker-add');
       const cancelBtn = sheet.querySelector('#picker-cancel');
       const customBtn = sheet.querySelector('#picker-custom');
@@ -1236,7 +1262,22 @@ function openExercisePicker(allExercises, setCountByExercise, onConfirm) {
                 </button>
               `).join('');
 
-        for (const row of listEl.querySelectorAll('.list-row[data-id]')) {
+        // Suggested (only on the unfiltered list): what to do next, see suggestExercises.
+        suggestedEl.innerHTML = suggested.length > 0 && !search && !category
+          ? `<div class="section">Suggested</div>
+             <div class="list">${suggested.map(({ exercise: e, muscle, done, usual, perWorkout }) => `
+                <button class="list-row" data-id="${e.id}">
+                  <div class="row-main">
+                    <div class="row-title">${esc(e.name)}</div>
+                    <div class="row-subtitle">${esc(muscle)} · ${done} of your usual ${usual} sets${perWorkout ? ' today' : ' this week'}</div>
+                  </div>
+                  <div class="row-trailing trailing-stack">${selected.has(e.id) ? checkmarkBlue() : ''}</div>
+                </button>
+              `).join('')}</div>
+             <div class="section">All Exercises</div>`
+          : '';
+
+        for (const row of sheet.querySelectorAll('#picker-suggested .list-row[data-id], #picker-list .list-row[data-id]')) {
           row.addEventListener('click', () => {
             const id = row.dataset.id;
             if (selected.has(id)) selected.delete(id);

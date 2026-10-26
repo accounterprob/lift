@@ -854,6 +854,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
     const range = repRange(sessions, obs[obs.length - 1]?.set.reps);
     let weight = anchor;
     let reps = repsAt(target, loadOf(weight), rir);
+    let stepped = false;
     if (mode === 'load') {
       const step = weightStep(sessions.length > 0 ? sessions : [{ entries: obs.map((o) => ({ load: o.set.weight })) }]);
       // Past the range, add weight as long as that lands nearer the usual reps.
@@ -867,6 +868,25 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       for (let i = 0; i < 10 && reps < range.low - 0.5 && weight - step > 0; i++) {
         weight -= step;
         reps = repsAt(target, weight, rir);
+      }
+      // Never more than one step over last time's weight for this slot. The
+      // exercise's first set takes that step once every goal was hit last
+      // time with nothing rated Hard (f.hitDetail), unless today finds him
+      // less recovered than last time; at last time's reps, since adding
+      // weight hasn't been costing him reps. Later sets follow today's.
+      if (f) {
+        const lastWeight = f.ref.entry.set.weight || 0;
+        const ceiling = Math.max(anchor, lastWeight + (f.hitDetail ? step : 0));
+        if (weight > ceiling) {
+          weight = ceiling;
+          reps = Math.min(repsAt(target, weight, rir), range.high);
+        }
+        const asFresh = f.gap * f.days * f.today * f.ready >= 0.99;
+        if (f.hitDetail && asFresh && obs.length === 0 && anchor <= lastWeight && weight <= lastWeight + step) {
+          weight = lastWeight + step;
+          reps = Math.min(f.ref.entry.set.reps, range.high);
+          stepped = true;
+        }
       }
       weight = Math.round(weight * 100) / 100;
     }
@@ -940,7 +960,9 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
           reps: f.ref.entry.rir - rir,
         });
       }
-      if (f.push > 1) {
+      if (stepped) {
+        reasons.push({ label: 'Progression', detail: `${f.hitDetail} — up one weight step`, reps: null, lbs: weight - anchor, always: true });
+      } else if (f.push > 1) {
         reasons.push({ label: 'Progression', detail: `${f.hitDetail} — reaching for one more rep`, reps: effect(f.push) });
       }
       if (f.ready !== 1) {
@@ -966,7 +988,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       }
     }
 
-    if (mode === 'load' && weight !== anchor) {
+    if (mode === 'load' && weight !== anchor && !stepped) {
       reasons.push({
         label: 'Weight',
         detail: `${weight > anchor ? 'Up' : 'Down'} from ${formatNum(anchor)} to keep reps in your usual ${range.low}–${range.high}`,
@@ -1027,4 +1049,87 @@ export function goalMet(set) {
   if (!(set.goalReps > 0)) return null;
   if (!(set.goalWeight > 0)) return set.reps >= set.goalReps;
   return capacity(set.weight || 0, set.reps || 0, 0) >= capacity(set.goalWeight, set.goalReps, 0) - 1e-9;
+}
+
+// ---------- What to do next ----------
+
+// Floor on a muscle's usual sets, so a rarely trained one still counts.
+const MIN_USUAL_SETS = 3;
+
+/**
+ * Exercises to add next: ones with history that aren't in this workout yet
+ * (and pass `allow`), scored by how many hard sets their muscles are short of
+ * usual, discounted by fatigue still carried from earlier days. "Usual" is the
+ * average per workout over `pastWorkoutIds` (recent workouts of today's
+ * rotation day) against today's finished sets; with none given, it's the
+ * average week over the past 8 against the past 7 days. Shortfalls are in
+ * sets, so a big muscle behind beats a small one. One per primary muscle —
+ * the one done most often — best first: [{ exercise, muscle, done, usual }].
+ */
+export function suggestExercises({ history, params, exercises, sets, now, pastWorkoutIds = [], allow = () => true, limit = 3 }) {
+  const perWorkout = pastWorkoutIds.length > 0;
+  const past = new Set(pastWorkoutIds);
+  const usual = new Map();     // muscle → usual hard sets
+  const done = new Map();      // muscle → hard sets so far (today, or past 7 days)
+  const residual = new Map();  // muscle → earlier days' sets, faded by recovery time
+  const add = (map, m, v) => map.set(m, (map.get(m) ?? 0) + v);
+
+  const from = firstEventAtOrAfter(history.events, now - 8 * FATIGUE_WINDOW_MS);
+  for (let i = from; i < history.events.length && history.events[i].t < now; i++) {
+    const ev = history.events[i];
+    const recent = ev.t >= now - FATIGUE_WINDOW_MS;
+    const fade = Math.exp(-(now - ev.t) / HOUR_MS / params.recoveryHours);
+    for (const [m, w] of ev.shares) {
+      const v = w * ev.load;
+      if (perWorkout ? past.has(ev.workoutId) : true) add(usual, m, v / (perWorkout ? past.size : 8));
+      if (!perWorkout && recent) add(done, m, v);
+      if (recent) add(residual, m, v * fade);
+    }
+  }
+  for (const s of sets) {
+    if (!s.completed || isWarmup(s) || !(s.reps > 0)) continue;
+    for (const [m, w] of history.sharesOf(s.exerciseId)) add(done, m, w * (EFFORT_LOAD[s.effort] ?? 1));
+  }
+  // Workouts outside the 8-week window still count toward a per-workout usual.
+  if (perWorkout) {
+    for (let i = 0; i < from; i++) {
+      const ev = history.events[i];
+      if (past.has(ev.workoutId)) for (const [m, w] of ev.shares) add(usual, m, (w * ev.load) / past.size);
+    }
+  }
+
+  const inWorkout = new Set(sets.map((s) => s.exerciseId));
+  const best = new Map();  // primary muscle → { score, exercise, sessions, muscle }
+  for (const exercise of exercises) {
+    const sessionsDone = history.sessionsByExercise.get(exercise.id);
+    if (!sessionsDone || inWorkout.has(exercise.id) || !allow(exercise)) continue;
+    const shares = history.sharesOf(exercise.id);
+    let score = 0;
+    let total = 0;
+    for (const [m, w] of shares) {
+      const short = Math.max(0, Math.max(MIN_USUAL_SETS, usual.get(m) ?? 0) - (done.get(m) ?? 0));
+      score += w * short / (1 + (residual.get(m) ?? 0) / 3);
+      total += w;
+    }
+    score /= total;
+    if (score < 0.5) continue;
+    const muscle = shares.keys().next().value;
+    const sessions = sessionsDone.filter((s) => s.t >= now - 90 * DAY_MS).length;
+    const cur = best.get(muscle);
+    if (!cur || sessions > cur.sessions) {
+      best.set(muscle, { score: Math.max(score, cur?.score ?? 0), exercise, sessions, muscle });
+    } else {
+      cur.score = Math.max(cur.score, score);
+    }
+  }
+  return [...best.values()]
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ exercise, muscle }) => ({
+      exercise,
+      muscle,
+      done: Math.round(done.get(muscle) ?? 0),
+      usual: Math.round(Math.max(MIN_USUAL_SETS, usual.get(muscle) ?? 0)),
+      perWorkout,
+    }));
 }
