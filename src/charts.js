@@ -41,6 +41,7 @@ function collapseByDay(rawPoints) {
  *        axisFormat?: (v, span) => string  y-axis ticks (span = axis range);
  *                                       defaults to `format`
  *        isolated?: string,             label of the line to start isolated
+ *        zeroLine?: boolean,            dotted line at 0, always kept in view
  *        onStateChange?: ({ period, isolated }) => void  period key + isolated
  *                                       label (or null) after each change
  *        rebase?: (cutoff) => series    recompute the named series for a
@@ -133,7 +134,7 @@ export function mountTimeSeriesChart(container, raw, opts = {}) {
 
   function update() {
     const perSeries = filtered();
-    const built = buildChart(perSeries, series, fmt, isolatedIdx !== null);
+    const built = buildChart(perSeries, series, fmt, isolatedIdx !== null, !!opts.zeroLine);
     chartEl.innerHTML = built.html;
     geom = built.geom;
     const all = perSeries.flat();
@@ -241,8 +242,10 @@ function fmtDate(ms) {
  *        labels for a lone point's value and the y-axis ticks
  * @param {boolean} isolated  one line is shown on its own — draw it solid
  *        even if its series is normally dashed
+ * @param {boolean} zeroLine  draw a dotted line at 0, widening the y-axis to
+ *        include it if the data doesn't
  */
-function buildChart(perSeries, series, fmt, isolated) {
+function buildChart(perSeries, series, fmt, isolated, zeroLine) {
   const W = 400, H = 200;
   const pad = { top: 16, right: 14, bottom: 14, left: 52 };  // room for full y labels like 12,500
   const innerW = W - pad.left - pad.right;
@@ -267,8 +270,12 @@ function buildChart(perSeries, series, fmt, isolated) {
   const yRange = Math.max(maxY - minY, 1);
   // Headroom below the lowest point; never dips under zero unless the data
   // does (a strength drop is negative).
-  const yMin = minY >= 0 ? Math.max(0, minY - yRange * 0.12) : minY - yRange * 0.12;
-  const yMax = maxY + yRange * 0.12;
+  let yMin = minY >= 0 ? Math.max(0, minY - yRange * 0.12) : minY - yRange * 0.12;
+  let yMax = maxY + yRange * 0.12;
+  if (zeroLine) {
+    yMin = Math.min(yMin, 0);
+    yMax = Math.max(yMax, 0);
+  }
 
   const xScale = (x) => pad.left + ((x - minX) / Math.max(maxX - minX, 1)) * innerW;
   const yScale = (y) => pad.top + innerH - ((y - yMin) / (yMax - yMin)) * innerH;
@@ -283,6 +290,10 @@ function buildChart(perSeries, series, fmt, isolated) {
     const y = pad.top + (innerH * i) / ticks;
     return `<line x1="${pad.left}" x2="${W - pad.right}" y1="${y}" y2="${y}" class="chart-axis-line"/>`;
   }).join('');
+
+  const zero = zeroLine
+    ? `<line x1="${pad.left}" x2="${W - pad.right}" y1="${yScale(0)}" y2="${yScale(0)}" class="chart-zero-line"/>`
+    : '';
 
   const scrubPts = [];
   const marks = perSeries.map((pts, si) => {
@@ -304,6 +315,7 @@ function buildChart(perSeries, series, fmt, isolated) {
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
       ${grid}
       ${yLabels}
+      ${zero}
       ${marks}
       <line class="chart-scrub-line" y1="${pad.top}" y2="${pad.top + innerH}" x1="0" x2="0" visibility="hidden"/>
       <circle class="chart-scrub-dot" r="4.5" visibility="hidden"/>

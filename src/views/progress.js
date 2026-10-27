@@ -255,6 +255,7 @@ function renderOverview(ctx) {
     mountTimeSeriesChart(chartMount, strengthSeries, {
       format: formatPct,
       axisFormat: formatPctAxis,
+      zeroLine: true,
       rebase: snapshot.strengthFor,
       defaultPeriod: chartState.period,
       isolated: chartState.isolated,

@@ -1237,6 +1237,8 @@ button.stat-row:active { background: var(--press); }
 .chart-line { stroke: var(--accent); stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .chart-point { fill: var(--accent); }
 .chart-line-dashed { stroke-dasharray: 5 4; }
+/* Baseline on % charts: no change from where the lift started. */
+.chart-zero-line { stroke: var(--text-tertiary); stroke-width: 1; stroke-dasharray: 2 3; }
 
 /* One pill per series (rotation day) above a multi-line chart. Each pill
    carries its day color via --dcolor (set inline): a dot + label at rest,
