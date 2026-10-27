@@ -1,5 +1,5 @@
 // The PPL day cycle and everything colored by it. Each rotation day owns a
-// color family: the Progress volume chart draws one line per day, the whole
+// color family: the Progress strength chart draws one line per day, the whole
 // app accent re-themes to whichever day is "today" (see refreshDayTheme), and
 // every muscle group trained on a day wears a shade of that day's color in
 // the active-workout volume bars.
@@ -12,7 +12,7 @@ export const ROTATION = ['Chest Day', 'Leg Day', 'Back/Bi Day'];
 
 /**
  * Per-day identity: `key` is stamped on <html data-day> and selects the
- * accent theme in styles.css; `short` labels the volume-chart legend;
+ * accent theme in styles.css; `short` labels the strength-chart legend;
  * `cssVar` is the day's line/legend color (light/dark values in styles.css).
  * Day hues — Chest pink, Legs gold, Back/Bi blue — were validated to stay
  * distinct under red-green colorblindness in both modes, and deliberately

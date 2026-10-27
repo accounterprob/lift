@@ -4,7 +4,7 @@ import {
 } from '../db.js';
 import {
   esc, formatVolumeLbs, formatDateShort, formatDateLong, formatDurationShort,
-  formatLbs, emit, shareIcon, trashIcon, errorState, showSheet,
+  formatLbs, emit, shareIcon, trashIcon, errorState, showSheet, e1rm,
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
@@ -16,17 +16,11 @@ import { ROTATION, DAYS, classifyWorkoutDays, dayColor } from '../days.js';
 // from IndexedDB on every navigation.
 let snapshot = null;
 
-// Workout chart modes. Volume is total work (weight × reps); Strength % is
-// the average change in each exercise's estimated 1RM from its baseline
-// (first session on All, the window's start on shorter periods).
-const CHART_MODES = {
-  volume:   { chip: 'Volume',     title: 'Workout Volume', key: 'volumeSeries',   opts: { unit: 'lbs' } },
-  strength: { chip: 'Strength %', title: 'Strength Change', key: 'strengthSeries', opts: { format: formatPct, axisFormat: formatPctAxis } },
-};
-// Opens on Strength % with the Avg line isolated. The chart's mode, time
-// period, and isolated line survive re-renders and mode switches for the
-// rest of the session.
-const chartState = { mode: 'strength', period: 'All', isolated: 'Avg' };
+// The workout chart tracks strength, not work: the average change in each
+// exercise's estimated 1RM from its baseline (first session on All, the
+// window's start on shorter periods). Opens with the Avg line isolated; the
+// period and isolated line survive re-renders for the rest of the session.
+const chartState = { period: 'All', isolated: 'Avg' };
 
 /** Signed percent: "+12%", "-3%", "+0.8%" (one decimal under 10). */
 function formatPct(v) {
@@ -71,7 +65,6 @@ async function loadSnapshot() {
 
   let totalVolume = 0;
   let totalSets = 0;
-  const volumeByDay = new Map();  // rotation day → volume points
   const exerciseCounts = new Map();
   const bestByExercise = new Map();
 
@@ -85,13 +78,6 @@ async function loadSnapshot() {
     const vol = completed.reduce((s, x) => s + x.weight * x.reps, 0);
     totalVolume += vol;
     totalSets += completed.length;
-
-    // All workouts — the chart's period selector handles the time window.
-    if (vol > 0) {
-      const day = dayById.get(w.id);
-      if (!volumeByDay.has(day)) volumeByDay.set(day, []);
-      volumeByDay.get(day).push({ date: w.startedAt, value: vol });
-    }
 
     for (const s of completed) {
       const ex = exMap.get(s.exerciseId);
@@ -116,13 +102,12 @@ async function loadSnapshot() {
     .map(([, e]) => e);
   const prs = Array.from(bestByExercise.values()).sort((a, b) => b.weight - a.weight);
 
-  const volumeSeries = seriesByDay(volumeByDay);
   // Strength % rebases to the chart's period: All compares to each lift's
   // first session, shorter windows to where it stood when the window opened.
   const strengthFor = (cutoff) => seriesByDay(strengthPointsByDay(workouts, setsByWorkout, dayById, cutoff));
   const strengthSeries = strengthFor(null);
 
-  return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, volumeSeries, strengthSeries, strengthFor, topExercises, prs };
+  return { workouts, allSets, allExercises, exMap, setsByWorkout, totalVolume, totalSets, strengthSeries, strengthFor, topExercises, prs };
 }
 
 /**
@@ -159,14 +144,6 @@ function strengthPointsByDay(workouts, setsByWorkout, dayById, cutoff) {
     });
   }
   return byDay;
-}
-
-/**
- * Estimated one-rep max (Epley): weight × (1 + reps / 30). Lets a set of 15
- * and a set of 5 be compared on one scale.
- */
-function e1rm(weight, reps) {
-  return weight * (1 + reps / 30);
 }
 
 /** Map exerciseId → best e1RM among a workout's weighted working sets. */
@@ -234,8 +211,7 @@ function renderOverview(ctx) {
     return;
   }
 
-  const { workouts, totalVolume, totalSets, volumeSeries, topExercises, prs } = snapshot;
-  const chartMode = CHART_MODES[chartState.mode];
+  const { workouts, totalVolume, totalSets, strengthSeries, topExercises, prs } = snapshot;
 
   ctx.container.innerHTML = `
     <div class="section">Totals</div>
@@ -244,15 +220,8 @@ function renderOverview(ctx) {
       <div class="stat-row"><div class="stat-label">Total Sets</div><div class="stat-value">${totalSets.toLocaleString()}</div></div>
     </div>
 
-    ${volumeSeries.length > 0 ? `
-      <div class="section" data-role="chart-title">${chartMode.title}</div>
-      <div class="chip-row chart-mode-row">
-        ${Object.entries(CHART_MODES).map(([key, m]) =>
-          `<button type="button" class="chip${key === chartState.mode ? ' active' : ''}" data-mode="${key}">${m.chip}</button>`
-        ).join('')}
-      </div>
-      <div class="volume-chart-mount"></div>
-    ` : ''}
+    <div class="section">Estimated 1RM Change</div>
+    <div class="strength-chart-mount"></div>
 
     <div class="list" style="margin-top: 16px;">
       <button class="list-row" data-page="trained">
@@ -279,38 +248,21 @@ function renderOverview(ctx) {
     </div>
   `;
 
-  const chartMount = ctx.container.querySelector('.volume-chart-mount');
-  if (chartMount && volumeSeries.length > 0) {
-    const titleEl = ctx.container.querySelector('[data-role="chart-title"]');
-    const chips = [...ctx.container.querySelectorAll('.chart-mode-row .chip')];
-    const mountChart = () => {
-      const mode = CHART_MODES[chartState.mode];
-      const series = snapshot[mode.key];
-      titleEl.textContent = mode.title;
-      chips.forEach((c) => c.classList.toggle('active', c.dataset.mode === chartState.mode));
-      if (series.length === 0) {
-        chartMount.innerHTML = `<p class="chart-empty">Log an exercise a second time to see how it's changed.</p>`;
-        return;
-      }
-      mountTimeSeriesChart(chartMount, series, {
-        ...mode.opts,
-        rebase: chartState.mode === 'strength' ? snapshot.strengthFor : undefined,
-        defaultPeriod: chartState.period,
-        isolated: chartState.isolated,
-        onStateChange: ({ period, isolated }) => {
-          chartState.period = period;
-          chartState.isolated = isolated;
-        },
-      });
-    };
-    for (const chip of chips) {
-      chip.addEventListener('click', () => {
-        if (chip.dataset.mode === chartState.mode) return;
-        chartState.mode = chip.dataset.mode;
-        mountChart();
-      });
-    }
-    mountChart();
+  const chartMount = ctx.container.querySelector('.strength-chart-mount');
+  if (strengthSeries.length === 0) {
+    chartMount.innerHTML = `<p class="chart-empty">Log an exercise a second time to see how it's changed.</p>`;
+  } else {
+    mountTimeSeriesChart(chartMount, strengthSeries, {
+      format: formatPct,
+      axisFormat: formatPctAxis,
+      rebase: snapshot.strengthFor,
+      defaultPeriod: chartState.period,
+      isolated: chartState.isolated,
+      onStateChange: ({ period, isolated }) => {
+        chartState.period = period;
+        chartState.isolated = isolated;
+      },
+    });
   }
 
   wirePageLinks(ctx);

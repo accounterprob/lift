@@ -44,6 +44,14 @@ export function formatVolumeLbs(v) {
   return `${formatVolume(v)} lbs`;
 }
 
+/**
+ * Estimated one-rep max (Epley): weight × (1 + reps / 30). Lets a set of 15
+ * and a set of 5 be compared on one scale.
+ */
+export function e1rm(weight, reps) {
+  return weight * (1 + reps / 30);
+}
+
 export function formatDateShort(d) {
   const date = d instanceof Date ? d : new Date(d);
   return date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' });

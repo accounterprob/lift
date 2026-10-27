@@ -2,7 +2,7 @@ import {
   getAll, get, getActiveWorkout, getExerciseSets, deleteExerciseAndSets, performedSets,
 } from '../db.js';
 import {
-  esc, formatLbs, formatVolumeLbs, formatDateShort, emit, showSheet, trashIcon, errorState,
+  esc, formatLbs, formatVolumeLbs, formatDateShort, emit, showSheet, trashIcon, errorState, e1rm,
 } from '../utils.js';
 import { openExerciseForm } from './workout.js';
 import { openWorkoutDetailSheet } from './progress.js';
@@ -226,19 +226,16 @@ async function buildExerciseDetail(exerciseId) {
     null
   );
 
-  // One point per workout: average working-set volume that day (warmups out).
+  // One point per workout: best estimated 1RM that day (warmups out).
   const byWorkout = new Map();
   for (const s of completed) {
     if (s.weight <= 0 || s.reps <= 0) continue;
     if ((s.setType || 'working') === 'warmup') continue;
-    const cur = byWorkout.get(s.workoutId) || { date: s.workout.startedAt, total: 0, count: 0 };
-    cur.total += s.weight * s.reps;
-    cur.count += 1;
-    byWorkout.set(s.workoutId, cur);
+    const est = e1rm(s.weight, s.reps);
+    const cur = byWorkout.get(s.workoutId);
+    if (!cur || est > cur.value) byWorkout.set(s.workoutId, { date: s.workout.startedAt, value: est });
   }
-  const chartData = Array.from(byWorkout.values())
-    .map(({ date, total, count }) => ({ date, value: total / count }))
-    .sort((a, b) => a.date - b.date);
+  const chartData = Array.from(byWorkout.values()).sort((a, b) => a.date - b.date);
 
   const html = `
     <div class="section">Details</div>
@@ -260,7 +257,7 @@ async function buildExerciseDetail(exerciseId) {
     ` : ''}
 
     ${chartData.length > 0 ? `
-      <div class="section">Avg working-set volume per workout</div>
+      <div class="section">Estimated 1RM per workout</div>
       <div class="exercise-chart-mount"></div>
     ` : ''}
 

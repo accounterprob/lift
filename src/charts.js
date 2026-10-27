@@ -1,5 +1,5 @@
 // Interactive time-series chart: smooth (bezier) lines with a period selector.
-// Draws one line per series — the Progress volume trend passes one series per
+// Draws one line per series — the Progress strength trend passes one series per
 // rotation day; the per-exercise detail passes a single flat point list.
 
 const PERIODS = [
