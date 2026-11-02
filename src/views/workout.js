@@ -16,7 +16,7 @@ import {
 } from '../utils.js';
 import {
   MUSCLES, EQUIPMENT, primaryMuscleFor, muscleShares, displayName,
-  exerciseRowMain, setCountLabel, muscleChipsHtml,
+  exerciseRowMain, setCountLabel, muscleChipsHtml, isPerSide, setNumberLabel,
 } from '../seed.js';
 import {
   ROTATION, nextInRotation, lastRotationWorkout, normalizeDayName, dayForMuscle,
@@ -564,7 +564,7 @@ function renderActive(ctx, workout) {
     const goal = goals.get(set.id);
     const exercise = allExercises.find((e) => e.id === set.exerciseId);
     const exSets = sets.filter((x) => x.exerciseId === set.exerciseId);
-    const label = setDisplayLabel(exSets, set);
+    const label = setDisplayLabel(exSets, set, isPerSide(exercise));
     const stats = calibration?.stats;
     const params = calibration?.params;
 
@@ -575,7 +575,7 @@ function renderActive(ctx, workout) {
       const t = goal.target;
       const rows = t ? [
         ['Ramping to', `Set ${t.k} goal: ${formatGoal(t.weight, t.reps)}`, `${Math.round(goal.pct * 100)}%`],
-        ['Weight', goal.personal
+        ['Weight', goal.otherSide ? 'Same as the other side' : goal.personal
           ? `Your usual step for this warm-up${goal.last ? ` (last time ${formatGoal(goal.last.weight, goal.last.reps)})` : ''}, scaled to today's working weight`
           : 'A standard ramp toward your working weight', null],
         ['Reps', 'Fewer as the weight climbs, so warm-ups prime the lift without tiring you for the working sets', null],
@@ -869,22 +869,24 @@ function isWorkingSet(set) {
 }
 
 /** "W2" / "3": warmups and working sets are numbered separately. */
-function setDisplayLabel(exSets, set) {
+function setDisplayLabel(exSets, set, perSide) {
   const sorted = [...exSets].sort((a, b) => a.order - b.order);
   let n = 0;
   for (const s of sorted) {
     if (isWorkingSet(s) === isWorkingSet(set)) n += 1;
     if (s.id === set.id) break;
   }
-  return isWorkingSet(set) ? String(n) : `W${n}`;
+  return isWorkingSet(set) ? setNumberLabel(n, perSide) : `W${setNumberLabel(n, perSide)}`;
 }
 
 function renderExerciseSection(exerciseId, exercise, sets, goals, ratingSetId, totalSetCount = 0) {
   // Warmups get their own counter (W1, W2, W3); working sets get 1, 2, 3.
+  // Iso-lateral exercises number by round, with A and B for the two sides.
+  const perSide = isPerSide(exercise);
   let workingIndex = 0;
   let warmupIndex = 0;
   const setBlocks = sets.map((s) => {
-    const display = isWorkingSet(s) ? String(++workingIndex) : `W${++warmupIndex}`;
+    const display = isWorkingSet(s) ? setNumberLabel(++workingIndex, perSide) : `W${setNumberLabel(++warmupIndex, perSide)}`;
     const rating = s.id === ratingSetId && s.completed && isWorkingSet(s);
     return renderSetRow(s, display, goals.get(s.id), rating);
   }).join('');
@@ -966,7 +968,7 @@ function renderSetRow(set, displayLabel, goal, showRating) {
     <div class="set-row-wrap" data-set-id="${set.id}">
       <button class="set-swipe-delete" data-set-id="${set.id}" aria-label="Delete set ${displayLabel}">Delete</button>
       <div class="set-row type-${type}${set.completed ? ' completed' : ''}" data-set-id="${set.id}">
-        <button class="set-number" aria-label="Set ${displayLabel}, tap to mark as ${type === 'warmup' ? 'working' : 'warmup'}">${displayLabel}</button>
+        <button class="set-number${displayLabel.length > 2 ? ' compact' : ''}" aria-label="Set ${displayLabel}, tap to mark as ${type === 'warmup' ? 'working' : 'warmup'}">${displayLabel}</button>
         <button class="${cell.cls}" aria-label="${esc(cell.aria)}">${cell.html}</button>
         <input class="weight-input" type="number" inputmode="decimal" step="0.5" aria-label="Weight in pounds for set ${displayLabel}"
                placeholder="0" value="${set.weight > 0 ? set.weight : ''}" />
@@ -999,10 +1001,10 @@ function effectClass(reason) {
 }
 
 /**
- * Attaches iOS-style swipe-left-to-delete behavior to a set row. A short swipe
- * snaps open to reveal the Delete button (tap to confirm); a full swipe past
- * the commit threshold deletes immediately on release. onDelete runs the delete.
- * Only one row stays open at a time — any other open row auto-closes.
+ * Attaches iOS-style swipe-left-to-delete behavior to a set row. However far the
+ * swipe goes it only snaps open to reveal the Delete button, so deleting always
+ * takes a tap on it. onDelete runs the delete. Only one row stays open at a
+ * time — any other open row auto-closes.
  */
 function attachSwipeToDelete(wrap, onDelete) {
   const row = wrap.querySelector('.set-row');
@@ -1011,7 +1013,6 @@ function attachSwipeToDelete(wrap, onDelete) {
 
   const REVEAL_WIDTH = 88;  // px the row rests open at, exposing Delete
 
-  let rowWidth = 0;
   let startX = 0;
   let startY = 0;
   let currentDX = 0;
@@ -1020,16 +1021,9 @@ function attachSwipeToDelete(wrap, onDelete) {
   let isOpen = false;
   let startedOnControl = false;
 
-  // Distance past which a release auto-deletes (about half the row).
-  const commitPoint = () => Math.max(140, rowWidth * 0.5);
-
   function setOffset(px, animate) {
     row.style.transition = animate ? 'transform 0.18s ease' : 'none';
     row.style.transform = `translateX(${px}px)`;
-    // Grow the red panel to stay flush behind the row as it slides further
-    // than the resting reveal width.
-    deleteBtn.style.width = `${Math.max(REVEAL_WIDTH, -px)}px`;
-    wrap.classList.toggle('will-delete', px <= -commitPoint());
   }
   function close(animate = true) {
     isOpen = false;
@@ -1042,21 +1036,12 @@ function attachSwipeToDelete(wrap, onDelete) {
       if (el !== wrap) {
         const r = el.querySelector('.set-row');
         if (r) { r.style.transition = 'transform 0.18s ease'; r.style.transform = 'translateX(0)'; }
-        const d = el.querySelector('.set-swipe-delete');
-        if (d) d.style.width = '';
-        el.classList.remove('swiped-open', 'will-delete');
+        el.classList.remove('swiped-open');
       }
     });
     isOpen = true;
     setOffset(-REVEAL_WIDTH, animate);
     wrap.classList.add('swiped-open');
-  }
-  function commitDelete() {
-    // Slide the row fully off-screen, then delete.
-    row.style.transition = 'transform 0.16s ease-out';
-    row.style.transform = `translateX(${-rowWidth}px)`;
-    deleteBtn.style.width = `${rowWidth}px`;
-    setTimeout(onDelete, 150);
   }
 
   // Start tracking anywhere on the row — including over the inputs and buttons —
@@ -1064,7 +1049,6 @@ function attachSwipeToDelete(wrap, onDelete) {
   // only take the gesture over once it's clearly horizontal, so a plain tap
   // still focuses an input or fires a button.
   row.addEventListener('touchstart', (e) => {
-    rowWidth = wrap.clientWidth || row.clientWidth;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
     currentDX = isOpen ? -REVEAL_WIDTH : 0;
@@ -1094,8 +1078,7 @@ function attachSwipeToDelete(wrap, onDelete) {
     // Now that we own a horizontal swipe, stop the input/page from reacting.
     if (e.cancelable) e.preventDefault();
     const base = isOpen ? -REVEAL_WIDTH : 0;
-    // Allow dragging all the way across the row, not just to the reveal width.
-    currentDX = Math.min(0, Math.max(-rowWidth, base + dx));
+    currentDX = Math.min(0, Math.max(-REVEAL_WIDTH, base + dx));
     setOffset(currentDX, false);
   }, { passive: false });
 
@@ -1103,8 +1086,7 @@ function attachSwipeToDelete(wrap, onDelete) {
     if (!tracking) return;
     tracking = false;
     if (!horizontal) return;
-    if (currentDX <= -commitPoint()) commitDelete();
-    else if (currentDX < -REVEAL_WIDTH / 2) open();
+    if (currentDX < -REVEAL_WIDTH / 2) open();
     else close();
   }
   row.addEventListener('touchend', endSwipe);
@@ -1371,14 +1353,26 @@ function openExerciseForm(existing, onSaved) {
             <select id="ce-eq">${equipOptions.map((e) => `<option${e === currentEquip ? ' selected' : ''}>${esc(e)}</option>`).join('')}</select>
           </div>
         </div>
+        <div class="section">Iso-lateral</div>
+        <div class="form-section">
+          <div class="form-row">
+            <label for="ce-side">Each side is its own set</label>
+            <input id="ce-side" type="checkbox"${isEdit && isPerSide(existing) ? ' checked' : ''} />
+          </div>
+        </div>
+        <div class="section-footer">
+          Sets pair up as 1A and 1B. The second side's goal matches the first, and it doesn't count as an extra set or as rest.
+        </div>
       </div>
     `,
     onMount(sheet) {
       const nameInput = sheet.querySelector('#ce-name');
       const saveBtn = sheet.querySelector('#ce-save');
+      const sideInput = sheet.querySelector('#ce-side');
 
       nameInput.addEventListener('input', () => {
         saveBtn.disabled = nameInput.value.trim().length === 0;
+        if (!isEdit) sideInput.checked = isPerSide({ name: nameInput.value });
       });
 
       sheet.querySelector('#ce-cancel').addEventListener('click', () => dismiss());
@@ -1387,14 +1381,16 @@ function openExerciseForm(existing, onSaved) {
         if (!name) return;
         const muscle = sheet.querySelector('#ce-cat').value;
         const equipment = sheet.querySelector('#ce-eq').value;
+        const perSide = sideInput.checked;
         const exercise = isEdit
-          ? { ...existing, name, muscle, equipment }
+          ? { ...existing, name, muscle, equipment, perSide }
           : {
               id: uuid(),
               name,
               muscle,
               category: muscle,
               equipment,
+              perSide,
               notes: '',
               isCustom: true,
               createdAt: Date.now(),

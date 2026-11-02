@@ -9,6 +9,7 @@ import {
   capacity, DEFAULT_PARAMS, suggestExercises,
 } from '../src/goals.js';
 import { buildPrevSlotMaps } from '../src/db.js';
+import { isPerSide, setNumberLabel } from '../src/seed.js';
 
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
@@ -20,6 +21,7 @@ const EXERCISES = [
   { id: 'pushdown', name: 'Tricep Pushdown', equipment: 'Cable' },
   { id: 'squat', name: 'Squat', equipment: 'Barbell' },
   { id: 'pullup', name: 'Pull-Up', equipment: 'Bodyweight' },
+  { id: 'rotation', name: 'Torso Rotation', equipment: 'Machine' },
 ];
 
 let seq = 0;
@@ -439,4 +441,86 @@ test('per-workout suggestions: the usual sets of this day type, minus today', ()
   assert.ok(pushdown, 'pushdown is suggested');
   assert.equal(pushdown.usual, 5);  // 3 pushdowns + half credit from 3 bench sets
   assert.equal(pushdown.done, 1);   // half credit from today's bench set, rounded
+});
+
+// ---------- Iso-lateral exercises ----------
+
+/** Past Torso Rotation sessions: two rounds, each side a set, 40s between sides. */
+function rotationHistory() {
+  return Array.from({ length: 6 }, (_, i) => {
+    const t = NOW - (6 - i) * 3 * DAY;
+    const stamp = (n) => ({ completedAt: t + n * 1000 });
+    return workoutAt(t, [{
+      exerciseId: 'rotation',
+      sets: [[170, 17, stamp(0)], [170, 17, stamp(40)], [170, 17, stamp(160)], [170, 17, stamp(200)]],
+    }]);
+  });
+}
+
+const rotationRows = (done = 0) => [0, 1, 2, 3].map((i) => (i < done
+  ? { exerciseId: 'rotation', weight: 170, reps: 17, completed: true, extra: { completedAt: NOW - (done - i) * 40 * 1000 } }
+  : { exerciseId: 'rotation', weight: 170, reps: 17 }));
+
+test('iso-lateral: the second side matches the first, even when the first beat its goal', () => {
+  const data = buildData(rotationHistory());
+  const act = active(NOW - 60 * 1000, rotationRows(0));
+  act.sets[0].completed = true;
+  act.sets[0].completedAt = NOW - 30 * 1000;
+  act.sets[0].reps = 20;
+  delete act.sets[0].autofill;
+  const goals = goalsFor(data, act);
+  const other = goals.get(act.sets[1].id);
+  assert.equal(other.weight, 170);
+  assert.equal(other.reps, 20);
+  assert.equal(other.reasons[0].label, 'Other side');
+});
+
+test('iso-lateral: finishing both sides does not raise the next round', () => {
+  const data = buildData(rotationHistory());
+  const act = active(NOW - 5 * 60 * 1000, rotationRows(2));
+  const goals = goalsFor(data, act);
+  const next = goals.get(act.sets[2].id);
+  assert.equal(next.weight, 170);
+  assert.ok(next.reps <= 17, `reps ${next.reps}`);
+  assert.equal(goals.get(act.sets[3].id).reps, next.reps);
+});
+
+test('iso-lateral: the other side is not rest, and rounds share a set position', () => {
+  const data = buildData(rotationHistory());
+  const history = prepareHistory({ ...data, exercises: EXERCISES });
+  const session = history.sessionsByExercise.get('rotation')[0];
+  assert.deepEqual(session.entries.map((e) => e.round), [1, 1, 2, 2]);
+  assert.deepEqual(session.entries.map((e) => e.rest), [null, null, 160, 160]);
+  assert.deepEqual(history.restSamples.slice(0, 2), [160, 160]);
+});
+
+test('iso-lateral: each side counts as half a set of muscle load', () => {
+  const data = buildData(rotationHistory());
+  const history = prepareHistory({ ...data, exercises: EXERCISES });
+  assert.ok(history.events.every((e) => e.sets === 0.5 && e.load === 0.5));
+});
+
+test('iso-lateral: warm-ups pair up instead of climbing on the second side', () => {
+  const data = buildData(rotationHistory());
+  const act = active(NOW - 60 * 1000, [
+    { exerciseId: 'rotation', setType: 'warmup', weight: 80, reps: 10 },
+    { exerciseId: 'rotation', setType: 'warmup', weight: 80, reps: 10 },
+    ...rotationRows(0),
+  ]);
+  const goals = goalsFor(data, act);
+  const [a, b] = [goals.get(act.sets[0].id), goals.get(act.sets[1].id)];
+  assert.equal(b.weight, a.weight);
+  assert.equal(b.reps, a.reps);
+  assert.equal(b.otherSide, true);
+});
+
+test('isPerSide: the exercise form setting beats the name', () => {
+  assert.equal(isPerSide({ name: 'Iso-Lateral High Row' }), true);
+  assert.equal(isPerSide({ name: 'Single Arm Lat Pulldown' }), true);
+  assert.equal(isPerSide({ name: 'Bench Press' }), false);
+  assert.equal(isPerSide({ name: 'Single Arm Lat Pulldown', perSide: false }), false);
+  assert.equal(isPerSide({ name: 'Bench Press', perSide: true }), true);
+  assert.equal(setNumberLabel(3, true), '2A');
+  assert.equal(setNumberLabel(4, true), '2B');
+  assert.equal(setNumberLabel(3, false), '3');
 });

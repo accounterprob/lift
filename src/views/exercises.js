@@ -6,7 +6,7 @@ import {
 } from '../utils.js';
 import { openExerciseForm } from './workout.js';
 import { openWorkoutDetailSheet } from './progress.js';
-import { primaryMuscleFor, displayName, exerciseRowMain, setCountLabel, muscleChipsHtml } from '../seed.js';
+import { primaryMuscleFor, displayName, exerciseRowMain, setCountLabel, muscleChipsHtml, isPerSide } from '../seed.js';
 import { mountTimeSeriesChart } from '../charts.js';
 
 export function renderExercisesTab(ctx) {
@@ -242,8 +242,9 @@ async function buildExerciseDetail(exerciseId) {
     <div class="form-section">
       <div class="stat-row"><div class="stat-label">Equipment</div><div class="stat-value">${esc(exercise.equipment)}</div></div>
       <div class="stat-row"><div class="stat-label">Muscle</div><div class="stat-value">${esc(primaryMuscleFor(exercise))}</div></div>
+      <div class="stat-row"><div class="stat-label">Iso-lateral</div><div class="stat-value">${isPerSide(exercise) ? 'Yes' : 'No'}</div></div>
       <button class="list-row button" id="exd-edit">
-        <div class="row-main"><div class="row-title" style="color: var(--accent);">Edit Name, Muscle & Equipment</div></div>
+        <div class="row-main"><div class="row-title" style="color: var(--accent);">Edit Exercise</div></div>
       </button>
     </div>
 

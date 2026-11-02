@@ -44,6 +44,21 @@ export function displayName(exercise) {
   return eq && eq !== 'Other' ? `${name} (${eq})` : name;
 }
 
+// Names that mean one side at a time, for exercises that haven't been set
+// either way in the exercise form.
+const PER_SIDE_RE = /\b(iso[- ]?lateral|unilateral|(single|one)[- ](arm|leg)|torso rotation|bulgarian split squat|glute kickback|rear kick)\b/i;
+
+/** Iso-lateral: each side is logged as its own set, so two rows make one round. */
+export function isPerSide(exercise) {
+  if (typeof exercise?.perSide === 'boolean') return exercise.perSide;
+  return PER_SIDE_RE.test(exercise?.name ?? '');
+}
+
+/** The nth set of its type: 1, 2, 3, or 1A, 1B, 2A, 2B when done per side. */
+export function setNumberLabel(n, perSide) {
+  return perSide ? `${Math.ceil(n / 2)}${n % 2 ? 'A' : 'B'}` : String(n);
+}
+
 /**
  * Canonical exercise row body used everywhere an exercise is listed — active
  * workout headers, the Add Exercises picker, the Exercises tab, Most-Trained:
@@ -298,7 +313,9 @@ export function muscleShares(exercise) {
 // for removal. Deliberately conservative — borderline conditioning work (sled,
 // battle ropes, kettlebell swings, etc.) is kept and re-homed, not deleted, and
 // "walk" is excluded so it can't catch "Walking Lunge" / "Farmer's Walk".
-const CARDIO_RE = /\b(bike|biking|treadmill|run|running|cardio|step.?mill|elliptical|stair.?master|stair.?climber|jog|jogging|cycling|spinning|spin class|rowing machine|row machine|\berg\b|sprints?|jump.?rope|skipping rope|swim|swimming|hike|hiking)\b/;
+// "Rowing Machine" only counts at the very start of the name, so a strength
+// row like "Seated Row Machine" never gets deleted as cardio.
+const CARDIO_RE = /\b(bike|biking|treadmill|run|running|cardio|step.?mill|elliptical|stair.?master|stair.?climber|jog|jogging|cycling|spinning|spin class|\berg\b|sprints?|jump.?rope|skipping rope|swim|swimming|hike|hiking)\b|^(indoor )?rowing machine\b/;
 
 // Maps the fine-grained muscle from `primaryMuscleFor` up to a broad category.
 const MUSCLE_TO_CATEGORY = {

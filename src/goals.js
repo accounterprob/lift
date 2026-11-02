@@ -18,6 +18,11 @@
 //   × today        how today's earlier sets and other lifts compare to plan
 //   × set position the user's own typical drop from set 1 to set k
 //
+// Iso-lateral exercises log each side as its own set, so two rows make one
+// round: they share a set position, each side's rest runs from that side's
+// last set, each counts as half a set of muscle load, and the second side's
+// goal simply matches the first.
+//
 // Every past session is first divided by the same factors as they stood back
 // then, so the baseline is "context-free". A context that never changes (say,
 // incline always follows flat bench) cancels out; only differences from usual
@@ -39,13 +44,13 @@
 // Everything here is pure except loadCalibration (appMeta cache).
 
 import { performedSets, getAll, getMeta, setMeta } from './db.js';
-import { muscleShares } from './seed.js';
+import { muscleShares, isPerSide, setNumberLabel } from './seed.js';
 
 const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 // Bump when the model changes so cached calibrations are recomputed.
-const MODEL_VERSION = 2;
+const MODEL_VERSION = 3;
 
 /** One-tap effort ratings → reps in reserve (RIR). */
 export const EFFORTS = {
@@ -181,6 +186,29 @@ function isWarmup(set) {
   return (set.setType || 'working') === 'warmup';
 }
 
+/** Which round of the exercise working set k is: both sides of a pair are one. */
+const roundOf = (k, perSide) => (perSide ? Math.ceil(k / 2) : k);
+
+/**
+ * Returns a function to call on an exercise's sets in order, giving each set's
+ * rest in seconds: the time since the last set that worked the same muscles.
+ * Iso-lateral exercises keep one clock per side, since the other side's set in
+ * between isn't rest and the time since it would look like a very short one.
+ */
+function restClock(perSide) {
+  const seen = { warmup: 0, working: 0 };
+  const lastDone = [null, null];
+  return (set) => {
+    const type = isWarmup(set) ? 'warmup' : 'working';
+    const side = perSide ? seen[type] % 2 : 0;
+    seen[type] += 1;
+    if (!set.completed) return null;
+    const rest = set.completedAt && lastDone[side] ? (set.completedAt - lastDone[side]) / 1000 : null;
+    lastDone[side] = set.completedAt || null;
+    return rest;
+  };
+}
+
 /**
  * Index the performed history (everything but the active workout) for the
  * model: per-exercise sessions of working sets with their capacities, rests,
@@ -196,6 +224,7 @@ export function prepareHistory({ sets, workouts, exercises, excludeWorkoutId = n
     if (!s) sharesCache.set(exerciseId, (s = muscleShares(exMap.get(exerciseId))));
     return s;
   };
+  const perSideOf = (exerciseId) => isPerSide(exMap.get(exerciseId));
 
   // workoutId → exerciseId → sets (performed, sane numbers)
   const grouped = new Map();
@@ -237,21 +266,21 @@ export function prepareHistory({ sets, workouts, exercises, excludeWorkoutId = n
       const typeless = exSets.every((s) => s.setType == null);
       const maxWeight = exSets.reduce((m, s) => Math.max(m, s.weight || 0), 0);
       const shares = sharesOf(exerciseId);
+      const perSide = perSideOf(exerciseId);
+      const setShare = perSide ? 0.5 : 1;
+      const restBefore = restClock(perSide);
       const working = [];
-      let prevCompletedAt = null;
       for (const s of exSets) {
         const isWorking = typeless
           ? (maxWeight === 0 || (s.weight || 0) >= 0.8 * maxWeight)
           : !isWarmup(s);
-        // Rest before this set: from the previous set of the same exercise.
-        const rest = s.completedAt && prevCompletedAt ? (s.completedAt - prevCompletedAt) / 1000 : null;
-        prevCompletedAt = s.completedAt || null;
+        const rest = restBefore(s);
         if (!isWorking) continue;
         const t = timeOf.get(s.id);
         const effortLoad = EFFORT_LOAD[s.effort] ?? 1;
-        events.push({ t, workoutId, exerciseId, shares, load: effortLoad });
+        events.push({ t, workoutId, exerciseId, shares, sets: setShare, load: effortLoad * setShare });
         working.push({ set: s, t, rest });
-        if (working.length > 1 && rest != null && rest >= 20 && rest <= 900) restSamples.push(rest);
+        if (roundOf(working.length, perSide) > 1 && rest != null && rest >= 20 && rest <= 900) restSamples.push(rest);
       }
       if (working.length === 0) continue;
       // Weighted vs bodyweight sessions are modeled separately.
@@ -260,7 +289,7 @@ export function prepareHistory({ sets, workouts, exercises, excludeWorkoutId = n
       const entries = (mode === 'load' ? weighted : working).map((e, i) => {
         const load = mode === 'load' ? e.set.weight : 1;
         const rir = rirOf(e.set);
-        return { ...e, k: i + 1, load, rir, cap: capacity(load, e.set.reps, rir) };
+        return { ...e, k: i + 1, round: roundOf(i + 1, perSide), load, rir, cap: capacity(load, e.set.reps, rir) };
       });
       let list = sessionsByExercise.get(exerciseId);
       if (!list) sessionsByExercise.set(exerciseId, (list = []));
@@ -276,8 +305,8 @@ export function prepareHistory({ sets, workouts, exercises, excludeWorkoutId = n
   if (restSamples.length > 400) restSamples = restSamples.slice(-400);
 
   return {
-    sharesOf, sessionsByExercise, events, restSamples,
-    signature: `${MODEL_VERSION}:${setCount}:${lastTime}:${checksum}`,
+    sharesOf, perSideOf, sessionsByExercise, events, restSamples,
+    signature: `${MODEL_VERSION}:${setCount}:${lastTime}:${checksum}:${exercises.filter(isPerSide).length}`,
   };
 }
 
@@ -335,8 +364,8 @@ const ctxProduct = (c) => c.gap * c.days * c.today;
 
 /** Context-free capacity of one past working set. */
 function normalizedEntry(entry, ctx, params) {
-  const rest = entry.k > 1 ? restFactor(entry.rest, params) : 1;
-  return entry.cap / (ctxProduct(ctx) * positionFactor(entry.k, params) * rest);
+  const rest = entry.round > 1 ? restFactor(entry.rest, params) : 1;
+  return entry.cap / (ctxProduct(ctx) * positionFactor(entry.round, params) * rest);
 }
 
 /** A session's context-free capacity: median over its working sets. */
@@ -393,8 +422,9 @@ function positionProfile(history, params) {
   for (const list of history.sessionsByExercise.values()) {
     for (const session of list) {
       const first = session.entries[0];
-      for (const e of session.entries.slice(1, 6)) {
-        ratios[e.k - 1].push(e.cap / (first.cap * restFactor(e.rest, params)));
+      for (const e of session.entries) {
+        if (e.round < 2 || e.round > 6) continue;
+        ratios[e.round - 1].push(e.cap / (first.cap * restFactor(e.rest, params)));
       }
     }
   }
@@ -587,7 +617,7 @@ function lastMuscleHit(history, exerciseId, t) {
     if (w <= 0) continue;
     const cur = byWorkout.get(ev.workoutId) ?? { t: ev.t, sets: 0 };
     cur.t = Math.max(cur.t, ev.t);
-    cur.sets += w;
+    cur.sets += w * ev.sets;
     byWorkout.set(ev.workoutId, cur);
   }
   let last = null;
@@ -639,30 +669,35 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
   const goals = new Map();
   for (const [exerciseId, exSets] of byExercise) {
     const sessionsAll = history.sessionsByExercise.get(exerciseId) ?? [];
-    const observations = [];  // finished working sets today: { k, set, mode, cap, rest }
+    const perSide = history.perSideOf(exerciseId);
+    const restBefore = restClock(perSide);
+    const observations = [];  // finished working sets today: { k, round, set, mode, cap, rest }
     let k = 0;
     let prevWeight = null;    // today's previous working set, as it will stand
     let prevReps = 0;
-    let prevCompletedAt = null;
+    let prevSet = null;
 
     for (const s of exSets) {
-      const rest = s.completed && s.completedAt && prevCompletedAt ? (s.completedAt - prevCompletedAt) / 1000 : null;
-      if (s.completed) prevCompletedAt = s.completedAt || null;
+      const rest = restBefore(s);
 
       if (isWarmup(s)) continue;  // planned below, off the working goals
       k += 1;
+      const round = roundOf(k, perSide);
+      const firstSide = perSide && k % 2 === 0 ? prevSet : null;
+      prevSet = s;
 
       if (s.completed) {
         if (s.reps > 0) {
           const mode = s.weight > 0 ? 'load' : 'bw';
-          observations.push({ k, set: s, mode, cap: capacity(mode === 'load' ? s.weight : 1, s.reps, rirOf(s)), rest });
+          observations.push({ k, round, set: s, mode, cap: capacity(mode === 'load' ? s.weight : 1, s.reps, rirOf(s)), rest });
         }
         prevWeight = s.weight || 0;
         prevReps = s.reps || 0;
         continue;
       }
 
-      const goal = goalForSet(exerciseId, sessionsAll, observations, s, k, prevWeight, prevReps);
+      const goal = (firstSide && otherSideGoal(firstSide, s, k, sessionsAll))
+        ?? goalForSet(exerciseId, sessionsAll, observations, s, k, round, prevWeight, prevReps);
       if (goal) goals.set(s.id, goal);
       const takesGoal = goal && s.autofill;
       prevWeight = takesGoal ? goal.weight : (s.weight || 0);
@@ -673,12 +708,32 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
     let run = [];
     for (const s of exSets) {
       if (isWarmup(s)) { run.push(s); continue; }
-      if (run.length > 0) planWarmups(run, s, sessionsAll);
+      if (run.length > 0) planWarmups(run, s, sessionsAll, perSide);
       run = [];
     }
     for (const s of run) repeatLastWarmup(s);  // trailing: nothing to ramp to
   }
   return goals;
+
+  /** Numbers to match on the other side: the first side's as lifted or typed, else its goal. */
+  function firstSideNumbers(first) {
+    return first.completed || !first.autofill ? first : goals.get(first.id);
+  }
+
+  /** The second side of a round matches the first, weight and reps. Null when there's nothing to match yet. */
+  function otherSideGoal(first, set, k, sessionsAll) {
+    const match = firstSideNumbers(first);
+    if (!(match?.reps > 0)) return null;
+    const prev = findEntry(sessionsAll, prevFor(set));
+    return {
+      kind: 'model',
+      weight: match.weight || 0,
+      reps: match.reps,
+      k,
+      reasons: [{ label: 'Other side', detail: `Same as set ${setNumberLabel(k - 1, true)}, so both sides do equal work`, reps: 0, always: true }],
+      last: prev ? { weight: prev.entry.set.weight || 0, reps: prev.entry.set.reps, t: prev.session.t } : null,
+    };
+  }
 
   /** A warm-up with nothing to ramp toward repeats last time's. */
   function repeatLastWarmup(s) {
@@ -696,7 +751,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
    * on the plate steps they use. Reps taper as the weight climbs, so warm-ups
    * prime the lift without spending what the working sets need.
    */
-  function planWarmups(run, working, sessionsAll) {
+  function planWarmups(run, working, sessionsAll, perSide) {
     // What the working set will be: its numbers once logged or typed in by
     // hand, else its goal.
     const wGoal = goals.get(working.id);
@@ -707,16 +762,29 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
 
     const loadSessions = sessionsAll.filter((x) => x.mode === 'load');
     const step = loadSessions.length > 0 ? weightStep(loadSessions) : 5;
-    const ramp = defaultRamp(run.length);
+    const target = { weight: top, reps: topReps, k: workingIndex(working) };
+    const ramp = defaultRamp(perSide ? Math.ceil(run.length / 2) : run.length);
     let floor = 0;  // keep the ramp climbing
     run.forEach((s, j) => {
       if (s.completed) { floor = Math.max(floor, s.weight || 0); return; }
       const prev = prevFor(s);
+      if (perSide && j % 2 === 1) {
+        const match = firstSideNumbers(run[j - 1]);
+        if (match?.weight > 0 && match.reps > 0) {
+          goals.set(s.id, {
+            kind: 'warmup', weight: match.weight, reps: match.reps, target,
+            pct: match.weight / top,
+            otherSide: true,
+            last: prev && prev.weight > 0 ? { weight: prev.weight, reps: prev.reps } : null,
+          });
+          return;
+        }
+      }
       const prevTop = prev && prev.weight > 0
         ? sessionsAll.find((x) => x.workoutId === prev.workoutId && x.mode === 'load')?.entries[0].load
         : null;
       const personal = prevTop > prev?.weight ? prev.weight / prevTop : null;
-      const pct = clamp(personal ?? ramp[j], 0.1, 0.92);
+      const pct = clamp(personal ?? ramp[perSide ? j >> 1 : j], 0.1, 0.92);
 
       // On the grid of reachable weights below the working weight. A very
       // light opener (the empty bar, say) stays as it was.
@@ -731,8 +799,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       if (prev?.reps > 0 && personal != null) reps = Math.min(reps, Math.max(prev.reps, 1));
       floor = weight;
       goals.set(s.id, {
-        kind: 'warmup', weight, reps,
-        target: { weight: top, reps: topReps, k: workingIndex(working) },
+        kind: 'warmup', weight, reps, target,
         pct: weight / top,
         personal: personal != null,
         last: prev && prev.weight > 0 ? { weight: prev.weight, reps: prev.reps } : null,
@@ -744,7 +811,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
     return ordered.filter((x) => x.exerciseId === set.exerciseId && !isWarmup(x)).indexOf(set) + 1;
   }
 
-  function goalForSet(exerciseId, sessionsAll, observations, set, k, prevWeight, prevReps) {
+  function goalForSet(exerciseId, sessionsAll, observations, set, k, round, prevWeight, prevReps) {
     // Anchor weight: today's previous working set, else this slot last time,
     // else the last weight used on this exercise. 0 = bodyweight.
     const prevSlot = prevFor(set);
@@ -773,7 +840,8 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       const shares = history.sharesOf(exerciseId);
       for (const { set: done, t } of todayDone) {
         if (done.exerciseId === exerciseId) continue;
-        const w = overlap(shares, history.sharesOf(done.exerciseId)) * (EFFORT_LOAD[done.effort] ?? 1);
+        const w = overlap(shares, history.sharesOf(done.exerciseId)) * (EFFORT_LOAD[done.effort] ?? 1)
+          * (history.perSideOf(done.exerciseId) ? 0.5 : 1);
         if (w > 0) fat.today.push([(now - t) / HOUR_MS, w]);
       }
       const ctxNow = {
@@ -827,8 +895,8 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
         gap: ctxNow.gap / ctxRef.gap,
         days: ctxNow.days / ctxRef.days,
         today: ctxNow.today / ctxRef.today,
-        rest: ref.entry.k > 1 ? 1 / restFactor(ref.entry.rest, p) : 1,
-        position: positionFactor(k, p) / positionFactor(ref.entry.k, p),
+        rest: ref.entry.round > 1 ? 1 / restFactor(ref.entry.rest, p) : 1,
+        position: positionFactor(round, p) / positionFactor(ref.entry.round, p),
       };
     }
 
@@ -840,13 +908,13 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       let sum = predFresh ? W_PRED * Math.log(predFresh) : 0;
       let weight = predFresh ? W_PRED : 0;
       for (const o of obs) {
-        const rest = o.k > 1 ? restFactor(o.rest, p) : 1;
-        sum += W_OBS * Math.log(o.cap / (positionFactor(o.k, p) * rest));
+        const rest = o.round > 1 ? restFactor(o.rest, p) : 1;
+        sum += W_OBS * Math.log(o.cap / (positionFactor(o.round, p) * rest));
         weight += W_OBS;
       }
       fresh = Math.exp(sum / weight);
     }
-    const target = fresh * positionFactor(k, p);
+    const target = fresh * positionFactor(round, p);
 
     // --- To lbs × reps: hold the anchor weight, step it when the reps would
     // leave the exercise's usual range (double progression) ---
@@ -894,6 +962,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
 
     // --- Explanation: each effect as the reps it's worth at this goal ---
     const effect = (factor) => repsEffect(factor, reps, rir);
+    const setLabel = (n) => setNumberLabel(n, history.perSideOf(exerciseId));
     const reasons = [];
     if (f) {
       const recent = effect(f.recent);
@@ -938,10 +1007,10 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
           always: todaySets > 0,
         });
       }
-      if (k !== f.ref.entry.k) {
+      if (round !== f.ref.entry.round) {
         reasons.push({
-          label: `Set ${k}`,
-          detail: k > f.ref.entry.k ? `Your usual drop-off from set ${f.ref.entry.k}` : `Compared with set ${f.ref.entry.k} last time`,
+          label: `Set ${setLabel(k)}`,
+          detail: round > f.ref.entry.round ? `Your usual drop-off from set ${setLabel(f.ref.entry.k)}` : `Compared with set ${setLabel(f.ref.entry.k)} last time`,
           reps: effect(f.position),
         });
       }
@@ -977,7 +1046,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
     if (obs.length > 0) {
       const lastObs = obs[obs.length - 1];
       const felt = EFFORTS[lastObs.set.effort];
-      const done = `Set ${lastObs.k}: ${formatSet(lastObs.set.weight, lastObs.set.reps)}${felt ? ` (${felt.label})` : ''}`;
+      const done = `Set ${setLabel(lastObs.k)}: ${formatSet(lastObs.set.weight, lastObs.set.reps)}${felt ? ` (${felt.label})` : ''}`;
       const label = obs.length > 1 ? 'Earlier sets today' : 'Earlier set today';
       if (predFresh) {
         const blend = fresh / predFresh;
@@ -1088,7 +1157,8 @@ export function suggestExercises({ history, params, exercises, sets, now, pastWo
   }
   for (const s of sets) {
     if (!s.completed || isWarmup(s) || !(s.reps > 0)) continue;
-    for (const [m, w] of history.sharesOf(s.exerciseId)) add(done, m, w * (EFFORT_LOAD[s.effort] ?? 1));
+    const setShare = history.perSideOf(s.exerciseId) ? 0.5 : 1;
+    for (const [m, w] of history.sharesOf(s.exerciseId)) add(done, m, w * (EFFORT_LOAD[s.effort] ?? 1) * setShare);
   }
   // Workouts outside the 8-week window still count toward a per-workout usual.
   if (perWorkout) {

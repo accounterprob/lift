@@ -1,7 +1,11 @@
-import { getAll, replaceAllData } from './db.js';
-import { showSheet, showToast, emit } from './utils.js';
+import { getAll, getMeta, setMeta, replaceAllData } from './db.js';
+import { showSheet, showToast, emit, formatDateLong } from './utils.js';
 import { runDataMigrations } from './migrations.js';
 import { getStoredPassphrase, decryptSnapshot, isEncryptedBackup } from './crypto.js';
+import { BACKUP_VERSION, validateSnapshot } from './validate.js';
+
+// Device-local copy of the data as it stood before the last restore.
+const RECOVERY_KEY = 'pre-restore-data';
 
 export async function buildSnapshot() {
   const [exercises, workouts, sets] = await Promise.all([
@@ -10,7 +14,7 @@ export async function buildSnapshot() {
   return {
     // v4 drops the mood + medication stores. Older backups may still carry
     // stateOfMind / medications / doseEvents; restore simply ignores them.
-    version: 4,
+    version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     exercises, workouts, sets,
   };
@@ -67,9 +71,25 @@ export async function restoreFromFile(file) {
   const parsed = JSON.parse(await file.text());
   const snapshot = isEncryptedBackup(parsed) ? await decryptBackup(parsed) : parsed;
 
-  if (!snapshot || !Array.isArray(snapshot.exercises) || !Array.isArray(snapshot.workouts) || !Array.isArray(snapshot.sets)) {
-    throw new Error('File doesn\'t look like a Lift backup.');
-  }
+  validateSnapshot(snapshot);
+  return replaceWith(snapshot);
+}
+
+/** Put back the data from just before the last restore (a restore itself, so it can be reversed too). */
+export async function undoLastRestore() {
+  const copy = await getMeta(RECOVERY_KEY);
+  if (!copy) throw new Error('No earlier data saved.');
+  return replaceWith(copy);
+}
+
+/**
+ * Swap the whole database for `snapshot`, keeping a copy of what was there. If
+ * the cleanups fail partway the old data goes straight back, so "Restore
+ * failed" always means nothing changed. Returns what actually survived them.
+ */
+async function replaceWith(snapshot) {
+  const current = await buildSnapshot();
+  await setMeta(RECOVERY_KEY, current);
 
   // Mood / medication data in a pre-v4 backup is intentionally dropped.
   await replaceAllData({
@@ -81,13 +101,17 @@ export async function restoreFromFile(file) {
   // A restored backup can predate the one-time cleanups (old cardio/"Other"
   // categories, equipment-in-name), so run them now rather than relying on the
   // once-per-device launch gate.
-  await runDataMigrations();
+  try {
+    await runDataMigrations();
+  } catch (err) {
+    await replaceAllData(current);
+    throw new Error(`${err.message} Your data was not changed.`);
+  }
 
-  return {
-    exercises: snapshot.exercises.length,
-    workouts: snapshot.workouts.length,
-    sets: snapshot.sets.length,
-  };
+  const [exercises, workouts, sets] = await Promise.all([
+    getAll('exercises'), getAll('workouts'), getAll('sets'),
+  ]);
+  return { exercises: exercises.length, workouts: workouts.length, sets: sets.length };
 }
 
 export function openBackupSheet() {
@@ -119,6 +143,15 @@ export function openBackupSheet() {
           <b>Replaces</b> all current data with the chosen backup. Older encrypted backups ask for their password.
         </div>
 
+        <div id="bk-undo-wrap" hidden>
+          <div class="form-section">
+            <button class="list-row button" id="bk-undo">
+              <div class="row-main"><div class="row-title" style="color: var(--accent);">Undo Last Restore</div></div>
+            </button>
+          </div>
+          <div class="section-footer" id="bk-undo-note"></div>
+        </div>
+
         <input type="file" id="bk-file" accept=".json,application/json" style="display: none;" />
       </div>
     `,
@@ -143,7 +176,7 @@ export function openBackupSheet() {
       fileInput.addEventListener('change', async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (!confirm('Replace all current data with this backup? This cannot be undone.')) return;
+        if (!confirm('Replace all current data with this backup? You can put it back with Undo Last Restore.')) return;
         try {
           const counts = await restoreFromFile(file);
           dismiss();
@@ -151,6 +184,25 @@ export function openBackupSheet() {
           emit('data:changed');
         } catch (err) {
           showToast(`Restore failed: ${err.message}`);
+        }
+      });
+
+      getMeta(RECOVERY_KEY).then((copy) => {
+        if (!copy) return;
+        sheet.querySelector('#bk-undo-wrap').hidden = false;
+        sheet.querySelector('#bk-undo-note').textContent =
+          `Puts back your ${copy.workouts.length} workouts from before the last restore (${formatDateLong(Date.parse(copy.exportedAt))}).`;
+      }).catch(() => { /* nothing to offer */ });
+
+      sheet.querySelector('#bk-undo').addEventListener('click', async () => {
+        if (!confirm('Put back the data from before the last restore? This replaces what\'s here now.')) return;
+        try {
+          const counts = await undoLastRestore();
+          dismiss();
+          showToast(`Put back ${counts.workouts} workouts, ${counts.exercises} exercises`);
+          emit('data:changed');
+        } catch (err) {
+          showToast(`Undo failed: ${err.message}`);
         }
       });
     },

@@ -9,7 +9,7 @@ import {
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
 import { openExerciseDetailSheet } from './exercises.js';
-import { displayName, exerciseRowMain, setCountLabel } from '../seed.js';
+import { displayName, exerciseRowMain, setCountLabel, isPerSide, setNumberLabel } from '../seed.js';
 import { ROTATION, DAYS, classifyWorkoutDays, dayColor } from '../days.js';
 
 // Cached snapshot per render of the Progress tab so sub-pages don't reload
@@ -424,6 +424,7 @@ async function buildWorkoutDetail(workoutId) {
   }
 
   const counted = performedSets(allSets);
+  const countedIds = new Set(counted.map((s) => s.id));
   const totalVolume = counted.reduce((sum, s) => sum + s.weight * s.reps, 0);
   const completedCount = counted.length;
   const duration = (workout.endedAt - workout.startedAt) / 1000;
@@ -439,7 +440,10 @@ async function buildWorkoutDetail(workoutId) {
 
     ${exerciseIds.map((eid) => {
       const ex = exMap.get(eid);
-      const sets = setsByExercise.get(eid);
+      const allRows = setsByExercise.get(eid);
+      const sets = allRows.filter((s) => countedIds.has(s.id));
+      const skipped = allRows.filter((s) => !countedIds.has(s.id));
+      const perSide = isPerSide(ex);
       let workingIdx = 0;
       let warmupIdx = 0;
       const heading = ex
@@ -450,7 +454,7 @@ async function buildWorkoutDetail(workoutId) {
         <div class="form-section">
           ${sets.map((s) => {
             const type = s.setType || 'working';
-            const label = type === 'warmup' ? `W${++warmupIdx}` : String(++workingIdx);
+            const label = type === 'warmup' ? `W${setNumberLabel(++warmupIdx, perSide)}` : setNumberLabel(++workingIdx, perSide);
             return `
               <div class="stat-row">
                 <div class="stat-label">Set ${label}</div>
@@ -464,6 +468,12 @@ async function buildWorkoutDetail(workoutId) {
               </div>
             `;
           }).join('')}
+          ${skipped.map((s) => `
+            <div class="stat-row skipped-set">
+              <div class="stat-label">Skipped</div>
+              <div class="stat-value">${s.weight > 0 ? `${formatLbs(s.weight)} × ${s.reps}` : `${s.reps} reps`}</div>
+            </div>
+          `).join('')}
         </div>
       `;
     }).join('')}
