@@ -13,6 +13,7 @@ import {
 } from '../db.js';
 import {
   uuid, esc, formatDuration, formatWeight, formatVolume, showSheet, emit, debounce, showToast,
+  workoutElapsedMs,
 } from '../utils.js';
 import {
   MUSCLES, EQUIPMENT, primaryMuscleFor, muscleShares, displayName,
@@ -219,12 +220,34 @@ function renderActive(ctx, workout) {
 
   ctx.container.querySelector('#calc-fab').addEventListener('click', openCalculator);
 
-  // Live timer in the nav bar
+  // Live timer in the nav bar. It stands still while the workout is paused.
   const updateTimer = () => {
-    ctx.setTitle(formatDuration((Date.now() - workout.startedAt) / 1000));
+    const time = formatDuration(workoutElapsedMs(workout) / 1000);
+    ctx.setTitle(isPaused(workout) ? `Paused · ${time}` : time);
   };
   updateTimer();
   timerInterval = setInterval(updateTimer, 1000);
+
+  // Pause / resume, from the nav bar beside the timer. Paused time is left out
+  // of the workout's duration (here and in History). Rest between sets and
+  // muscle recovery stay on the wall clock: the muscles rest through a pause
+  // all the same.
+  const showPauseButton = () => {
+    const paused = isPaused(workout);
+    ctx.setAction({
+      label: paused ? 'Resume workout' : 'Pause workout',
+      html: paused ? playIcon() : pauseIcon(),
+      onClick: togglePause,
+    });
+  };
+  async function togglePause() {
+    if (isPaused(workout)) endPause(workout, Date.now());
+    else workout.pausedAt = Date.now();
+    showPauseButton();
+    updateTimer();
+    await put('workouts', { ...workout });
+  }
+  showPauseButton();
 
   // Save name on input. Renaming can change which rotation day this is
   // (e.g. "Chest Day" → "Leg Day"), so re-theme without re-rendering.
@@ -868,6 +891,22 @@ function isWorkingSet(set) {
   return (set.setType || 'working') !== 'warmup';
 }
 
+const isPaused = (workout) => workout.pausedAt != null;
+
+/** Close the current pause, adding its length to the workout's paused total. */
+function endPause(workout, now) {
+  workout.pausedMs = (workout.pausedMs || 0) + Math.max(0, now - workout.pausedAt);
+  workout.pausedAt = null;
+}
+
+function pauseIcon() {
+  return `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><rect x="6" y="4.5" width="4" height="15" rx="1"/><rect x="14" y="4.5" width="4" height="15" rx="1"/></svg>`;
+}
+
+function playIcon() {
+  return `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5.6v12.8a1 1 0 0 0 1.5.86l10.2-6.4a1 1 0 0 0 0-1.72L9.5 4.74A1 1 0 0 0 8 5.6z"/></svg>`;
+}
+
 /** "W2" / "3": warmups and working sets are numbered separately. */
 function setDisplayLabel(exSets, set, perSide) {
   const sorted = [...exSets].sort((a, b) => a.order - b.order);
@@ -1167,7 +1206,10 @@ async function finishWorkout(workout, sets) {
   await delMany('sets', sets
     .filter((s) => !s.completed && ((s.weight || 0) === 0 || (s.reps || 0) === 0))
     .map((s) => s.id));
-  workout.endedAt = Date.now();
+  const now = Date.now();
+  // Finishing while paused: the pause runs to the end, so none of it counts.
+  if (isPaused(workout)) endPause(workout, now);
+  workout.endedAt = now;
   await put('workouts', workout);
 }
 

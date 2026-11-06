@@ -44,6 +44,7 @@ export function validateSnapshot(snapshot) {
   snapshot.workouts.forEach((w, i) => {
     if (!Number.isFinite(w.startedAt)) damaged(`workout ${i + 1} has no start time`);
     if (!isNumberOrUnset(w.endedAt)) damaged(`workout ${i + 1} has a bad end time`);
+    if (!isNumberOrUnset(w.pausedAt) || !isNumberOrUnset(w.pausedMs)) damaged(`workout ${i + 1} has a bad pause time`);
     if (!isStringOrUnset(w.name)) damaged(`workout ${i + 1} has a bad name`);
   });
   snapshot.sets.forEach((s, i) => {

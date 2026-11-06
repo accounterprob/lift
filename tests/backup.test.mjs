@@ -56,6 +56,7 @@ test('a damaged backup is refused before anything changes', async () => {
     backup({ sets: [{ ...set, weight: 'heavy' }] }),
     backup({ sets: [{ ...set, id: '"><img src=x onerror=alert(1)>' }] }),
     backup({ workouts: [{ ...workout, startedAt: null }] }),
+    backup({ workouts: [{ ...workout, pausedMs: 'long' }] }),
     backup({ version: 99 }),
   ];
   for (const b of bad) {
@@ -90,5 +91,6 @@ test('a normal backup passes validation, including imported rows with no types',
   validateSnapshot(backup());
   validateSnapshot(backup({ sets: [{ ...set, setType: null, completed: false }] }));
   validateSnapshot(backup({ workouts: [{ ...workout, endedAt: null }] }));
+  validateSnapshot(backup({ workouts: [{ ...workout, endedAt: null, pausedAt: 2000, pausedMs: 500 }] }));
   assert.throws(() => validateSnapshot({ hello: 'world' }), /doesn't look like a Lift backup/);
 });

@@ -26,6 +26,17 @@ export function formatDuration(seconds) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+/**
+ * A workout's time in ms, not counting pauses. `pausedMs` is the total of
+ * finished pauses; `pausedAt` is when the current one began (null while
+ * running), so the clock stands still from then on. Older workouts have
+ * neither field and count straight through.
+ */
+export function workoutElapsedMs(workout, now = Date.now()) {
+  const end = workout.pausedAt ?? workout.endedAt ?? now;
+  return Math.max(0, end - workout.startedAt - (workout.pausedMs || 0));
+}
+
 export function formatDurationShort(seconds) {
   const s = Math.max(0, Math.floor(seconds));
   const h = Math.floor(s / 3600);

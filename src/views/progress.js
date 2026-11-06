@@ -4,7 +4,7 @@ import {
 } from '../db.js';
 import {
   esc, formatVolumeLbs, formatDateShort, formatDateLong, formatDurationShort,
-  formatLbs, emit, shareIcon, trashIcon, errorState, showSheet, e1rm,
+  formatLbs, emit, shareIcon, trashIcon, errorState, showSheet, e1rm, workoutElapsedMs,
 } from '../utils.js';
 import { openBackupSheet } from '../backup.js';
 import { mountTimeSeriesChart } from '../charts.js';
@@ -372,7 +372,7 @@ function renderHistoryRow(workout, sets, exMap) {
   // `sets` already passed through performedSets in loadSnapshot.
   const completed = sets;
   const volume = completed.reduce((sum, s) => sum + s.weight * s.reps, 0);
-  const duration = (workout.endedAt - workout.startedAt) / 1000;
+  const duration = workoutElapsedMs(workout) / 1000;
   const exNames = [];
   const seen = new Set();
   for (const s of sets) {
@@ -427,7 +427,7 @@ async function buildWorkoutDetail(workoutId) {
   const countedIds = new Set(counted.map((s) => s.id));
   const totalVolume = counted.reduce((sum, s) => sum + s.weight * s.reps, 0);
   const completedCount = counted.length;
-  const duration = (workout.endedAt - workout.startedAt) / 1000;
+  const duration = workoutElapsedMs(workout) / 1000;
 
   const html = `
     <div class="section">Summary</div>

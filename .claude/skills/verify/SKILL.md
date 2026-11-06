@@ -38,7 +38,8 @@ The app seeds its ~70-exercise library on first load (wait for
 - DB `lift` (v7), stores `exercises` / `workouts` / `sets` (keyPath `id`),
   plus device-local `appMeta` (backup passphrase, cached goal calibration).
 - Workout: `{ id, name, startedAt, endedAt, notes }` — `endedAt: null` = active
-  workout; names like `Chest Day` / `Leg Day` / `Back/Bi Day` drive the
+  workout; optional `pausedAt` (current pause's start, null while running) and
+  `pausedMs` (total of finished pauses), left out of the duration; names like `Chest Day` / `Leg Day` / `Back/Bi Day` drive the
   rotation (see `src/days.js` normalizeDayName).
 - Set: `{ id, workoutId, exerciseId, weight, reps, setType: 'working', completed: true, order, createdAt }`.
   Optional: `completedAt` (check-off time → rest), `effort` (`easy`/`solid`/`hard`),
@@ -73,6 +74,7 @@ scenario script shape if you need a reference to rebuild one.
 ## Gotchas
 
 - `confirm()` dialogs guard Finish/Discard — hook `page.on('dialog')`.
-- The nav title is a live timer during an active workout.
+- The nav title is a live timer during an active workout (`Paused · 12:34`
+  while paused); `#nav-action` is the pause/resume button there.
 - Text between muscle-bar labels and fills: `on-fill` class only applies past
   55% fill; below that the label uses theme text color.

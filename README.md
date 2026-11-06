@@ -6,6 +6,7 @@ A self-contained, offline-first workout tracker that runs as a Progressive Web A
 - Start an empty workout, add exercises, log weight × reps per set, finish.
 - **Set goals:** every set shows a GOAL worked out from your own history — recent sessions and their trend, days since you last did the exercise, how recovered its muscles are, what you've already done this workout, and how today's earlier sets went. Tap a goal to see why.
 - One-tap effort rating (Easy / Solid / Hard) after each set, and rest time between sets recorded automatically.
+- Pause button next to the workout timer: the clock stops while paused, and paused time is left out of the workout's duration in History.
 - ~70 seeded common exercises + ability to add your own custom exercises.
 - History tab with all past workouts.
 - Per-exercise detail with recent sets and an estimated-1RM line chart.
@@ -162,7 +163,8 @@ lift-pwa/
 │   ├── app.js              — the whole app, bundled + minified
 │   └── app.css             — styles.css, minified
 ├── tests/
-│   └── goals.test.mjs      — unit tests for the goal model (`npm test`, no deps)
+│   ├── goals.test.mjs      — unit tests for the goal model (`npm test`, no deps)
+│   └── pause.test.mjs      — workout duration with pauses
 ├── icons/
 │   └── icon.svg            — app icon (neutral dumbbell, light/dark aware)
 └── src/                    — EDITABLE source, bundled into dist/app.js
