@@ -260,6 +260,7 @@ function renderActive(ctx, workout) {
 
   // All-time best single-workout volume per muscle, across the whole history.
   let muscleRecords = new Map();
+  let volOpen = false; // per-muscle volume dropdown starts closed
   // muscleShares per exercise object. reload() re-reads exercises as fresh
   // objects, so an edited name or muscle misses the cache and takes effect.
   const sharesCache = new WeakMap();
@@ -509,16 +510,27 @@ function renderActive(ctx, workout) {
 
     const label = `<strong>${formatVolume(totalVolume)} lbs</strong> total`;
 
+    // The per-muscle bars sit in a dropdown under the total, closed by
+    // default; re-renders keep whatever open/closed state was last chosen.
     progressEl.innerHTML = `
-      <div class="vol-bars">${bars}</div>
-      <div class="vol-label">${label}</div>
+      <details class="vol-details"${volOpen ? ' open' : ''}>
+        <summary class="vol-label">${label}<span class="vol-chevron" aria-hidden="true"></span></summary>
+        <div class="vol-bars">${bars}</div>
+      </details>
     `;
     // Auto-shrink each section's name/volume until the full text fits.
-    requestAnimationFrame(() => {
+    // Bars have no width while closed, so fit them whenever they're shown.
+    const fitAll = () => requestAnimationFrame(() => {
       for (const seg of progressEl.querySelectorAll('.vol-muscle')) {
         fitSegmentLabel(seg);
       }
     });
+    const details = progressEl.querySelector('.vol-details');
+    details.addEventListener('toggle', () => {
+      volOpen = details.open;
+      if (volOpen) fitAll();
+    });
+    if (volOpen) fitAll();
   }
 
   function fitSegmentLabel(segEl) {

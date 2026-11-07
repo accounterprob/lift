@@ -730,13 +730,33 @@ button.exercise-section-header.pressed,
   white-space: nowrap;
 }
 .vol-label {
-  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3em;
+  cursor: pointer;
+  list-style: none;
+  -webkit-user-select: none;
+  user-select: none;
   text-align: center;
   font-size: 14px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .vol-label strong { color: var(--accent); font-weight: 800; }
+.vol-label::-webkit-details-marker { display: none; }
+/* Chevron points down while the per-muscle dropdown is closed, up when open. */
+.vol-chevron {
+  width: 7px;
+  height: 7px;
+  margin: -3px 0 0 4px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+.vol-details[open] .vol-chevron { transform: rotate(-135deg); margin-top: 3px; }
+.vol-details[open] .vol-bars { margin-top: 10px; }
 
 .workout-name-input {
   font-size: 24px;
