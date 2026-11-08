@@ -291,6 +291,7 @@ function renderActive(ctx, workout) {
         sets,
         now: Date.now(),
         pastWorkoutIds,
+        anyDayMuscle: (m) => dayForMuscle(m) == null,
         allow: (e) => !day || [day, null].includes(dayForMuscle(primaryMuscleFor(e))),
       })
       : [];
@@ -1305,7 +1306,7 @@ function openExercisePicker(allExercises, setCountByExercise, suggested, onConfi
                 <button class="list-row" data-id="${e.id}">
                   <div class="row-main">
                     <div class="row-title">${esc(e.name)}</div>
-                    <div class="row-subtitle">${esc(muscle)} · ${done} of your usual ${usual} sets${perWorkout ? ' today' : ' this week'}</div>
+                    <div class="row-subtitle">${esc(muscle)} · ${done} of your usual ${usual} set${usual === 1 ? '' : 's'}${perWorkout ? ' today' : ' this week'}</div>
                   </div>
                   <div class="row-trailing trailing-stack">${selected.has(e.id) ? checkmarkBlue() : ''}</div>
                 </button>

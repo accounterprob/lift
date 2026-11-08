@@ -1122,8 +1122,14 @@ export function goalMet(set) {
 
 // ---------- What to do next ----------
 
-// Floor on a muscle's usual sets, so a rarely trained one still counts.
+// Floor on a muscle's usual sets in the weekly fallback, so a rarely trained
+// one still counts.
 const MIN_USUAL_SETS = 3;
+// Per-workout comparison: a muscle's own usual is used as-is (a floor made
+// rarely trained muscles look as far behind as staples, 2026-11-07 replay).
+// Core (Abs, Obliques) trains on any day and its usual is split thin across
+// day types, so it keeps a small floor to still come up after a workout.
+const MIN_USUAL_SETS_ANY_DAY = 1;
 
 /**
  * Exercises to add next: ones with history that aren't in this workout yet
@@ -1132,11 +1138,14 @@ const MIN_USUAL_SETS = 3;
  * average per workout over `pastWorkoutIds` (recent workouts of today's
  * rotation day) against today's finished sets; with none given, it's the
  * average week over the past 8 against the past 7 days. Shortfalls are in
- * sets, so a big muscle behind beats a small one. One per primary muscle —
+ * sets, so a big muscle behind beats a small one. Per workout, usuals have
+ * no floor except `anyDayMuscle` ones (core); the weekly fallback floors
+ * every muscle at MIN_USUAL_SETS. One per primary muscle —
  * the one done most often — best first: [{ exercise, muscle, done, usual }].
  */
-export function suggestExercises({ history, params, exercises, sets, now, pastWorkoutIds = [], allow = () => true, limit = 3 }) {
+export function suggestExercises({ history, params, exercises, sets, now, pastWorkoutIds = [], anyDayMuscle = () => false, allow = () => true, limit = 3 }) {
   const perWorkout = pastWorkoutIds.length > 0;
+  const floorOf = (m) => (!perWorkout ? MIN_USUAL_SETS : anyDayMuscle(m) ? MIN_USUAL_SETS_ANY_DAY : 0);
   const past = new Set(pastWorkoutIds);
   const usual = new Map();     // muscle → usual hard sets
   const done = new Map();      // muscle → hard sets so far (today, or past 7 days)
@@ -1177,7 +1186,7 @@ export function suggestExercises({ history, params, exercises, sets, now, pastWo
     let score = 0;
     let total = 0;
     for (const [m, w] of shares) {
-      const short = Math.max(0, Math.max(MIN_USUAL_SETS, usual.get(m) ?? 0) - (done.get(m) ?? 0));
+      const short = Math.max(0, Math.max(floorOf(m), usual.get(m) ?? 0) - (done.get(m) ?? 0));
       score += w * short / (1 + (residual.get(m) ?? 0) / 3);
       total += w;
     }
@@ -1199,7 +1208,7 @@ export function suggestExercises({ history, params, exercises, sets, now, pastWo
       exercise,
       muscle,
       done: Math.round(done.get(muscle) ?? 0),
-      usual: Math.round(Math.max(MIN_USUAL_SETS, usual.get(muscle) ?? 0)),
+      usual: Math.max(1, Math.round(Math.max(floorOf(muscle), usual.get(muscle) ?? 0))),
       perWorkout,
     }));
 }

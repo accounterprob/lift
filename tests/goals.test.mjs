@@ -443,6 +443,34 @@ test('per-workout suggestions: the usual sets of this day type, minus today', ()
   assert.equal(pushdown.done, 1);   // half credit from today's bench set, rounded
 });
 
+test('per-workout suggestions: no phantom shortfall for muscles this day type skips; core keeps a small floor', () => {
+  const chest = [{ exerciseId: 'bench', sets: [[155, 10], [155, 10], [155, 10]] }];
+  const past = [
+    workoutAt(NOW - 9 * DAY, chest),
+    workoutAt(NOW - 6 * DAY, chest),
+    workoutAt(NOW - 3 * DAY, chest),
+  ];
+  // Squat and Torso Rotation were done once, long ago, on another day.
+  const old = workoutAt(NOW - 40 * DAY, [
+    { exerciseId: 'squat', sets: [[225, 5]] },
+    { exerciseId: 'rotation', sets: [[100, 15]] },
+  ], 'Leg Day');
+  const data = buildData([old, ...past]);
+  const act = active(NOW, [{ exerciseId: 'bench', weight: 155, reps: 10, completed: true }]);
+  const history = prepareHistory({ sets: [...data.sets, ...act.sets], workouts: [...data.workouts, act.workout], exercises: EXERCISES, excludeWorkoutId: act.workout.id });
+  const out = suggestExercises({
+    history, params: DEFAULT_PARAMS, exercises: EXERCISES, sets: act.sets, now: NOW,
+    pastWorkoutIds: past.map((p) => p.workout.id),
+    anyDayMuscle: (m) => m === 'Obliques' || m === 'Abs',
+  });
+  const ids = out.map((x) => x.exercise.id);
+  // Quads have no sets in these Chest Days, so squat is not "3 sets behind".
+  assert.ok(!ids.includes('squat'), 'no phantom shortfall for quads on Chest Day');
+  assert.ok(ids.includes('rotation'), 'core still comes up via its floor of 1');
+  const rot = out.find((x) => x.exercise.id === 'rotation');
+  assert.equal(rot.usual, 1);
+});
+
 // ---------- Iso-lateral exercises ----------
 
 /** Past Torso Rotation sessions: two rounds, each side a set, 40s between sides. */
