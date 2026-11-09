@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   prepareHistory, calibrate, goalsForWorkout, gapFactor, restFactor,
-  capacity, DEFAULT_PARAMS, suggestExercises,
+  capacity, DEFAULT_PARAMS, suggestExercises, replayGoals,
 } from '../src/goals.js';
 import { buildPrevSlotMaps } from '../src/db.js';
 import { isPerSide, setNumberLabel } from '../src/seed.js';
@@ -92,7 +92,8 @@ function steadyBench({ sessions = 8, every = 3 * DAY, lastAgo = 3 * DAY, weight 
   return out;
 }
 
-const goalCap = (g) => capacity(g.weight > 0 ? g.weight : 1, g.reps, DEFAULT_PARAMS.targetRir);
+// The model's capacity behind a goal (it sets the weight; reps come from his own sets).
+const goalCap = (g) => g.cap ?? capacity(g.weight > 0 ? g.weight : 1, g.reps, DEFAULT_PARAMS.targetRir);
 
 test('gap curve: per-day, a small lift after a few days off, a loss after weeks away', () => {
   const p = DEFAULT_PARAMS;
@@ -126,14 +127,13 @@ test('steady straight sets: goal steps the weight up once at the same reps', () 
   assert.ok(goalCap(g2) <= goalCap(g1));
 });
 
-test('a long layoff lowers the goal; no progression push after weeks away', () => {
+test('a long layoff lowers the model\'s estimate; no progression push after weeks away', () => {
   const normal = goalsFor(buildData(steadyBench()), active(NOW, [{ exerciseId: 'bench', weight: 155, reps: 10 }]));
   const layoffData = buildData(steadyBench({ lastAgo: 35 * DAY }));
   const act = active(NOW, [{ exerciseId: 'bench', weight: 155, reps: 10 }]);
   const layoff = goalsFor(layoffData, act).get(act.sets[0].id);
   const base = [...normal.values()][0];
   assert.ok(goalCap(layoff) < goalCap(base));
-  assert.ok(layoff.reps <= 9, `expected ≤ 9 reps after 5 weeks off, got ${layoff.reps}`);
   assert.ok(!layoff.reasons.some((r) => r.label === 'Progression'));
 });
 
@@ -376,9 +376,31 @@ test('calibration learns a strong fatigue effect from history', () => {
   }
   const data = buildData(sessions);
   const history = prepareHistory({ sets: data.sets, workouts: data.workouts, exercises: EXERCISES });
-  const { params, stats } = calibrate(history);
+  const { params } = calibrate(history);
   assert.ok(params.fatigue > DEFAULT_PARAMS.fatigue, `fatigue ${params.fatigue}`);
-  assert.ok(stats.model > stats.naive, `model ${stats.model} vs naive ${stats.naive}`);
+});
+
+test('goal reps are his own: last time for the first set, then today\'s previous set', () => {
+  const data = buildData(steadyBench({ reps: 12 }));
+  const first = goalsFor(data, active(NOW, [{ exerciseId: 'bench' }, { exerciseId: 'bench' }]));
+  assert.equal([...first.values()][0].reps, 12, 'set 1 takes last time\'s reps');
+  const act = active(NOW, [
+    { exerciseId: 'bench', weight: 160, reps: 9, completed: true, extra: { completedAt: NOW - 3 * 60 * 1000 } },
+    { exerciseId: 'bench' },
+  ]);
+  const g = goalsFor(data, act).get(act.sets[1].id);
+  assert.equal(g.reps, 9, 'set 2 follows today\'s set 1');
+  assert.ok(g.reasons.some((r) => r.label === 'Reps'), 'the sheet says where the reps came from');
+});
+
+test('replay scorecard: scores goals and last time on the same sets', () => {
+  const data = buildData(steadyBench({ sessions: 10 }));
+  const history = prepareHistory({ sets: data.sets, workouts: data.workouts, exercises: EXERCISES });
+  const r = replayGoals({ ...data, exercises: EXERCISES, params: calibrate(history).params, count: 5 });
+  assert.equal(r.workouts, 5);
+  assert.equal(r.sets, 15);
+  assert.equal(r.last, 1, 'steady 155×10 is always repeated exactly');
+  assert.ok(r.goal >= 0 && r.goal <= 1);
 });
 
 test('calibration on a big history stays fast', () => {

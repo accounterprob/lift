@@ -12,8 +12,10 @@ HealthAutoExport*.json
 _import_test.json
 *-health-import.json
 
-# (tools/ used to be ignored as machine-local; the generic keep-newest-N
-# prune script + LaunchAgent now live in the repo so they survive the Mac.)
+# Personal backup folder, and the local-only goal-model study (it needs the
+# stashed experiment to run).
+backups/
+tools/model-study/
 
 # Build tooling. node_modules is restored with `npm install`; dist/ IS
 # committed (GitHub Pages serves it), so it is NOT ignored here.

@@ -9,6 +9,7 @@ import {
   deleteWorkoutAndSets,
   previousWorkoutSetsForExercise,
   buildPrevSlotMaps,
+  prevSlotIn,
   performedSets,
 } from '../db.js';
 import {
@@ -353,7 +354,9 @@ function renderActive(ctx, workout) {
       setCountByExercise.set(s.exerciseId, (setCountByExercise.get(s.exerciseId) ?? 0) + 1);
     }
     goalHistory = prepareHistory({ sets: allSets, workouts: allWorkouts, exercises, excludeWorkoutId: workout.id });
-    calibration = await loadCalibration(goalHistory);
+    calibration = await loadCalibration(goalHistory, {
+      sets: allSets, workouts: allWorkouts, exercises, excludeWorkoutId: workout.id,
+    });
     await adoptLegacyBumps();
     await refreshGoals();
     renderSections();
@@ -362,16 +365,7 @@ function renderActive(ctx, workout) {
 
   /** The set PREV used to show for a set's slot (type + position), or null. */
   function prevSlotFor(s) {
-    const type = s.setType || 'working';
-    let typePos = 0;
-    let overallPos = 0;
-    for (const x of sets) {
-      if (x.exerciseId !== s.exerciseId) continue;
-      overallPos += 1;
-      if ((x.setType || 'working') === type) typePos += 1;
-      if (x.id === s.id) break;
-    }
-    return findPrevSetByTypeAndPosition(type, typePos, prevByExercise.get(s.exerciseId), overallPos);
+    return prevSlotIn(sets, prevByExercise, s);
   }
 
   /**
@@ -652,16 +646,17 @@ function renderActive(ctx, workout) {
                 <div class="goal-reason-title">${esc(r.label)}</div>
                 <div class="goal-reason-detail">${esc(r.detail)}</div>
               </div>
-              <div class="stat-value goal-effect${effectClass(r)}">${esc(r.reps == null ? formatLbsChange(r.lbs) : formatRepEffect(r.reps))}</div>
+              <div class="stat-value goal-effect${effectClass(r)}">${esc(r.text ?? (r.reps == null ? formatLbsChange(r.lbs) : formatRepEffect(r.reps)))}</div>
             </div>`).join('')}
         </div>
-        <div class="section-footer">Effects are in reps at the goal weight, compared with last time.</div>`;
+        <div class="section-footer">Effects are in reps at the goal weight, compared with last time. They decide the weight; the reps come from your own sets.</div>`;
     }
 
     const learned = [];
     if (stats?.sessions) learned.push(`Tuned to ${stats.sessions.toLocaleString()} past exercise sessions.`);
-    if (stats?.model != null) {
-      learned.push(`Replaying your history, goals land within 1 rep ${Math.round(stats.model * 100)}% of the time (repeating last time: ${Math.round(stats.naive * 100)}%).`);
+    if (stats?.replay) {
+      const { workouts: w, goal: g, last: l } = stats.replay;
+      learned.push(`Replaying your last ${w} workouts, goals matched what you lifted (same weight, reps within 1) ${Math.round(g * 100)}% of the time; repeating last time did ${Math.round(l * 100)}%.`);
     }
     if (stats?.restSamples >= 10 && params) learned.push(`You usually rest ${formatRest(params.typicalRestSec)} between sets.`);
     learned.push('Tap a finished set\'s goal to rate how it felt — Easy sets push the next goals up, Hard ones hold them.');
@@ -961,23 +956,6 @@ function renderExerciseSection(exerciseId, exercise, sets, goals, ratingSetId, t
       <button class="add-set-btn" data-exercise-id="${esc(exerciseId)}">+ Add Set</button>
     </div>
   `;
-}
-
-/**
- * Look up the previous set for a given slot. `prevMap` is keyed
- * `${type}#${position}` (1-indexed) and already encodes the per-slot fallback to
- * older workouts (see buildPrevSlotMaps). When no typed history
- * has the slot and `overallPosition` (1-indexed row within the exercise) is
- * given, falls back to the same raw position in typeless history — imported
- * HEVY workouts whose warmups weren't flagged. Returns null only when the slot
- * is genuinely new.
- */
-function findPrevSetByTypeAndPosition(type, positionInType, prevMap, overallPosition = null) {
-  if (!prevMap || typeof prevMap.get !== 'function') return null;
-  const typed = prevMap.get(`${type}#${positionInType}`);
-  if (typed) return typed;
-  if (overallPosition != null) return prevMap.get(`any#${overallPosition}`) ?? null;
-  return null;
 }
 
 const formatGoal = (weight, reps) => (weight > 0 ? `${formatWeight(weight)} × ${reps}` : `${reps} reps`);

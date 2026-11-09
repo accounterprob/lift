@@ -308,6 +308,28 @@ export function buildPrevSlotMaps(allSets, allWorkouts, excludeWorkoutId = null)
 }
 
 /**
+ * The set PREV shows for `set`'s slot: same type and position within its
+ * exercise among `sets` (its workout's rows, in order), from maps built by
+ * buildPrevSlotMaps. Falls back to the raw position in typeless history
+ * (imported HEVY workouts whose warm-ups weren't flagged). Null when the slot
+ * is genuinely new.
+ */
+export function prevSlotIn(sets, prevMaps, set) {
+  const map = prevMaps.get(set.exerciseId);
+  if (!map) return null;
+  const type = set.setType || 'working';
+  let typePos = 0;
+  let overallPos = 0;
+  for (const x of sets) {
+    if (x.exerciseId !== set.exerciseId) continue;
+    overallPos += 1;
+    if ((x.setType || 'working') === type) typePos += 1;
+    if (x.id === set.id) break;
+  }
+  return map.get(`${type}#${typePos}`) ?? map.get(`any#${overallPos}`) ?? null;
+}
+
+/**
  * One-time cleanup: exercise names like "Preacher Curl (Barbell)" or
  * "Seated Row Machine" duplicate the equipment field. Strip the trailing
  * equipment marker from the name and sync the equipment field from it (the

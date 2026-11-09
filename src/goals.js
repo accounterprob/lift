@@ -18,6 +18,12 @@
 //   × today        how today's earlier sets and other lifts compare to plan
 //   × set position the user's own typical drop from set 1 to set k
 //
+// That capacity picks the goal's WEIGHT. The goal's REPS are his own: today's
+// previous set of the exercise, else this set last time. His reps barely move
+// with the weight (habitual targets), so the capacity model's rep count missed
+// far more often than his own numbers did (replay of 1,091 sets, 2026-11-09:
+// reps within 1 went 65% → 88%; weight and reps both right 48% → 63%).
+//
 // Iso-lateral exercises log each side as its own set, so two rows make one
 // round: they share a set position, each side's rest runs from that side's
 // last set, each counts as half a set of muscle load, and the second side's
@@ -43,14 +49,14 @@
 //
 // Everything here is pure except loadCalibration (appMeta cache).
 
-import { performedSets, getAll, getMeta, setMeta } from './db.js';
+import { performedSets, getAll, getMeta, setMeta, buildPrevSlotMaps, prevSlotIn } from './db.js';
 import { muscleShares, isPerSide, setNumberLabel } from './seed.js';
 
 const HOUR_MS = 3600 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 // Bump when the model changes so cached calibrations are recomputed.
-const MODEL_VERSION = 3;
+const MODEL_VERSION = 4;
 
 /** One-tap effort ratings → reps in reserve (RIR). */
 export const EFFORTS = {
@@ -474,7 +480,7 @@ function replay(history, cases, params) {
     const base = baselineAt(prior.map((s) => ({ t: s.t, value: valueOf(s) })), session.t, params);
     const pred = base.value * ctxProduct(sessionContext(history, session, params));
     const first = session.entries[0];
-    return { pred, actual: first.cap, load: first.load, naive: sessions[i - 1].entries[0].cap };
+    return { pred, actual: first.cap, load: first.load };
   });
 }
 
@@ -482,13 +488,6 @@ function replayLoss(results) {
   let loss = 0;
   for (const r of results) loss += huber(Math.log(r.actual / r.pred));
   return loss / Math.max(1, results.length);
-}
-
-/** Share of results whose prediction landed within one rep. */
-function withinOneRep(results, key) {
-  if (results.length === 0) return null;
-  const hits = results.filter((r) => (30 * Math.abs(r[key] - r.actual)) / r.load <= 1).length;
-  return hits / results.length;
 }
 
 const TUNED = {
@@ -501,8 +500,8 @@ const TUNED = {
 /**
  * Fit the model to the user's history. Returns { params, stats }: params is
  * DEFAULT_PARAMS adjusted toward what best predicted their past sessions
- * (shrunk toward the defaults when history is thin); stats says how well it
- * did against simply repeating last time.
+ * (shrunk toward the defaults when history is thin). How good the goals are
+ * is measured separately, end to end, by replayGoals.
  */
 export function calibrate(history) {
   const params = { ...DEFAULT_PARAMS };
@@ -516,7 +515,7 @@ export function calibrate(history) {
   let sessions = 0;
   for (const list of history.sessionsByExercise.values()) sessions += list.length;
   if (cases.length < 10) {
-    return { params, stats: { sessions, cases: cases.length, model: null, naive: null, restSamples: history.restSamples.length } };
+    return { params, stats: { sessions, cases: cases.length, restSamples: history.restSamples.length } };
   }
 
   let best = { ...params };
@@ -537,16 +536,9 @@ export function calibrate(history) {
   for (const key of Object.keys(TUNED)) {
     params[key] = DEFAULT_PARAMS[key] + (best[key] - DEFAULT_PARAMS[key]) * trust;
   }
-  const results = replay(history, cases, params);
   return {
     params,
-    stats: {
-      sessions,
-      cases: cases.length,
-      model: withinOneRep(results, 'pred'),
-      naive: withinOneRep(results, 'naive'),
-      restSamples: history.restSamples.length,
-    },
+    stats: { sessions, cases: cases.length, restSamples: history.restSamples.length },
   };
 }
 
@@ -556,14 +548,22 @@ let calibrationMemo = null;
 /**
  * Calibration for this history, from memory, the appMeta cache, or a fresh
  * fit (stored for next time). Recomputed only when the history changes.
+ * `data` ({ sets, workouts, exercises }, the same rows the history came from)
+ * adds the replay scorecard to stats.
  */
-export async function loadCalibration(history) {
+export async function loadCalibration(history, data = null) {
   if (calibrationMemo?.signature === history.signature) return calibrationMemo;
   try {
     const stored = await getMeta(CALIBRATION_KEY);
     if (stored?.signature === history.signature) return (calibrationMemo = stored);
   } catch { /* fall through to a fresh fit */ }
-  calibrationMemo = { signature: history.signature, ...calibrate(history) };
+  const fit = calibrate(history);
+  if (data) {
+    try {
+      fit.stats.replay = replayGoals({ ...data, params: fit.params, excludeWorkoutId: data.excludeWorkoutId });
+    } catch (err) { console.warn('Goal replay failed:', err); }
+  }
+  calibrationMemo = { signature: history.signature, ...fit };
   setMeta(CALIBRATION_KEY, calibrationMemo).catch(() => { /* recomputed next time */ });
   return calibrationMemo;
 }
@@ -576,7 +576,59 @@ export async function loadCalibration(history) {
 export async function warmCalibration() {
   const [sets, workouts, exercises] = await Promise.all([getAll('sets'), getAll('workouts'), getAll('exercises')]);
   if (workouts.some((w) => !w.endedAt)) return;
-  await loadCalibration(prepareHistory({ sets, workouts, exercises }));
+  await loadCalibration(prepareHistory({ sets, workouts, exercises }), { sets, workouts, exercises });
+}
+
+/**
+ * The goals' scorecard, end to end: for each working set of the last `count`
+ * finished workouts, the goal the app would have shown just before it
+ * (history up to that workout, its earlier sets as logged), against what was
+ * lifted. A hit is the same weight with reps within 1. "Last time" scores
+ * simply repeating that set's numbers from last time the same way. Uses the
+ * current calibration throughout (it only tunes a few smoothing settings).
+ */
+export function replayGoals({ sets, workouts, exercises, params, count = 20, excludeWorkoutId = null }) {
+  const finished = workouts
+    .filter((w) => w.endedAt && w.id !== excludeWorkoutId)
+    .sort((a, b) => a.startedAt - b.startedAt);
+  const rowsOf = new Map();
+  for (const s of sets) {
+    if (!rowsOf.has(s.workoutId)) rowsOf.set(s.workoutId, []);
+    rowsOf.get(s.workoutId).push(s);
+  }
+  let n = 0;
+  let goalHits = 0;
+  let lastHits = 0;
+  const replayed = finished.slice(-count);
+  for (const w of replayed) {
+    const prior = workouts.filter((x) => x.id !== excludeWorkoutId && x.startedAt < w.startedAt);
+    const priorIds = new Set(prior.map((x) => x.id));
+    const priorSets = sets.filter((s) => priorIds.has(s.workoutId));
+    const history = prepareHistory({ sets: priorSets, workouts: prior, exercises });
+    const prevMaps = buildPrevSlotMaps(priorSets, prior);
+    const rows = [...(rowsOf.get(w.id) ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    rows.forEach((actual, j) => {
+      if (isWarmup(actual) || !actual.completed || !(actual.reps > 0)) return;
+      // Everything from this set on is still open, waiting on its goal.
+      const sim = rows.map((s, i) => (i < j ? s : {
+        ...s, completed: false, weight: 0, reps: 0, autofill: true,
+        effort: undefined, completedAt: undefined, goalWeight: undefined, goalReps: undefined,
+      }));
+      const prevFor = (s) => prevSlotIn(sim, prevMaps, s);
+      const last = prevFor(sim[j]);
+      if (!last) return;
+      const goal = goalsForWorkout({
+        history, params, workout: { ...w, endedAt: null }, sets: sim, prevFor,
+        now: actual.completedAt || w.startedAt + j * 150 * 1000,
+      }).get(actual.id);
+      if (!goal) return;
+      const hit = (weight, reps) => (weight || 0) === (actual.weight || 0) && Math.abs(reps - actual.reps) <= 1;
+      n += 1;
+      if (hit(goal.weight, goal.reps)) goalHits += 1;
+      if (hit(last.weight, last.reps)) lastHits += 1;
+    });
+  }
+  return n > 0 ? { workouts: replayed.length, sets: n, goal: goalHits / n, last: lastHits / n } : null;
 }
 
 // ---------- Goals for the active workout ----------
@@ -958,6 +1010,23 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       }
       weight = Math.round(weight * 100) / 100;
     }
+    // --- Reps: his own, not the model's count (see the header). Today's
+    // previous set of this exercise, else this set last time; bodyweight sets
+    // have no weight to step, so progression adds the rep there. A set with
+    // neither (a brand-new slot) keeps the model's count.
+    const modelCap = target;
+    const lastObs = obs[obs.length - 1];
+    const lastSlotReps = prevSlot?.reps > 0 && (prevSlot.weight > 0) === (mode === 'load') ? prevSlot.reps : null;
+    let repsFrom = null;
+    let bwPush = false;
+    if (lastObs) {
+      reps = lastObs.set.reps;
+      repsFrom = 'today';
+    } else if (lastSlotReps != null) {
+      reps = lastSlotReps;
+      repsFrom = 'last';
+      if (mode === 'bw' && f?.push > 1) { reps += 1; bwPush = true; }
+    }
     reps = Math.max(1, Math.round(reps));
 
     // --- Explanation: each effect as the reps it's worth at this goal ---
@@ -1031,8 +1100,8 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       }
       if (stepped) {
         reasons.push({ label: 'Progression', detail: `${f.hitDetail} — up one weight step`, reps: null, lbs: weight - anchor, always: true });
-      } else if (f.push > 1) {
-        reasons.push({ label: 'Progression', detail: `${f.hitDetail} — reaching for one more rep`, reps: effect(f.push) });
+      } else if (bwPush) {
+        reasons.push({ label: 'Progression', detail: `${f.hitDetail} — one more rep`, reps: 1, always: true });
       }
       if (f.ready !== 1) {
         reasons.push({
@@ -1044,7 +1113,6 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       }
     }
     if (obs.length > 0) {
-      const lastObs = obs[obs.length - 1];
       const felt = EFFORTS[lastObs.set.effort];
       const done = `Set ${setLabel(lastObs.k)}: ${formatSet(lastObs.set.weight, lastObs.set.reps)}${felt ? ` (${felt.label})` : ''}`;
       const label = obs.length > 1 ? 'Earlier sets today' : 'Earlier set today';
@@ -1055,6 +1123,17 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       } else {
         reasons.push({ label, detail: `${done} — no history yet, so goals follow today's sets`, reps: 0 });
       }
+    }
+
+    if (repsFrom) {
+      reasons.push({
+        label: 'Reps',
+        detail: (repsFrom === 'today' ? `Same as set ${setLabel(lastObs.k)} today` : 'Same as this set last time')
+          + (bwPush ? ', plus one' : '') + ' — your reps hold steady, so the weight does the adjusting',
+        reps: null,
+        always: true,
+        text: `${reps}`,
+      });
     }
 
     if (mode === 'load' && weight !== anchor && !stepped) {
@@ -1072,6 +1151,7 @@ export function goalsForWorkout({ history, params, workout, sets, prevFor, now }
       weight: mode === 'load' ? weight : 0,
       reps,
       k,
+      cap: modelCap,
       reasons,
       last: f ? { weight: f.ref.entry.set.weight || 0, reps: f.ref.entry.set.reps, t: f.ref.session.t } : null,
     };
