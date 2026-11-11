@@ -127,16 +127,16 @@ export async function renderExerciseDetailPage(ctx, exerciseId, onBack) {
         html: trashIcon(),
         onClick: async () => {
           if (detail.completed.length > 0) {
-            alert(`Can't delete — this exercise has ${detail.completed.length} logged set${detail.completed.length === 1 ? '' : 's'}.`);
+            await ui.alert(`This exercise has ${detail.completed.length} logged set${detail.completed.length === 1 ? '' : 's'}.`, { title: 'Can\'t delete' });
             return;
           }
           const active = await getActiveWorkout();
           const sets = await getExerciseSets(exerciseId);
           if (active && sets.some((s) => s.workoutId === active.id)) {
-            alert('This exercise is in your current workout. Remove it there first.');
+            await ui.alert('It\'s in your current workout. Remove it there first.', { title: 'Can\'t delete' });
             return;
           }
-          if (!confirm('Delete this custom exercise?')) return;
+          if (!(await ui.confirm('', { title: 'Delete exercise?', ok: 'Delete', danger: true }))) return;
           // Also clears any never-performed leftover rows, so nothing is orphaned.
           await deleteExerciseAndSets(exerciseId);
           emit('data:changed');

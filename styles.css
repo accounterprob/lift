@@ -1,3 +1,6 @@
+/* Shared themed kit first, so Lift's own rules win any tie. */
+@import './src/ui-kit.css';
+
 /* Lift — X-style theme (2026-09-23), matching LectureLab.
    Pure white / pure black, hairline dividers instead of shaded cards,
    edge-to-edge rows, pill buttons, bold headings. Colour is reserved for
@@ -1345,7 +1348,7 @@ button.stat-row:active { background: var(--press); }
 .chart-slider {
   margin: 10px 24px 4px;
 }
-.chart-range {
+input.chart-range {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -1355,9 +1358,14 @@ button.stat-row:active { background: var(--press); }
   outline: none;
   margin: 0 0 4px;
 }
-.chart-range::-webkit-slider-thumb {
+/* input.* so these beat the kit's generic range skin. */
+input.chart-range::-webkit-slider-runnable-track { height: auto; background: none; border-radius: 0; }
+input.chart-range::-moz-range-track,
+input.chart-range::-moz-range-progress { background: transparent; }
+input.chart-range::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
+  margin-top: 0;
   width: 24px;
   height: 24px;
   border-radius: 50%;
@@ -1366,7 +1374,7 @@ button.stat-row:active { background: var(--press); }
   box-shadow: 0 0 0 1px var(--separator);
   cursor: pointer;
 }
-.chart-range::-moz-range-thumb {
+input.chart-range::-moz-range-thumb {
   width: 24px;
   height: 24px;
   border-radius: 50%;
@@ -1409,8 +1417,8 @@ button.stat-row:active { background: var(--press); }
   flex: 0 0 auto;
   width: 24px;
   height: 24px;
+  border-radius: 6px;
   margin-left: auto;
-  accent-color: var(--text);
 }
 
 .form-row label {
@@ -1419,7 +1427,7 @@ button.stat-row:active { background: var(--press); }
   flex-shrink: 0;
 }
 
-.form-row input, .form-row select, .form-row textarea {
+.form-row input:not([type="checkbox"]), .form-row select, .form-row .ui-select, .form-row textarea {
   flex: 1;
   background: transparent;
   border: 0;
@@ -1431,6 +1439,14 @@ button.stat-row:active { background: var(--press); }
 }
 .form-row input::placeholder, .form-row textarea::placeholder { color: var(--text-tertiary); }
 
+.form-row .ui-select {
+  min-height: 0;
+  padding: 0;
+  border-radius: 0;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.form-row .ui-select-label { text-align: right; }
 .form-row select {
   text-align-last: right;
   appearance: none;

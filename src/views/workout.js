@@ -306,7 +306,7 @@ function renderActive(ctx, workout) {
     const filled = sets.filter((s) => (s.weight || 0) > 0 && (s.reps || 0) > 0);
     if (!sets.some((s) => s.completed) && filled.length === 0) {
       // Saving an empty workout would still move the rotation on a day.
-      if (!confirm('Nothing logged yet. Discard this workout?')) return;
+      if (!(await ui.confirm('Nothing logged yet.', { title: 'Discard workout?', ok: 'Discard', danger: true }))) return;
       await deleteWorkoutAndSets(workout.id);
       emit('workout:changed');
       return;
@@ -315,8 +315,8 @@ function renderActive(ctx, workout) {
       // With nothing checked off, every filled-in row counts as done (the
       // performedSets rule), so say so rather than saving it silently.
       const n = filled.length;
-      if (!confirm(`No sets are checked off. Finish anyway and count all ${n} filled-in set${n === 1 ? '' : 's'} as done?`)) return;
-    } else if (!confirm('Finish this workout?')) return;
+      if (!(await ui.confirm(`No sets are checked off. All ${n} filled-in set${n === 1 ? '' : 's'} will count as done.`, { title: 'Finish anyway?', ok: 'Finish' }))) return;
+    } else if (!(await ui.confirm('', { title: 'Finish workout?', ok: 'Finish' }))) return;
     await finishWorkout(workout, sets);
     try {
       const { filename } = await downloadBackup();
@@ -330,7 +330,7 @@ function renderActive(ctx, workout) {
   });
 
   ctx.container.querySelector('#discard-btn').addEventListener('click', async () => {
-    if (!confirm('Discard this workout? This cannot be undone.')) return;
+    if (!(await ui.confirm('This can\'t be undone.', { title: 'Discard workout?', ok: 'Discard', danger: true }))) return;
     await deleteWorkoutAndSets(workout.id);
     emit('workout:changed');
   });
@@ -871,7 +871,7 @@ function renderActive(ctx, workout) {
     for (const menuBtn of sectionsEl.querySelectorAll('.exercise-menu')) {
       menuBtn.addEventListener('click', async () => {
         const eid = menuBtn.dataset.exerciseId;
-        if (!confirm('Remove this exercise from the workout?')) return;
+        if (!(await ui.confirm('Its sets in this workout are removed too.', { title: 'Remove exercise?', ok: 'Remove', danger: true }))) return;
         await delMany('sets', sets.filter((s) => s.exerciseId === eid).map((s) => s.id));
         await reload();
       });

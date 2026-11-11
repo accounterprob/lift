@@ -56,13 +56,17 @@ async function decryptBackup(envelope) {
     try { return await decryptSnapshot(envelope, stored); } catch { /* prompt below */ }
   }
   for (let attempt = 0; attempt < 3; attempt++) {
-    const entered = prompt('Enter your backup password (saved in your Passwords app):');
+    const asked = ui.prompt('It\'s saved in your Passwords app.', { title: 'Backup password', ok: 'Unlock' });
+    // The kit's prompt field is plain text; mask it, since this is a password.
+    const field = document.querySelector('dialog.ui-modal[open] .ui-modal-input');
+    if (field) { field.type = 'password'; field.autocomplete = 'current-password'; }
+    const entered = await asked;
     if (entered == null) throw new Error('Restore cancelled.');
     try {
       return await decryptSnapshot(envelope, entered.trim());
     } catch (err) {
       if (attempt === 2) throw err;
-      alert('Wrong password — try again.');
+      await ui.alert('', { title: 'Wrong password', ok: 'Try again' });
     }
   }
 }
@@ -176,7 +180,7 @@ export function openBackupSheet() {
       fileInput.addEventListener('change', async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (!confirm('Replace all current data with this backup? You can put it back with Undo Last Restore.')) return;
+        if (!(await ui.confirm('Replaces all current data. You can put it back with Undo Last Restore.', { title: 'Restore this backup?', ok: 'Restore', danger: true }))) return;
         try {
           const counts = await restoreFromFile(file);
           dismiss();
@@ -195,7 +199,7 @@ export function openBackupSheet() {
       }).catch(() => { /* nothing to offer */ });
 
       sheet.querySelector('#bk-undo').addEventListener('click', async () => {
-        if (!confirm('Put back the data from before the last restore? This replaces what\'s here now.')) return;
+        if (!(await ui.confirm('Puts back the data from before the last restore, replacing what\'s here now.', { title: 'Undo last restore?', ok: 'Undo restore', danger: true }))) return;
         try {
           const counts = await undoLastRestore();
           dismiss();

@@ -1,11 +1,13 @@
 ---
 name: verify
-description: Build/launch/drive recipe for verifying Lift (offline-first PWA, no build step) end-to-end in a headless browser.
+description: Build/launch/drive recipe for verifying Lift (offline-first PWA, esbuild bundle in dist/) end-to-end in a headless browser.
 ---
 
 # Verifying Lift
 
-No build step, no deps. Serve the repo root and drive it with Playwright.
+`src/` is bundled into the committed `dist/` by `npm run build` (esbuild; `npm install` first on a fresh clone). Rebuild after any source edit, or you verify stale code. Then serve the repo root and drive it with Playwright.
+
+On Colin's Mac there is no `/opt/pw-browsers` and the in-app preview can't read `~/Desktop`: use the `/tmp/lift-pwa` preview steps in `CLAUDE.md` with the built-in browser. The seeding notes and selectors below still apply.
 
 ## Launch
 

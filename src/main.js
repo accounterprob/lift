@@ -1,3 +1,6 @@
+// Themed replacements for native popups, pickers, tooltips and dialogs (window.ui).
+// Imported first so window.ui exists before any view runs.
+import './ui-kit.js';
 import { openDB } from './db.js';
 import { seedIfNeeded } from './seed.js';
 import { on, showToast, esc } from './utils.js';

@@ -509,7 +509,7 @@ async function renderWorkoutDetail(ctx, workoutId) {
     label: 'Delete workout',
     html: trashIcon(),
     onClick: async () => {
-      if (!confirm('Delete this workout?')) return;
+      if (!(await ui.confirm('This can\'t be undone.', { title: 'Delete workout?', ok: 'Delete', danger: true }))) return;
       await deleteWorkoutAndSets(workoutId);
       emit('data:changed');
     },

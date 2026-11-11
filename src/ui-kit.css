@@ -1,0 +1,218 @@
+/* ui-kit.css: themed replacements for native menus, pickers, tooltips and dialogs.
+   Uses the app's tokens: --bg --press --field --text --text-secondary --text-tertiary
+   --separator --border-strong --accent --red --backdrop (+ optional --accent-text,
+   --inverse-bg, --inverse-text). Pair with ui-kit.js. */
+
+:root { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+/* The real control stays in the DOM as the source of truth, just invisible. */
+[data-ui-hidden] {
+  position: absolute !important; opacity: 0 !important; pointer-events: none !important;
+  width: 1px !important; height: 1px !important; min-width: 0 !important; min-height: 0 !important;
+  padding: 0 !important; margin: 0 !important; border: 0 !important; overflow: hidden !important;
+  clip-path: inset(50%) !important; white-space: nowrap !important;
+}
+
+/* ---------- Triggers (select / date / time) ---------- */
+.ui-select, .ui-date {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+  background: var(--field); border: 1px solid var(--border-strong); border-radius: 8px;
+  min-height: 36px; padding: 6px 10px; max-width: 100%;
+  -webkit-appearance: none; appearance: none;
+}
+.ui-select:disabled, .ui-date:disabled { opacity: .5; cursor: default; }
+.ui-select[hidden], .ui-date[hidden], .ui-time[hidden] { display: none !important; }
+.ui-select, .ui-date, .ui-pop, .ui-cal button { -webkit-tap-highlight-color: transparent; }
+.ui-pop { -webkit-touch-callout: none; }
+.ui-select-label, .ui-date-label {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ui-date-label.ui-empty { color: var(--text-tertiary); }
+.ui-chev, .ui-icon { flex: none; width: 16px; height: 16px; opacity: .6; }
+input.ui-time { cursor: text; }
+
+/* ---------- Popover shell ---------- */
+.ui-pop {
+  position: fixed; inset: auto; z-index: 1000; margin: 0; padding: 0; border: 0;
+  box-sizing: border-box; background: var(--bg); color: var(--text);
+  border-radius: 12px; min-width: 180px; max-height: 320px; overflow-x: hidden; overflow-y: auto;
+  overscroll-behavior: contain; font-family: inherit;
+  box-shadow: 0 0 15px rgba(101, 119, 134, .2), 0 0 3px 1px rgba(101, 119, 134, .15);
+  animation: ui-pop-in 120ms ease-out;
+}
+@media (prefers-color-scheme: dark) {
+  .ui-pop { box-shadow: 0 0 15px rgba(255, 255, 255, .2), 0 0 3px 1px rgba(255, 255, 255, .15); }
+}
+@keyframes ui-pop-in { from { opacity: 0; transform: scale(.97); } }
+
+/* ---------- Menu items ---------- */
+.ui-item {
+  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 12px 16px;
+  font-size: 15px; line-height: 20px; font-weight: 700; color: var(--text); cursor: pointer;
+  user-select: none; -webkit-user-select: none;
+}
+.ui-item > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.ui-item.ui-active { background: var(--press); }
+.ui-item[aria-disabled="true"] { opacity: .5; cursor: default; background: none; }
+.ui-check { flex: none; width: 18px; height: 18px; color: var(--accent); }
+.ui-group {
+  padding: 12px 16px 4px; font-size: 13px; line-height: 16px; font-weight: 700;
+  color: var(--text-secondary); user-select: none; -webkit-user-select: none;
+}
+.ui-group:not(:first-child) { border-top: 1px solid var(--separator); }
+
+/* ---------- Calendar ---------- */
+.ui-cal { padding: 12px; min-width: 0; width: 288px; max-height: none; }
+.ui-cal-head { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.ui-cal-title { flex: 1; font-size: 15px; font-weight: 800; padding-left: 6px; }
+.ui-cal-nav {
+  width: 34px; height: 34px; border-radius: 50%; border: 0; background: transparent;
+  color: var(--text); display: grid; place-items: center; cursor: pointer; padding: 0;
+}
+.ui-cal-nav:hover { background: var(--press); }
+.ui-cal-nav svg { width: 18px; height: 18px; }
+.ui-cal-grid { display: grid; grid-template-columns: repeat(7, 36px); justify-content: space-between; row-gap: 2px; }
+.ui-cal-wd {
+  height: 28px; display: grid; place-items: center; font-size: 13px; font-weight: 600;
+  color: var(--text-secondary); user-select: none; -webkit-user-select: none;
+}
+.ui-cal-day {
+  width: 36px; height: 36px; border-radius: 50%; border: 0; background: transparent; padding: 0;
+  font: inherit; font-size: 15px; color: var(--text); cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.ui-cal-day:hover, .ui-cal-day.ui-active { background: var(--press); }
+.ui-cal-day.ui-out { color: var(--text-tertiary); }
+.ui-cal-day.ui-today { color: var(--accent); font-weight: 700; }
+.ui-cal-day[aria-selected="true"] { background: var(--accent); color: var(--accent-text, #fff); font-weight: 700; }
+.ui-cal-day.ui-active[aria-selected="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.ui-cal-day:disabled { opacity: .35; cursor: default; background: transparent; }
+.ui-cal-foot { display: flex; justify-content: space-between; margin-top: 8px; }
+.ui-cal-foot button {
+  border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 14px;
+  font-weight: 700; padding: 8px; border-radius: 9999px; cursor: pointer;
+}
+.ui-cal-foot button:hover:not(:disabled) { background: var(--press); }
+.ui-cal-foot button:disabled { opacity: .35; cursor: default; }
+
+/* ---------- Tooltip / validation bubble ---------- */
+.ui-tip {
+  position: fixed; inset: auto; z-index: 1001; margin: 0; border: 0;
+  background: rgba(91, 112, 131, .9); color: #fff; font-family: inherit;
+  font-size: 12px; font-weight: 500; line-height: 16px; padding: 4px 8px; border-radius: 4px;
+  max-width: 280px; width: max-content; white-space: pre-line; overflow-wrap: anywhere;
+  pointer-events: none; overflow: visible;
+}
+.ui-tip.ui-tip-error { background: var(--red); color: #fff; font-size: 13px; padding: 6px 10px; }
+
+/* ---------- Dialogs ---------- */
+.ui-modal {
+  width: min(320px, calc(100vw - 32px)); max-width: none; box-sizing: border-box;
+  padding: 32px; border: 0; border-radius: 16px; background: var(--bg); color: var(--text);
+  font-family: inherit; animation: ui-pop-in 120ms ease-out;
+}
+.ui-modal::backdrop { background: var(--backdrop, rgba(91, 112, 131, .4)); }
+.ui-modal form { margin: 0; }
+.ui-modal-title { margin: 0; font-size: 20px; line-height: 24px; font-weight: 800; overflow-wrap: anywhere; }
+.ui-modal-msg {
+  margin: 8px 0 0; font-size: 15px; line-height: 20px; color: var(--text-secondary);
+  white-space: pre-line; overflow-wrap: anywhere;
+}
+.ui-modal-input {
+  display: block; width: 100%; box-sizing: border-box; height: 40px; margin-top: 16px; padding: 0 12px;
+  font: inherit; font-size: 16px; color: var(--text); background: var(--field);
+  border: 1px solid var(--border-strong); border-radius: 8px; outline: none;
+}
+.ui-modal-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.ui-modal-actions { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
+.ui-modal-actions button {
+  height: 44px; width: 100%; border-radius: 9999px; font: inherit; font-size: 15px; font-weight: 700;
+  cursor: pointer; padding: 0 16px;
+}
+.ui-btn-primary { background: var(--inverse-bg, #0f1419); color: var(--inverse-text, #fff); border: 0; }
+.ui-btn-primary:hover { opacity: .9; }
+.ui-btn-cancel { background: transparent; border: 1px solid var(--border-strong); color: var(--text); }
+.ui-btn-cancel:hover { background: var(--press); }
+.ui-modal-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-color-scheme: dark) {
+  .ui-btn-primary { background: var(--inverse-bg, #eff3f4); color: var(--inverse-text, #0f1419); }
+}
+.ui-btn-primary.ui-btn-danger { background: var(--red); color: #fff; }
+
+/* ---------- Native control skins ---------- */
+/* No display or ::before here, so an app's own way of hiding a checkbox ([hidden], display:none) still wins. */
+input[type="checkbox"], input[type="radio"] {
+  -webkit-appearance: none; appearance: none; flex: none; box-sizing: border-box;
+  width: 18px; height: 18px; margin: 0; vertical-align: middle; cursor: pointer;
+  border: 2px solid var(--text-secondary); border-radius: 4px; background: transparent;
+  -webkit-tap-highlight-color: transparent;
+}
+input[type="radio"] { border-radius: 50%; }
+input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4.5 12.5l5 5L19.5 7' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat;
+}
+input[type="checkbox"]:indeterminate {
+  border-color: var(--accent); background: var(--accent) linear-gradient(#fff, #fff) center / 8px 2px no-repeat;
+}
+input[type="radio"]:checked {
+  border-color: var(--accent);
+  background: radial-gradient(circle, var(--accent-text, #fff) 0 3px, var(--accent) 3.5px);
+}
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cursor: default; }
+
+/* <select multiple> / size>1 stays an inline list (no popup); theme its rows. */
+select[multiple], select[size]:not([size="1"]):not([size="0"]) { background: var(--field); color: var(--text); border-radius: 8px; }
+select[multiple] option:checked, select[size]:not([size="1"]):not([size="0"]) option:checked {
+  background: var(--press) linear-gradient(var(--press), var(--press)); color: var(--text);
+}
+
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+input[type="search"] { -webkit-appearance: none; appearance: none; }
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration { -webkit-appearance: none; appearance: none; display: none; }
+input::-webkit-calendar-picker-indicator { display: none !important; }
+input::-webkit-contacts-auto-fill-button, input::-webkit-credentials-auto-fill-button { visibility: hidden; pointer-events: none; }
+
+input[type="range"] {
+  -webkit-appearance: none; appearance: none; height: 16px; background: transparent; cursor: pointer;
+  --ui-fill: 50%;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--accent) var(--ui-fill), var(--field) var(--ui-fill));
+}
+input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--field); }
+input[type="range"]::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--accent); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -6px;
+  border-radius: 50%; background: var(--accent); border: 0;
+}
+input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: var(--accent); border: 0; }
+input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+input[type="file"] { font: inherit; font-size: 14px; color: var(--text-secondary); max-width: 100%; }
+input[type="file"]::file-selector-button,
+input[type="file"]::-webkit-file-upload-button {
+  font: inherit; font-size: 14px; font-weight: 700; color: var(--text); cursor: pointer;
+  background: transparent; border: 1px solid var(--border-strong); border-radius: 9999px;
+  padding: 6px 16px; margin-right: 12px;
+}
+input[type="file"]::file-selector-button:hover { background: var(--press); }
+
+/* iPhone zooms into any focused field under 16px. */
+@supports (-webkit-touch-callout: none) {
+  input.ui-time { font-size: max(16px, 1em); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-pop, .ui-modal { animation: none; }
+}
